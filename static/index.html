@@ -703,7 +703,24 @@ body {
   <button class="tab-btn active" id="tab-overview-btn" onclick="showTab('overview')">📊 项目概览</button>
   <button class="tab-btn" id="tab-global-btn" onclick="showTab('global')">🌐 全局面貌</button>
   <div class="topbar-spacer"></div>
+  <button class="refresh-btn" onclick="showImportModal()" style="background:#1e3a28;border-color:#4a7c59;color:#7fc794">+ 导入项目</button>
   <button class="refresh-btn" id="refresh-btn" onclick="loadProjects()">↻ 刷新</button>
+</div>
+
+<!-- Import Modal -->
+<div id="import-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center">
+  <div style="background:#1e1e1e;border:1px solid #333;border-radius:8px;padding:24px;width:480px;max-width:90vw">
+    <div style="font-size:15px;font-weight:600;margin-bottom:16px">导入项目</div>
+    <div style="font-size:12px;color:#888;margin-bottom:8px">输入项目目录的绝对路径（必须是 git 仓库）</div>
+    <input id="import-path-input" type="text" placeholder="/Users/chao/projects/my-project"
+      style="width:100%;box-sizing:border-box;background:#111;border:1px solid #444;border-radius:4px;padding:8px 10px;color:#e0e0e0;font-size:13px;outline:none;margin-bottom:12px"
+      onkeydown="if(event.key==='Enter')doImport()">
+    <div id="import-error" style="color:#e06c75;font-size:12px;min-height:18px;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="hideImportModal()" style="padding:6px 14px;background:#2a2a2a;border:1px solid #444;border-radius:4px;color:#aaa;cursor:pointer">取消</button>
+      <button id="import-btn" onclick="doImport()" style="padding:6px 14px;background:#1e3a28;border:1px solid #4a7c59;border-radius:4px;color:#7fc794;cursor:pointer">导入</button>
+    </div>
+  </div>
 </div>
 
 <!-- TAB 1: 项目概览 -->
@@ -746,6 +763,7 @@ body {
       <div class="modal-title" id="modal-title">Project Name</div>
       <div class="modal-path" id="modal-path">/path/to/project</div>
     </div>
+    <button onclick="deleteCurrentProject()" title="从 Vibe Manager 移除此项目" style="position:absolute;top:16px;right:44px;background:none;border:1px solid #5a2a2a;border-radius:4px;color:#e06c75;cursor:pointer;font-size:12px;padding:2px 8px">🗑 移除</button>
     <button class="modal-close" onclick="closeModal()">✕</button>
     <div class="modal-tabs">
       <button class="modal-tab-btn active" id="mtab-overview" onclick="showModalTab('overview')">🌐 全局面貌</button>
@@ -1355,6 +1373,60 @@ async function generateSummary(projectId) {
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '↻ 重新生成'; }
     alert(`生成失败: ${e.message}`);
+  }
+}
+
+// ─── Import / Delete ──────────────────────────────────────────────────────────
+function showImportModal() {
+  document.getElementById('import-path-input').value = '';
+  document.getElementById('import-error').textContent = '';
+  const el = document.getElementById('import-overlay');
+  el.style.display = 'flex';
+  setTimeout(() => document.getElementById('import-path-input').focus(), 50);
+}
+function hideImportModal() {
+  document.getElementById('import-overlay').style.display = 'none';
+}
+async function doImport() {
+  const path = document.getElementById('import-path-input').value.trim();
+  const errEl = document.getElementById('import-error');
+  const btn = document.getElementById('import-btn');
+  if (!path) { errEl.textContent = '请输入路径'; return; }
+  btn.disabled = true; btn.textContent = '导入中…';
+  errEl.textContent = '';
+  try {
+    const res = await fetch('/api/projects/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path}),
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      hideImportModal();
+      await loadProjects();
+    } else {
+      errEl.textContent = data.detail || '导入失败';
+    }
+  } catch(e) {
+    errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '导入';
+  }
+}
+async function deleteCurrentProject() {
+  if (!currentProject) return;
+  if (!confirm(`从 Vibe Manager 移除「${currentProject.name}」？\n（不会删除项目文件，只是不再追踪）`)) return;
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}`, { method: 'DELETE' });
+    if (res.ok) {
+      closeModal();
+      await loadProjects();
+    } else {
+      const d = await res.json();
+      alert('移除失败: ' + (d.detail || ''));
+    }
+  } catch(e) {
+    alert('移除失败: ' + e.message);
   }
 }
 

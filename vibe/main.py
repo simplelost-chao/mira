@@ -16,7 +16,8 @@ def get_all_projects() -> list[dict]:
     from vibe.models import ProjectInfo
 
     cfg = load_global_config()
-    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"])
+    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"],
+                                   cfg.get("extra_projects"), cfg.get("excluded_paths"))
     projects = []
     for item in discovered:
         path = Path(item["path"])
@@ -73,6 +74,36 @@ def get_design_doc(project_id: str, filename: str):
             raise HTTPException(status_code=404, detail="Design doc not found")
     raise HTTPException(status_code=404, detail="Project not found")
 
+@api.post("/api/projects/import")
+def import_project(body: dict):
+    """Add a project path to extra_projects in vibe.yaml."""
+    from vibe.config import add_extra_project
+    from vibe.aggregator import collect_project
+    proj_path = (body.get("path") or "").strip()
+    if not proj_path:
+        raise HTTPException(status_code=400, detail="path is required")
+    p = Path(proj_path).expanduser().resolve()
+    if not p.exists():
+        raise HTTPException(status_code=400, detail=f"Path does not exist: {p}")
+    if not (p / ".git").exists():
+        raise HTTPException(status_code=400, detail=f"Not a git repository: {p}")
+    add_extra_project(str(p))
+    info = collect_project(p, name=p.name, vibe_cfg=None)
+    return {"status": "ok", "project": info.model_dump()}
+
+
+@api.delete("/api/projects/{project_id}")
+def delete_project(project_id: str):
+    """Hide a project from discovery by adding it to excluded_paths."""
+    from vibe.config import exclude_project
+    projects = get_all_projects()
+    for p in projects:
+        if p["id"] == project_id:
+            exclude_project(p["path"])
+            return {"status": "ok"}
+    raise HTTPException(status_code=404, detail="Project not found")
+
+
 @api.post("/api/projects/{project_id}/summarize")
 def summarize_project_endpoint(project_id: str, force: bool = False):
     """Generate and write AI summary for a single project."""
@@ -106,7 +137,8 @@ def summarize_cmd(
     from vibe.summarizer import summarize_project
 
     cfg = load_global_config()
-    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"])
+    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"],
+                                   cfg.get("extra_projects"), cfg.get("excluded_paths"))
     typer.echo(f"Found {len(discovered)} projects. Generating summaries...\n")
 
     for item in discovered:
