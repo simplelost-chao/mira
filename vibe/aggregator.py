@@ -11,6 +11,7 @@ from vibe.collectors.fs import collect_fs
 from vibe.collectors.features import collect_features
 from vibe.collectors.design_docs import collect_design_docs
 from vibe.collectors.deploy import collect_deploy
+from vibe.collectors.dependencies import collect_dependencies
 
 _ARCH_SECTION_RE = re.compile(r"^#{1,3}\s+(架构|Architecture)", re.IGNORECASE)
 
@@ -140,4 +141,5 @@ def collect_project(path: Path, name: str, vibe_cfg: Optional[dict]) -> ProjectI
         design_docs=_safe(collect_design_docs, path, default=[]),
         deploy=_safe(collect_deploy, path, vibe_cfg),
         arch_summary=_safe(extract_arch_summary, path),
+        external_deps=_safe(collect_dependencies, path, default=[]),
     )

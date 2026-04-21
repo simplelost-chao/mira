@@ -1230,6 +1230,43 @@ function renderProjectOverview(p) {
     </div>`;
   }
 
+  // External dependencies
+  const extDeps = p.external_deps || [];
+  if (extDeps.length) {
+    // Check which deps are shared with other projects
+    const shared = {};
+    allProjects.forEach(op => {
+      if (op.id === p.id) return;
+      (op.external_deps || []).forEach(od => {
+        extDeps.forEach(d => {
+          if (d.name === od.name || (d.port && d.port === od.port)) {
+            if (!shared[d.name]) shared[d.name] = [];
+            if (!shared[d.name].includes(op.name)) shared[d.name].push(op.name);
+          }
+        });
+      });
+    });
+
+    html += `<div class="section">
+      <div class="section-title">外部依赖服务</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+        ${extDeps.map(d => {
+          const sharedWith = shared[d.name] || [];
+          const portStr = d.port ? `<code style="font-size:11px;color:#888">:${d.port}</code>` : '';
+          const sharedBadge = sharedWith.length
+            ? `<span style="font-size:10px;background:rgba(79,70,229,.15);border:1px solid rgba(79,70,229,.3);color:#a5b4fc;border-radius:10px;padding:1px 6px;margin-left:4px">共用 · ${escHtml(sharedWith.join(', '))}</span>`
+            : '';
+          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#1a1a1a;border-radius:4px;border:1px solid #2a2a2a;">
+            <span style="font-size:13px;color:#e0e0e0;font-weight:500">${escHtml(d.name)}</span>
+            ${portStr}
+            ${sharedBadge}
+            <span style="margin-left:auto;font-size:10px;color:#555">${escHtml(d.source)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
   // LOC
   if (loc.total_lines || loc.code_lines) {
     const commentPct = loc.total_lines

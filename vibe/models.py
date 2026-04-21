@@ -96,6 +96,13 @@ class TechStack(BaseModel):
     version: Optional[str] = None
 
 
+class ExternalDep(BaseModel):
+    name: str            # "CosyVoice", "PostgreSQL", "Redis" …
+    url: Optional[str] = None
+    port: Optional[int] = None
+    source: str = ""     # which env var / file revealed this
+
+
 class ProjectInfo(BaseModel):
     id: str
     name: str
@@ -111,5 +118,6 @@ class ProjectInfo(BaseModel):
     features: list[Feature] = []
     design_docs: list[DesignDoc] = []
     deploy: Optional[DeployInfo] = None
-    arch_summary: Optional[str] = None  # from README ## 架构 section
+    arch_summary: Optional[str] = None
+    external_deps: list[ExternalDep] = []
     error: Optional[str] = None
