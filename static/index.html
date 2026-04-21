@@ -1325,15 +1325,17 @@ async function generateSummary(projectId) {
   try {
     const res = await fetch(`/api/projects/${projectId}/summarize?force=true`, { method: 'POST' });
     const data = await res.json();
-    if (data.status === 'ok' && data.project) {
-      // Update current project data and re-render overview
+    if (res.ok && data.status === 'ok' && data.project) {
       currentProject = data.project;
       renderProjectOverview(currentProject);
     } else {
-      if (btn) { btn.disabled = false; btn.textContent = '✗ 失败，重试'; }
+      const detail = data.detail || data.status || '未知错误';
+      if (btn) { btn.disabled = false; btn.textContent = '↻ 重新生成'; }
+      alert(`生成失败: ${detail}`);
     }
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '✗ 失败，重试'; }
+    if (btn) { btn.disabled = false; btn.textContent = '↻ 重新生成'; }
+    alert(`生成失败: ${e.message}`);
   }
 }
 

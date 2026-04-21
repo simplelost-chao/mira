@@ -95,8 +95,8 @@ def _build_prompt(project_data: dict) -> str:
 只输出上述内容，不要解释，不要废话。"""
 
 
-def generate_summary(project_data: dict, model: str = "claude-haiku-4-5-20251001") -> Optional[str]:
-    """Call Claude API to generate a project summary. Returns summary text or None on error."""
+def generate_summary(project_data: dict, model: str = "claude-haiku-4-5-20251001") -> tuple[Optional[str], Optional[str]]:
+    """Call Claude API to generate a project summary. Returns (text, error)."""
     try:
         import anthropic
         client = anthropic.Anthropic()
@@ -106,9 +106,9 @@ def generate_summary(project_data: dict, model: str = "claude-haiku-4-5-20251001
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text.strip()
+        return message.content[0].text.strip(), None
     except Exception as e:
-        return None
+        return None, str(e)
 
 
 def write_summary(project_path: Path, summary: str) -> Path:
@@ -132,9 +132,9 @@ def summarize_project(project_data: dict, force: bool = False) -> tuple[bool, st
     if summary_file.exists() and not force:
         return False, "skipped (already exists)"
 
-    summary = generate_summary(project_data)
+    summary, err = generate_summary(project_data)
     if summary is None:
-        return False, "failed (API error)"
+        return False, f"failed: {err}"
 
     write_summary(path, summary)
     return True, "ok"

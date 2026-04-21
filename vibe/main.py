@@ -87,7 +87,7 @@ def summarize_project_endpoint(project_id: str, force: bool = False):
                 from pathlib import Path as _Path
                 refreshed = collect_project(_Path(p["path"]), p["name"], None)
                 return {"status": "ok", "project": refreshed.model_dump()}
-            return {"status": msg}
+            raise HTTPException(status_code=500, detail=msg)
     raise HTTPException(status_code=404, detail="Project not found")
 
 
