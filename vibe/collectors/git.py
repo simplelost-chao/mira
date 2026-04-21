@@ -19,7 +19,18 @@ def collect_git(path: Path) -> GitInfo:
     commit_hash = _run(["git", "rev-parse", "--short", "HEAD"], path) or ""
 
     dirty_raw = _run(["git", "status", "--porcelain"], path)
-    dirty_files = [line for line in dirty_raw.splitlines() if line.strip()] if dirty_raw else []
+    if dirty_raw:
+        dirty_files = []
+        for line in dirty_raw.splitlines():
+            if line.strip():
+                # Format is "XY filename" where XY is 2 status chars + space
+                # Handle renames: "R  old -> new" — take the dest path
+                parts = line[3:].strip()
+                if " -> " in parts:
+                    parts = parts.split(" -> ")[-1]
+                dirty_files.append(parts)
+    else:
+        dirty_files = []
 
     since = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
     monthly_log = _run(["git", "log", "--oneline", f"--since={since}"], path)

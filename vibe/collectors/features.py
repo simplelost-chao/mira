@@ -21,9 +21,18 @@ def _from_readme(path: Path) -> list[Feature]:
         if in_section and line.startswith("#"):
             in_section = False
         if in_section:
-            m = _LIST_ITEM_RE.match(line)
-            if m:
-                features.append(Feature(text=m.group(1).strip(), source="readme", implemented=True))
+            m_done = _DONE_RE.match(line)
+            m_todo = _TODO_RE.match(line)
+            m_plain = _LIST_ITEM_RE.match(line)
+            if m_done:
+                features.append(Feature(text=m_done.group(1).strip(), source="readme", implemented=True))
+            elif m_todo:
+                features.append(Feature(text=m_todo.group(1).strip(), source="readme", implemented=False))
+            elif m_plain:
+                # Only add if it's not a checkbox (those are handled above)
+                text = m_plain.group(1).strip()
+                if not text.startswith("["):
+                    features.append(Feature(text=text, source="readme", implemented=True))
     return features
 
 def _from_plans(path: Path) -> list[Feature]:

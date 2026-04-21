@@ -27,6 +27,10 @@ def test_collect_git_dirty_files(git_repo):
     (git_repo / "new_file.py").write_text("print('hi')")
     info = collect_git(git_repo)
     assert any("new_file.py" in f for f in info.dirty_files)
+    # Paths should not include the git status prefix (e.g., "?? ")
+    for f in info.dirty_files:
+        assert not f.startswith("?")
+        assert not f.startswith(" ")
 
 def test_collect_git_not_a_repo(tmp_path):
     info = collect_git(tmp_path)

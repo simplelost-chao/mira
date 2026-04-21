@@ -30,3 +30,14 @@ def test_no_duplicates(tmp_path):
     features = collect_features(tmp_path)
     texts = [f.text for f in features]
     assert texts.count("Auth system") == 1
+
+def test_readme_checkbox_items_stripped(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "## Features\n- [x] Auth system\n- [ ] Billing\n- Plain feature\n"
+    )
+    features = collect_features(tmp_path)
+    texts = [f.text for f in features]
+    assert "Auth system" in texts  # not "[x] Auth system"
+    assert "Billing" in texts
+    assert "Plain feature" in texts
+    assert not any(t.startswith("[") for t in texts)
