@@ -1,6 +1,4 @@
-import os
 from pathlib import Path
-from typing import Optional
 from vibe.config import load_project_config
 
 
@@ -30,7 +28,10 @@ def _walk_for_repos(directory: Path, exclude: list[str], results: list, seen: se
         repo_path = directory.resolve()
         if str(repo_path) not in seen:
             seen.add(str(repo_path))
-            vibe_cfg = load_project_config(repo_path)
+            try:
+                vibe_cfg = load_project_config(repo_path)
+            except RuntimeError:
+                vibe_cfg = None
             results.append({
                 "path": str(repo_path),
                 "name": vibe_cfg.get("name", repo_path.name) if vibe_cfg else repo_path.name,
