@@ -14,6 +14,14 @@ from vibe.collectors.design_docs import collect_design_docs
 _ARCH_SECTION_RE = re.compile(r"^#{1,3}\s+(架构|Architecture)", re.IGNORECASE)
 
 
+def _safe(fn, *args, default=None):
+    """Call fn(*args), returning default on any exception."""
+    try:
+        return fn(*args)
+    except Exception:
+        return default
+
+
 def extract_arch_summary(path: Path) -> Optional[str]:
     """Extract architecture summary from README.md ## 架构 section."""
     readme = path / "README.md"
@@ -69,8 +77,9 @@ def extract_tech_stack(path: Path) -> list[TechStack]:
         try:
             data = json.loads(pkg_json.read_text())
             for name in list(data.get("dependencies", {}).keys()) + list(data.get("devDependencies", {}).keys()):
-                # Handle @scope/package -> package
-                stack.append(TechStack(name=name.lstrip("@").split("/")[-1]))
+                # Handle @scope/package -> scope/package (keep scope for clarity)
+                display_name = name[1:] if name.startswith("@") else name
+                stack.append(TechStack(name=display_name))
         except Exception:
             pass
 
@@ -112,14 +121,14 @@ def collect_project(path: Path, name: str, vibe_cfg: Optional[dict]) -> ProjectI
         name=name,
         path=str(path),
         status=status,
-        tech_stack=extract_tech_stack(path),
-        git=collect_git(path),
-        plans=collect_plans(path),
-        service=collect_service(path, vibe_cfg),
-        loc=collect_loc(path),
-        fs=collect_fs(path),
-        features=collect_features(path),
-        design_docs=collect_design_docs(path),
-        deploy=_extract_deploy(vibe_cfg),
-        arch_summary=extract_arch_summary(path),
+        tech_stack=_safe(extract_tech_stack, path, default=[]),
+        git=_safe(collect_git, path),
+        plans=_safe(collect_plans, path),
+        service=_safe(collect_service, path, vibe_cfg),
+        loc=_safe(collect_loc, path),
+        fs=_safe(collect_fs, path),
+        features=_safe(collect_features, path, default=[]),
+        design_docs=_safe(collect_design_docs, path, default=[]),
+        deploy=_safe(_extract_deploy, vibe_cfg),
+        arch_summary=_safe(extract_arch_summary, path),
     )
