@@ -730,6 +730,7 @@ body {
         <th>项目名称</th>
         <th>状态</th>
         <th>服务</th>
+        <th>部署</th>
         <th>计划完成</th>
         <th>本月 Commits</th>
       </tr>
@@ -929,17 +930,32 @@ function renderCards() {
   grid.innerHTML = filtered.map(renderCard).join('');
 }
 
+const DEPLOY_ICONS = {
+  ec2: '☁️', gcp: '☁️', azure: '☁️', lightsail: '☁️',
+  netlify: '🌐', vercel: '▲', heroku: '🟣', railway: '🚄',
+  render: '🎨', docker: '🐳', vps: '🖥️', codedeploy: '☁️', gae: '☁️',
+};
+function deployLabel(deploy) {
+  if (!deploy || deploy.type === 'none' || !deploy.type) return null;
+  const icon = DEPLOY_ICONS[deploy.type] || '☁️';
+  const label = deploy.type.toUpperCase();
+  const host = deploy.host ? `<code style="font-size:11px;opacity:.75">${escHtml(deploy.host)}</code>` : '';
+  return `${icon} <span style="color:var(--accent)">${label}</span> ${host}`;
+}
+
 function renderCard(p) {
   const git = p.git || {};
   const plans = p.plans || {};
   const svc = p.service || {};
+  const deploy = p.deploy || {};
   const tags = (p.tech_stack || []).slice(0, 4);
   const moreCount = (p.tech_stack || []).length - 4;
-  const pct = planPct(plans);
 
   const svcStatus = svc.port
     ? `${svcDot(svc)} <span>:${svc.port}</span>`
     : `${svcDot(null)} <span>无服务</span>`;
+
+  const dLabel = deployLabel(deploy);
 
   return `<div class="project-card" onclick="openProject('${escHtml(p.id)}')">
     <div class="card-header">
@@ -960,6 +976,7 @@ function renderCard(p) {
       <div class="card-row">
         <span class="label">服务</span>
         ${svcStatus}
+        ${dLabel ? `<span style="margin-left:8px;font-size:12px">${dLabel}</span>` : ''}
       </div>
       ${tags.length ? `<div class="tag-row">
         ${tags.map(t => `<span class="tag">${escHtml(t.name || t)}</span>`).join('')}
@@ -990,10 +1007,12 @@ function renderGlobal() {
       ? `${svcDot(svc)} :${escHtml(String(svc.port))}`
       : `${svcDot(null)} —`;
 
+    const dLabel = deployLabel(p.deploy);
     return `<tr onclick="openProject('${escHtml(p.id)}')" style="cursor:pointer">
       <td>${escHtml(p.name)}</td>
       <td>${statusBadge(p.status)}</td>
       <td style="display:flex;align-items:center;gap:6px">${svcCell}</td>
+      <td style="font-size:12px">${dLabel || '<span style="color:var(--text-muted)">—</span>'}</td>
       <td>
         <div class="progress-wrap">
           <div class="progress-bar" style="width:80px">
