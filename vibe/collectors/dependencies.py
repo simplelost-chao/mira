@@ -12,9 +12,33 @@ _URL_VAR_RE = re.compile(
 )
 _PORT_VAR_RE = re.compile(r'^([A-Z][A-Z0-9_]*)_PORT\s*=\s*(\d+)$', re.MULTILINE)
 
+# JS: process.env.VAR_URL || 'https://...'  /  process.env.VAR_URL ?? 'https://...'
+_JS_ENV_DEFAULT_RE = re.compile(
+    r'process\.env\.([A-Z][A-Z0-9_]*)_(?:URL|HOST|ENDPOINT|API_BASE|BASE_URL|URI)\s*(?:\|\||\?\?)\s*[\'"]([^\'"]+)[\'"]'
+)
+# Python: os.getenv('VAR_URL', 'https://...')  /  os.environ.get('VAR_URL', 'https://...')
+_PY_ENV_DEFAULT_RE = re.compile(
+    r'os\.(?:getenv|environ\.get)\([\'"]([A-Z][A-Z0-9_]*)_(?:URL|HOST|ENDPOINT|API_BASE|BASE_URL|URI)[\'"],\s*[\'"]([^\'"]+)[\'"]'
+)
+
+# URL hostname → service name (for custom domains hosting known services)
+_URL_SERVICE_MAP = {
+    'voice.zhuchao.life': 'CosyVoice',
+    'cosyvoice':          'CosyVoice',
+    'dashscope':          'DashScope (Qwen)',
+    'api.openai.com':     'OpenAI',
+    'api.anthropic.com':  'Claude',
+    'api.deepseek.com':   'DeepSeek',
+    'generativelanguage': 'Gemini',
+    'openrouter.ai':      'OpenRouter',
+    'ngrok':              'ngrok tunnel',
+    'supabase':           'Supabase',
+}
+
 # Map well-known service name fragments → display name
 _KNOWN_SERVICES = {
     'cosyvoice': 'CosyVoice',
+    'voice':     'CosyVoice',
     'redis': 'Redis',
     'postgres': 'PostgreSQL',
     'postgresql': 'PostgreSQL',
@@ -48,6 +72,15 @@ def _friendly_name(var_prefix: str) -> str:
     for noise in ('Api', 'Service', 'Server', 'Db', 'Database'):
         cleaned = cleaned.replace(noise, noise)
     return cleaned
+
+
+def _service_name_from_url(url: str) -> str | None:
+    """Try to identify a known service from its URL."""
+    lower = url.lower()
+    for fragment, name in _URL_SERVICE_MAP.items():
+        if fragment in lower:
+            return name
+    return None
 
 
 def _extract_port(url: str) -> int | None:
@@ -87,7 +120,7 @@ def _scan_env_file(f: Path) -> list[ExternalDep]:
         # Skip placeholders
         if value.startswith('${') or value in ('', 'your_value', 'change_me'):
             continue
-        name = _friendly_name(prefix)
+        name = _service_name_from_url(value) or _friendly_name(prefix)
         if name in seen_names:
             continue
         seen_names.add(name)
@@ -147,6 +180,38 @@ def _scan_docker_compose(f: Path) -> list[ExternalDep]:
     return deps
 
 
+def _scan_source_defaults(path: Path) -> list[ExternalDep]:
+    """Scan JS/Python source files for env vars with hardcoded default URLs."""
+    deps = []
+    seen: set[str] = set()
+    globs = list(path.glob('**/*.js')) + list(path.glob('**/*.py'))
+    for f in globs:
+        if any(p in str(f) for p in ['node_modules', '.git', '.venv', 'venv', '__pycache__']):
+            continue
+        if f.stat().st_size > 500_000:
+            continue
+        try:
+            text = f.read_text(encoding='utf-8', errors='replace')
+        except Exception:
+            continue
+        pattern = _JS_ENV_DEFAULT_RE if f.suffix == '.js' else _PY_ENV_DEFAULT_RE
+        for m in pattern.finditer(text):
+            prefix, value = m.group(1), m.group(2).strip()
+            if not value or value.startswith('${'):
+                continue
+            name = _service_name_from_url(value) or _friendly_name(prefix)
+            if name in seen:
+                continue
+            seen.add(name)
+            deps.append(ExternalDep(
+                name=name,
+                url=value,
+                port=_extract_port(value),
+                source=f'{f.name}: {prefix} (default)',
+            ))
+    return deps
+
+
 def collect_dependencies(path: Path) -> list[ExternalDep]:
     deps: list[ExternalDep] = []
     seen: set[str] = set()
@@ -175,5 +240,9 @@ def collect_dependencies(path: Path) -> list[ExternalDep]:
         if f.exists():
             for d in _scan_docker_compose(f):
                 add(d)
+
+    # Scan source files for hardcoded default URLs
+    for d in _scan_source_defaults(path):
+        add(d)
 
     return deps
