@@ -9,28 +9,45 @@ from vibe.models import ServiceInfo
 _PORT_RE = re.compile(r'(?:port|PORT)\s*[=:]\s*(\d{3,5})', re.IGNORECASE)
 _UVICORN_RE = re.compile(r'uvicorn\.run\([^)]*port\s*=\s*(\d+)')
 
+# Utility processes that are never servers
+_NON_SERVER_NAMES = {
+    'tail', 'grep', 'rg', 'find', 'git', 'zsh', 'bash', 'sh', 'fish',
+    'vim', 'nvim', 'nano', 'less', 'cat', 'awk', 'sed', 'sort', 'wc',
+    'ssh', 'rsync', 'cp', 'mv', 'rm', 'ls', 'ps', 'top', 'htop',
+    'make', 'cargo', 'rustc', 'gcc', 'clang',
+}
 
-def _find_project_processes(path: Path) -> list[psutil.Process]:
-    """Find running processes whose cwd is inside this project directory."""
-    procs = []
+
+def _find_listening_procs(path: Path) -> list[tuple[psutil.Process, list[int]]]:
+    """
+    Find processes with cwd inside this project that are LISTENING on ports.
+    Returns [(proc, [ports])]. Ignores utility processes with no open ports.
+    """
     path_str = str(path.resolve())
+    results = []
     for proc in psutil.process_iter(['pid', 'name', 'cwd', 'cmdline']):
         try:
-            cwd = proc.info.get('cwd') or ''
-            if cwd and (cwd == path_str or cwd.startswith(path_str + '/')):
-                procs.append(proc)
+            name = (proc.info.get('name') or '').lower()
+            if name in _NON_SERVER_NAMES:
                 continue
-            # Also match by cmdline containing the project path
+            cwd = proc.info.get('cwd') or ''
             cmdline = ' '.join(proc.info.get('cmdline') or [])
-            if path_str in cmdline:
-                procs.append(proc)
+            in_project = (
+                (cwd == path_str or cwd.startswith(path_str + '/')) or
+                (path_str in cmdline)
+            )
+            if not in_project:
+                continue
+            ports = _get_listening_ports(proc)
+            if ports:
+                results.append((proc, ports))
         except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             continue
-    return procs
+    return results
 
 
 def _get_listening_ports(proc: psutil.Process) -> list[int]:
-    """Get ports this process is listening on."""
+    """Get ports this process is actively listening on."""
     ports = []
     try:
         for conn in (proc.connections(kind='inet') or []):
@@ -41,10 +58,29 @@ def _get_listening_ports(proc: psutil.Process) -> list[int]:
     return ports
 
 
+def _port_owner_project(port: int, path: Path) -> bool:
+    """Check if the process listening on this port has cwd inside this project."""
+    path_str = str(path.resolve())
+    try:
+        for proc in psutil.process_iter(['cwd', 'cmdline']):
+            try:
+                ports = _get_listening_ports(proc)
+                if port not in ports:
+                    continue
+                cwd = proc.info.get('cwd') or ''
+                cmdline = ' '.join(proc.info.get('cmdline') or [])
+                if cwd == path_str or cwd.startswith(path_str + '/') or path_str in cmdline:
+                    return True
+            except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
+                continue
+    except Exception:
+        pass
+    return False
+
+
 def _scan_code_for_port(path: Path) -> Optional[int]:
-    """Scan source files for a configured port number."""
+    """Scan source entry-point files for a configured port number."""
     candidates = []
-    # Check common entry points first
     for name in ['main.py', 'app.py', 'server.py', 'run.py', 'manage.py',
                  'index.js', 'server.js', 'app.js']:
         f = path / name
@@ -59,7 +95,6 @@ def _scan_code_for_port(path: Path) -> Optional[int]:
                         candidates.append(p)
             except Exception:
                 pass
-    # Check .env
     env_file = path / '.env'
     if env_file.exists():
         try:
@@ -73,7 +108,6 @@ def _scan_code_for_port(path: Path) -> Optional[int]:
 
 
 def collect_service(path: Path, vibe_cfg: Optional[dict]) -> ServiceInfo:
-    # 1. Prefer explicit vibe.yaml config
     cfg_port = None
     cfg_process = None
     deploy_url = None
@@ -83,46 +117,28 @@ def collect_service(path: Path, vibe_cfg: Optional[dict]) -> ServiceInfo:
         cfg_process = svc.get('process')
         deploy_url = vibe_cfg.get('deploy', {}).get('url')
 
-    # 2. Auto-detect running processes for this project
-    procs = _find_project_processes(path)
-    detected_port = None
-    detected_name = None
-    is_running = False
+    # 1. Find processes in this project that are actually listening on ports
+    listening = _find_listening_procs(path)
+    if listening:
+        proc, ports = listening[0]
+        return ServiceInfo(
+            port=cfg_port or ports[0],
+            process_name=cfg_process or proc.name(),
+            is_running=True,
+            url=deploy_url,
+        )
 
-    if procs:
-        is_running = True
-        detected_name = procs[0].name()
-        for proc in procs:
-            ports = _get_listening_ports(proc)
-            if ports:
-                detected_port = ports[0]
-                break
+    # 2. Determine port from config or code scan
+    port = cfg_port or _scan_code_for_port(path)
+    if not port:
+        return ServiceInfo(url=deploy_url)
 
-    # 3. Fall back to code scan for port (useful even when not running)
-    code_port = _scan_code_for_port(path) if not detected_port and not cfg_port else None
-
-    port = cfg_port or detected_port or code_port
-    process_name = cfg_process or detected_name
-
-    # 4. If we have a port from config but no running process, check the port
-    if not is_running and port:
-        try:
-            for proc in psutil.process_iter(['connections']):
-                try:
-                    for conn in (proc.info.get('connections') or []):
-                        if hasattr(conn.laddr, 'port') and conn.laddr.port == port:
-                            is_running = True
-                            break
-                except (psutil.AccessDenied, psutil.NoSuchProcess):
-                    continue
-                if is_running:
-                    break
-        except Exception:
-            pass
+    # 3. Check if this port is owned by a process in this project
+    is_running = _port_owner_project(port, path)
 
     return ServiceInfo(
         port=port,
-        process_name=process_name,
+        process_name=cfg_process,
         is_running=is_running,
         url=deploy_url,
     )
