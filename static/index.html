@@ -215,7 +215,7 @@ body {
 .card-alert { border-color: var(--red) !important; box-shadow: 0 0 12px rgba(224,108,117,0.3); }
 
 /* Toast */
-#toast-container { position:fixed; bottom:24px; right:24px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
+#toast-container { position:fixed; bottom:24px; left:24px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
 .toast {
   background:#2a1a1a; border:1px solid var(--red); border-radius:6px;
   padding:10px 14px; font-size:13px; color:#e0e0e0; min-width:240px;
@@ -223,6 +223,36 @@ body {
 }
 .toast.toast-ok { background:#1a2a1a; border-color:var(--green); }
 @keyframes toast-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+/* Anomaly toggle */
+#anomaly-toggle {
+  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  background: #1e1e1e; border: 1px solid #444; border-radius: 8px;
+  cursor: pointer; user-select: none;
+}
+#anomaly-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; font-size: 13px; color: #ccc;
+}
+#anomaly-badge {
+  background: var(--red); color: #fff; border-radius: 10px;
+  font-size: 11px; font-weight: 700; padding: 1px 6px; min-width: 18px; text-align: center;
+}
+#anomaly-badge.ok { background: var(--green); }
+#anomaly-panel {
+  display: none; border-top: 1px solid #333;
+  max-height: 320px; overflow-y: auto; width: 320px;
+}
+#anomaly-panel.open { display: block; }
+.anomaly-item {
+  padding: 8px 14px; font-size: 12px; border-bottom: 1px solid #2a2a2a;
+  display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
+}
+.anomaly-item:hover { background: #252525; }
+.anomaly-item:last-child { border-bottom: none; }
+.anomaly-icon { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+.anomaly-title { color: #e0e0e0; font-weight: 500; }
+.anomaly-desc { color: #888; font-size: 11px; margin-top: 2px; }
 
 /* Tech stack tags */
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -724,6 +754,17 @@ body {
 
 <div id="toast-container"></div>
 
+<!-- Anomaly Toggle -->
+<div id="anomaly-toggle" onclick="toggleAnomalyPanel()">
+  <div id="anomaly-btn">
+    <span>⚠️ 异常</span>
+    <span id="anomaly-badge">0</span>
+  </div>
+  <div id="anomaly-panel">
+    <div id="anomaly-list"></div>
+  </div>
+</div>
+
 <!-- Import Modal -->
 <div id="import-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center">
   <div style="background:#1e1e1e;border:1px solid #333;border-radius:8px;padding:24px;width:480px;max-width:90vw">
@@ -916,6 +957,8 @@ async function loadProjects() {
     allProjects = await res.json();
     renderCards();
     renderGlobal();
+    anomalies = collectAnomalies(allProjects, wsStatusPrev.snapshot || {});
+    renderAnomalies();
     updateFilterCounts();
   } catch (e) {
     document.getElementById('project-grid').innerHTML =
@@ -1457,6 +1500,74 @@ function showToast(msg, ok = false) {
   setTimeout(() => el.remove(), 4000);
 }
 
+// ─── Anomaly Detection ────────────────────────────────────────────────────────
+let anomalies = [];  // {id, projectId, projectName, icon, title, desc}
+
+function collectAnomalies(projects, wsSnapshot = {}) {
+  const result = [];
+  for (const p of projects) {
+    const svc = p.service || {};
+    const git = p.git || {};
+    const docs = p.design_docs || [];
+
+    // 1. Service down (has port but not running)
+    const wsState = wsSnapshot[p.id];
+    const isRunning = wsState !== undefined ? wsState.is_running : svc.is_running;
+    if (svc.port && !isRunning) {
+      result.push({ id: `svc-${p.id}`, projectId: p.id, projectName: p.name,
+        icon: '🔴', title: `${p.name} 服务停止`, desc: `端口 ${svc.port} 无响应` });
+    }
+
+    // 2. Many uncommitted changes
+    const dirty = (git.dirty_files || []).length;
+    if (dirty >= 10) {
+      result.push({ id: `git-${p.id}`, projectId: p.id, projectName: p.name,
+        icon: '📝', title: `${p.name} 有大量未提交变更`, desc: `${dirty} 个文件未提交` });
+    }
+
+    // 3. Stale design docs
+    const staleDocs = docs.filter(d => d.possibly_stale);
+    if (staleDocs.length) {
+      result.push({ id: `docs-${p.id}`, projectId: p.id, projectName: p.name,
+        icon: '📄', title: `${p.name} 设计文档已过期`, desc: staleDocs.map(d => d.filename).join(', ') });
+    }
+
+    // 4. Active project, no commits in a month
+    if (p.status === 'active' && git.branch && git.monthly_commits === 0) {
+      result.push({ id: `idle-${p.id}`, projectId: p.id, projectName: p.name,
+        icon: '💤', title: `${p.name} 本月无提交`, desc: '活跃项目但近期无活动' });
+    }
+  }
+  return result;
+}
+
+function renderAnomalies() {
+  const badge = document.getElementById('anomaly-badge');
+  const list = document.getElementById('anomaly-list');
+  const toggle = document.getElementById('anomaly-toggle');
+
+  badge.textContent = anomalies.length;
+  badge.className = anomalies.length === 0 ? 'ok' : '';
+  toggle.style.borderColor = anomalies.length > 0 ? 'var(--red)' : '#444';
+
+  if (anomalies.length === 0) {
+    list.innerHTML = '<div style="padding:12px 14px;color:#666;font-size:12px">暂无异常 ✓</div>';
+  } else {
+    list.innerHTML = anomalies.map(a => `
+      <div class="anomaly-item" onclick="event.stopPropagation();openProject('${escHtml(a.projectId)}')">
+        <span class="anomaly-icon">${a.icon}</span>
+        <div>
+          <div class="anomaly-title">${escHtml(a.title)}</div>
+          <div class="anomaly-desc">${escHtml(a.desc)}</div>
+        </div>
+      </div>`).join('');
+  }
+}
+
+function toggleAnomalyPanel() {
+  document.getElementById('anomaly-panel').classList.toggle('open');
+}
+
 // ─── WebSocket Service Monitor ────────────────────────────────────────────────
 let wsStatusPrev = {};  // {project_id: is_running}
 
@@ -1497,6 +1608,11 @@ function connectStatusWs() {
     Object.entries(snapshot).forEach(([id, svc]) => {
       wsStatusPrev[id] = svc.is_running;
     });
+    wsStatusPrev.snapshot = snapshot;
+
+    // Refresh anomaly panel with latest service states
+    anomalies = collectAnomalies(allProjects, snapshot);
+    renderAnomalies();
   };
 
   ws.onclose = () => setTimeout(connectStatusWs, 5000);  // reconnect after 5s
