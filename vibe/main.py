@@ -13,6 +13,7 @@ def get_all_projects() -> list[dict]:
     from vibe.config import load_global_config
     from vibe.scanner import discover_projects
     from vibe.aggregator import collect_project
+    from vibe.models import ProjectInfo
 
     cfg = load_global_config()
     discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"])
@@ -23,14 +24,14 @@ def get_all_projects() -> list[dict]:
             info = collect_project(path, name=item["name"], vibe_cfg=item["vibe_config"])
             projects.append(info.model_dump())
         except Exception as e:
-            projects.append({
-                "id": path.name, "name": item["name"], "path": str(path),
-                "status": "active", "error": str(e),
-                "tech_stack": [], "features": [], "design_docs": [],
-                "git": None, "plans": None, "service": None,
-                "loc": None, "fs": None, "deploy": None,
-                "arch_summary": None, "description": None,
-            })
+            fallback = ProjectInfo(
+                id=path.name,
+                name=item["name"],
+                path=str(path),
+                status="active",
+                error=str(e),
+            )
+            projects.append(fallback.model_dump())
     return projects
 
 @api.get("/api/projects")

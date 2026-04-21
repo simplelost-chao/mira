@@ -112,3 +112,4 @@ class ProjectInfo(BaseModel):
     design_docs: list[DesignDoc] = []
     deploy: Optional[DeployInfo] = None
     arch_summary: Optional[str] = None  # from README ## 架构 section
+    error: Optional[str] = None
