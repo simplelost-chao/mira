@@ -73,9 +73,55 @@ def get_design_doc(project_id: str, filename: str):
             raise HTTPException(status_code=404, detail="Design doc not found")
     raise HTTPException(status_code=404, detail="Project not found")
 
+@api.post("/api/projects/{project_id}/summarize")
+def summarize_project_endpoint(project_id: str, force: bool = False):
+    """Generate and write AI summary for a single project."""
+    from vibe.summarizer import summarize_project
+    projects = get_all_projects()
+    for p in projects:
+        if p["id"] == project_id:
+            ok, msg = summarize_project(p, force=force)
+            if ok:
+                # Re-collect to include fresh summary
+                from vibe.aggregator import collect_project
+                from pathlib import Path as _Path
+                refreshed = collect_project(_Path(p["path"]), p["name"], None)
+                return {"status": "ok", "project": refreshed.model_dump()}
+            return {"status": msg}
+    raise HTTPException(status_code=404, detail="Project not found")
+
+
 @cli.callback()
 def main():
     """Vibe Manager — project dashboard CLI."""
+
+@cli.command("summarize")
+def summarize_cmd(
+    force: bool = typer.Option(False, "--force", help="Re-generate even if summary exists"),
+):
+    """Generate AI summaries for all discovered projects and write docs/vibe-summary.md."""
+    from vibe.config import load_global_config
+    from vibe.scanner import discover_projects
+    from vibe.aggregator import collect_project
+    from vibe.summarizer import summarize_project
+
+    cfg = load_global_config()
+    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"])
+    typer.echo(f"Found {len(discovered)} projects. Generating summaries...\n")
+
+    for item in discovered:
+        path = Path(item["path"])
+        name = item["name"]
+        try:
+            info = collect_project(path, name=name, vibe_cfg=item["vibe_config"])
+            ok, msg = summarize_project(info.model_dump(), force=force)
+            icon = "✓" if ok else ("⟳" if "skipped" in msg else "✗")
+            typer.echo(f"  {icon}  {name}: {msg}")
+        except Exception as e:
+            typer.echo(f"  ✗  {name}: error — {e}")
+
+    typer.echo("\nDone.")
+
 
 @cli.command("serve")
 def serve(

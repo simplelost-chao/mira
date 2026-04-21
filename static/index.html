@@ -962,7 +962,7 @@ function renderCard(p) {
         ${svcStatus}
       </div>
       ${tags.length ? `<div class="tag-row">
-        ${tags.map(t => `<span class="tag">${escHtml(t)}</span>`).join('')}
+        ${tags.map(t => `<span class="tag">${escHtml(t.name || t)}</span>`).join('')}
         ${moreCount > 0 ? `<span class="tag-more">+${moreCount}</span>` : ''}
       </div>` : ''}
     </div>
@@ -1053,10 +1053,20 @@ function renderProjectOverview(p) {
   let html = '';
 
   // Arch summary
+  const summaryBtnId = `btn-summarize-${p.id}`;
   if (p.arch_summary) {
     html += `<div class="section">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;">
+        架构概述
+        <button id="${summaryBtnId}" onclick="generateSummary('${p.id}')" style="font-size:11px;padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:#aaa;">↻ 重新生成</button>
+      </div>
+      <div class="arch-text" id="arch-text-${p.id}">${simpleMarkdown(p.arch_summary)}</div>
+    </div>`;
+  } else {
+    html += `<div class="section">
       <div class="section-title">架构概述</div>
-      <div class="arch-text">${escHtml(p.arch_summary)}</div>
+      <div style="color:#666;font-size:13px;margin-bottom:8px;">暂无总结</div>
+      <button id="${summaryBtnId}" onclick="generateSummary('${p.id}')" style="font-size:12px;padding:4px 12px;cursor:pointer;border:1px solid #4a7c59;border-radius:4px;background:#1e3a28;color:#7fc794;">✨ AI 生成总结</button>
     </div>`;
   }
 
@@ -1065,7 +1075,7 @@ function renderProjectOverview(p) {
     html += `<div class="section">
       <div class="section-title">技术栈</div>
       <div class="tag-row">
-        ${(p.tech_stack || []).map(t => `<span class="tag">${escHtml(t)}</span>`).join('')}
+        ${(p.tech_stack || []).map(t => `<span class="tag">${escHtml(t.name || t)}</span>`).join('')}
       </div>
     </div>`;
   }
@@ -1307,6 +1317,25 @@ function renderPlans(p) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeModal();
 });
+
+// ─── Generate Summary ─────────────────────────────────────────────────────────
+async function generateSummary(projectId) {
+  const btn = document.getElementById(`btn-summarize-${projectId}`);
+  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
+  try {
+    const res = await fetch(`/api/projects/${projectId}/summarize?force=true`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok' && data.project) {
+      // Update current project data and re-render overview
+      currentProject = data.project;
+      renderProjectOverview(currentProject);
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = '✗ 失败，重试'; }
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '✗ 失败，重试'; }
+  }
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadProjects();
