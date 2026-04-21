@@ -1,6 +1,7 @@
+import asyncio
 import typer
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -120,6 +121,48 @@ def summarize_project_endpoint(project_id: str, force: bool = False):
                 return {"status": "ok", "project": refreshed.model_dump()}
             raise HTTPException(status_code=500, detail=msg)
     raise HTTPException(status_code=404, detail="Project not found")
+
+
+def _check_service_statuses() -> dict:
+    """Lightweight port check for all discovered projects. Returns {project_id: {is_running, port}}."""
+    import psutil
+    from vibe.config import load_global_config
+    from vibe.scanner import discover_projects
+    from vibe.collectors.service import collect_service
+
+    cfg = load_global_config()
+    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"],
+                                   cfg.get("extra_projects"), cfg.get("excluded_paths"))
+    result = {}
+    for item in discovered:
+        p = Path(item["path"])
+        try:
+            svc = collect_service(p, item["vibe_config"])
+            result[p.name] = {"is_running": svc.is_running, "port": svc.port, "process_name": svc.process_name}
+        except Exception:
+            result[p.name] = {"is_running": False, "port": None, "process_name": None}
+    return result
+
+
+@api.websocket("/ws/status")
+async def ws_service_status(websocket: WebSocket):
+    """Push service status every 30s. Sends full snapshot on connect, then diffs."""
+    await websocket.accept()
+    prev: dict = {}
+    try:
+        while True:
+            current = await asyncio.get_event_loop().run_in_executor(None, _check_service_statuses)
+            # Compute changes
+            changes = {k: v for k, v in current.items()
+                       if k not in prev or prev[k]["is_running"] != v["is_running"]}
+            payload = {"snapshot": current, "changes": changes}
+            await websocket.send_json(payload)
+            prev = current
+            await asyncio.sleep(30)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
 
 
 @cli.callback()

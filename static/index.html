@@ -205,9 +205,24 @@ body {
   display: inline-block;
   flex-shrink: 0;
 }
-.svc-running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.svc-running { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse-green 2s infinite; }
 .svc-stopped { background: var(--red); }
 .svc-unknown { background: var(--text-muted); }
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 4px var(--green); }
+  50% { box-shadow: 0 0 10px var(--green); }
+}
+.card-alert { border-color: var(--red) !important; box-shadow: 0 0 12px rgba(224,108,117,0.3); }
+
+/* Toast */
+#toast-container { position:fixed; bottom:24px; right:24px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
+.toast {
+  background:#2a1a1a; border:1px solid var(--red); border-radius:6px;
+  padding:10px 14px; font-size:13px; color:#e0e0e0; min-width:240px;
+  animation: toast-in .2s ease; pointer-events:none;
+}
+.toast.toast-ok { background:#1a2a1a; border-color:var(--green); }
+@keyframes toast-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
 /* Tech stack tags */
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -707,6 +722,8 @@ body {
   <button class="refresh-btn" id="refresh-btn" onclick="loadProjects()">↻ 刷新</button>
 </div>
 
+<div id="toast-container"></div>
+
 <!-- Import Modal -->
 <div id="import-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center">
   <div style="background:#1e1e1e;border:1px solid #333;border-radius:8px;padding:24px;width:480px;max-width:90vw">
@@ -860,10 +877,11 @@ function statusBadge(status) {
   return `<span class="status-badge ${cls}">${escHtml(label)}</span>`;
 }
 
-function svcDot(svc) {
-  if (!svc) return '<span class="svc-dot svc-unknown"></span>';
-  if (svc.is_running) return '<span class="svc-dot svc-running"></span>';
-  return '<span class="svc-dot svc-stopped"></span>';
+function svcDot(svc, id) {
+  const attr = id ? ` data-svc-dot="${escHtml(id)}"` : '';
+  if (!svc) return `<span class="svc-dot svc-unknown"${attr}></span>`;
+  if (svc.is_running) return `<span class="svc-dot svc-running"${attr}></span>`;
+  return `<span class="svc-dot svc-stopped"${attr}></span>`;
 }
 
 function planPct(plans) {
@@ -970,12 +988,12 @@ function renderCard(p) {
   const moreCount = (p.tech_stack || []).length - 4;
 
   const svcStatus = svc.port
-    ? `${svcDot(svc)} <span>:${svc.port}</span>`
-    : `${svcDot(null)} <span>无服务</span>`;
+    ? `${svcDot(svc, p.id)} <span>:${svc.port}</span>`
+    : `${svcDot(null, p.id)} <span>无服务</span>`;
 
   const dLabel = deployLabel(deploy);
 
-  return `<div class="project-card" onclick="openProject('${escHtml(p.id)}')">
+  return `<div class="project-card" data-project-id="${escHtml(p.id)}" onclick="openProject('${escHtml(p.id)}')">
     <div class="card-header">
       <span class="card-name">${escHtml(p.name)}</span>
       ${statusBadge(p.status)}
@@ -1022,8 +1040,8 @@ function renderGlobal() {
     const plans = p.plans || {};
     const pct = planPct(plans);
     const svcCell = svc.port
-      ? `${svcDot(svc)} :${escHtml(String(svc.port))}`
-      : `${svcDot(null)} —`;
+      ? `${svcDot(svc, p.id)} :${escHtml(String(svc.port))}`
+      : `${svcDot(null, p.id)} —`;
 
     const dLabel = deployLabel(p.deploy);
     return `<tr onclick="openProject('${escHtml(p.id)}')" style="cursor:pointer">
@@ -1430,8 +1448,63 @@ async function deleteCurrentProject() {
   }
 }
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function showToast(msg, ok = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (ok ? ' toast-ok' : '');
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ─── WebSocket Service Monitor ────────────────────────────────────────────────
+let wsStatusPrev = {};  // {project_id: is_running}
+
+function connectStatusWs() {
+  const ws = new WebSocket(`ws://${location.host}/ws/status`);
+
+  ws.onmessage = (e) => {
+    const { snapshot, changes } = JSON.parse(e.data);
+
+    // Update dot indicators on all visible cards without full re-render
+    Object.entries(snapshot).forEach(([id, svc]) => {
+      const dot = document.querySelector(`[data-svc-dot="${id}"]`);
+      if (dot) {
+        dot.className = 'svc-dot ' + (svc.is_running ? 'svc-running' : 'svc-stopped');
+      }
+      // Update card alert border
+      const card = document.querySelector(`[data-project-id="${id}"]`);
+      if (card) {
+        card.classList.toggle('card-alert', !svc.is_running && wsStatusPrev[id] === true);
+      }
+    });
+
+    // Toast on state changes (skip first snapshot)
+    if (Object.keys(wsStatusPrev).length > 0) {
+      Object.entries(changes).forEach(([id, svc]) => {
+        const prev = wsStatusPrev[id];
+        if (prev === undefined) return;  // newly discovered, skip
+        const name = allProjects.find(p => p.id === id)?.name || id;
+        if (!svc.is_running && prev === true) {
+          showToast(`⚠️ ${name} 服务已停止 (port ${svc.port || '?'})`);
+        } else if (svc.is_running && prev === false) {
+          showToast(`✅ ${name} 服务已恢复 (port ${svc.port})`, true);
+        }
+      });
+    }
+
+    // Save prev state
+    Object.entries(snapshot).forEach(([id, svc]) => {
+      wsStatusPrev[id] = svc.is_running;
+    });
+  };
+
+  ws.onclose = () => setTimeout(connectStatusWs, 5000);  // reconnect after 5s
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadProjects();
+connectStatusWs();
 </script>
 </body>
 </html>
