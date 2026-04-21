@@ -32,9 +32,12 @@ def _find_listening_procs(path: Path) -> list[tuple[psutil.Process, list[int]]]:
                 continue
             cwd = proc.info.get('cwd') or ''
             cmdline = ' '.join(proc.info.get('cmdline') or [])
+            # Only match cwd OR the script/executable itself being inside the project.
+            # Don't match on arbitrary arguments (e.g. --voice_refs /project/...)
+            script = next((a for a in (proc.info.get('cmdline') or []) if a.endswith('.py') or a.endswith('.js')), '')
             in_project = (
                 (cwd == path_str or cwd.startswith(path_str + '/')) or
-                (path_str in cmdline)
+                script.startswith(path_str + '/')
             )
             if not in_project:
                 continue
@@ -69,7 +72,8 @@ def _port_owner_project(port: int, path: Path) -> bool:
                     continue
                 cwd = proc.info.get('cwd') or ''
                 cmdline = ' '.join(proc.info.get('cmdline') or [])
-                if cwd == path_str or cwd.startswith(path_str + '/') or path_str in cmdline:
+                script = next((a for a in (proc.info.get('cmdline') or []) if a.endswith('.py') or a.endswith('.js')), '')
+                if cwd == path_str or cwd.startswith(path_str + '/') or script.startswith(path_str + '/'):
                     return True
             except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
                 continue
