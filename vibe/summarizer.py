@@ -1,6 +1,4 @@
-"""AI-powered project summarizer using OpenRouter API."""
-import time
-import json
+"""AI-powered project summarizer using local Ollama."""
 from pathlib import Path
 from typing import Optional
 
@@ -96,30 +94,18 @@ def _build_prompt(project_data: dict) -> str:
 只输出上述内容，不要解释，不要废话。"""
 
 
-def generate_summary(project_data: dict, model: str = "google/gemma-4-26b-a4b-it:free") -> tuple[Optional[str], Optional[str]]:
-    """Call OpenRouter API to generate a project summary. Returns (text, error)."""
+def generate_summary(project_data: dict, model: str = "qwen2.5:7b") -> tuple[Optional[str], Optional[str]]:
+    """Call local Ollama API to generate a project summary. Returns (text, error)."""
     try:
         import httpx
-        from vibe.config import load_global_config
-        cfg = load_global_config()
-        api_key = cfg.get("openrouter_api_key")
-        if not api_key:
-            return None, "openrouter_api_key not set in ~/.vibe.yaml"
-
         prompt = _build_prompt(project_data)
-        for attempt in range(3):
-            resp = httpx.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "max_tokens": 1024, "messages": [{"role": "user", "content": prompt}]},
-                timeout=60,
-            )
-            if resp.status_code == 429:
-                time.sleep(5 * (attempt + 1))
-                continue
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"].strip(), None
-        return None, "rate limited after 3 attempts"
+        resp = httpx.post(
+            "http://localhost:11434/api/chat",
+            json={"model": model, "stream": False, "messages": [{"role": "user", "content": prompt}]},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        return resp.json()["message"]["content"].strip(), None
     except Exception as e:
         return None, str(e)
 
