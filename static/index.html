@@ -2784,6 +2784,113 @@ document.getElementById('summary-tbody').addEventListener('click', e => {
   window.location.href = '/projects/' + row.dataset.projectId;
 });
 
+// ─── Chat Agent ───────────────────────────────────────────────────────────────
+let chatHistory = [];
+let chatOpen = false;
+let chatAlertsLoaded = false;
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  document.getElementById('chat-panel').classList.toggle('open', chatOpen);
+  document.getElementById('chat-fab').style.display = chatOpen ? 'none' : '';
+  if (chatOpen) {
+    if (!chatAlertsLoaded) { chatAlertsLoaded = true; _loadAlerts(); }
+    setTimeout(() => document.getElementById('chat-input').focus(), 260);
+  }
+}
+
+async function _loadAlerts() {
+  try {
+    const res = await fetch('/api/alerts');
+    const {alerts} = await res.json();
+    if (alerts.length) {
+      const el = document.createElement('div');
+      el.className = 'chat-msg alert';
+      el.textContent = '⚠ Mira 注意到：\n' + alerts.join('\n');
+      document.getElementById('chat-messages').appendChild(el);
+    }
+  } catch(_) {}
+}
+
+function _appendChatMsg(role, text) {
+  const el = document.createElement('div');
+  el.className = `chat-msg ${role}`;
+  el.textContent = text;
+  document.getElementById('chat-messages').appendChild(el);
+  document.getElementById('chat-messages').scrollTop = 999999;
+  return el;
+}
+
+function _appendToolExec(command, output) {
+  const el = document.createElement('div');
+  el.className = 'chat-tool-exec';
+  el.innerHTML =
+    `<div class="chat-tool-cmd">$ ${escHtml(command)}</div>` +
+    `<div class="chat-tool-out">${escHtml(output)}</div>`;
+  document.getElementById('chat-messages').appendChild(el);
+  document.getElementById('chat-messages').scrollTop = 999999;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send');
+  const text = input.value.trim();
+  if (!text || sendBtn.disabled) return;
+  input.value = '';
+  sendBtn.disabled = true;
+
+  _appendChatMsg('user', text);
+  const botEl = _appendChatMsg('assistant', '▍');
+  let fullText = '';
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text, history: chatHistory}),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const parts = buf.split('\n\n');
+      buf = parts.pop() ?? '';
+      for (const part of parts) {
+        if (!part.startsWith('data: ')) continue;
+        let data;
+        try { data = JSON.parse(part.slice(6)); } catch(_) { continue; }
+        if (data.type === 'token') {
+          fullText += data.content;
+          botEl.textContent = fullText + '▍';
+          document.getElementById('chat-messages').scrollTop = 999999;
+        } else if (data.type === 'tool_exec') {
+          _appendToolExec(data.command, data.output);
+        } else if (data.type === 'error') {
+          botEl.textContent = data.content;
+          botEl.style.color = 'var(--red)';
+        } else if (data.type === 'done') {
+          botEl.textContent = fullText;
+        }
+      }
+    }
+    botEl.textContent = fullText || botEl.textContent.replace('▍', '');
+    chatHistory.push({role: 'user', content: text});
+    chatHistory.push({role: 'assistant', content: fullText});
+  } catch(e) {
+    botEl.textContent = '连接失败：' + e.message;
+    botEl.style.color = 'var(--red)';
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadProjects();
 loadInfraServices();
