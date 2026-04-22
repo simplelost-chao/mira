@@ -433,7 +433,7 @@ body {
 }
 .card-claude-meta { flex: 1; }
 .ccm-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
-.ccm-lbl { flex: 1; font-size: 8px; color: #2d3555; letter-spacing: 1px; text-transform: uppercase; }
+.ccm-lbl { flex: 1; font-size: 8px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
 .ccm-val { flex: 1; font-size: 11px; font-weight: 600; color: #4a5060; }
 .card-spark15 {
   display: flex; gap: 2px; align-items: flex-end; height: 44px; flex-shrink: 0;
@@ -1983,7 +1983,7 @@ function renderCard(p) {
     <div class="card-git-spark">
       <code>${escHtml(git.branch || '—')}</code>
       <code>${escHtml((git.commit_hash || '').slice(0, 7) || '—')}</code>
-      <span style="margin-left:auto;font-size:10px;color:#2d3555">↑${git.monthly_commits || 0}/月</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">↑${git.monthly_commits || 0}/月</span>
     </div>`;
 
   // ── Claude mini block (option B) ─────────────────────────
