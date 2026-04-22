@@ -128,6 +128,24 @@
   --font-mono: 'Ark Pixel Font', monospace;
 }
 
+/* ── pixel-cyber: sharp edges + mosaic grid ────────────────────────────── */
+[data-theme="pixel-cyber"] * {
+  border-radius: 0 !important;
+}
+[data-theme="pixel-cyber"] body {
+  background-image:
+    linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+[data-theme="pixel-cyber"] .card {
+  box-shadow: 2px 2px 0 var(--border), inset 0 0 0 1px rgba(0,212,255,0.08);
+}
+[data-theme="pixel-cyber"] .refresh-btn,
+[data-theme="pixel-cyber"] .skin-btn {
+  box-shadow: 2px 2px 0 var(--accent);
+}
+
 body {
   background: var(--bg);
   color: var(--text);
