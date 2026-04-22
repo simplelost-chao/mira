@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mira</title>
 <style>
+@font-face {
+  font-family: 'Zpix';
+  src: url('https://cdn.jsdelivr.net/npm/zpix-font/dist/Zpix.woff2') format('woff2'),
+       url('https://cdn.jsdelivr.net/npm/zpix-font/dist/Zpix.ttf') format('truetype');
+  font-display: swap;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -28,6 +35,8 @@
   --card-deep: #0d1117;
   --text-deep: #3d4460;
   --border-subtle-rgb: 45,49,72;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', Consolas, monospace;
 }
 
 [data-theme="default"] {
@@ -51,6 +60,8 @@
   --yellow: #facc15;
   --card-deep: #0d1117;
   --border-subtle-rgb: 45,49,72;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', Consolas, monospace;
 }
 
 [data-theme="neon-pixel"] {
@@ -74,12 +85,14 @@
   --yellow: #ffff00;
   --card-deep: #080808;
   --border-subtle-rgb: 0,255,0;
+  --font-ui: 'Zpix', 'Ark Pixel Font', monospace;
+  --font-mono: 'Zpix', 'Ark Pixel Font', monospace;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
   min-height: 100vh;
@@ -254,7 +267,7 @@ body {
   background: rgba(255,255,255,0.05);
   padding: 1px 5px;
   border-radius: 3px;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -312,13 +325,13 @@ body {
 .card-domain-dot.off { background: var(--border); box-shadow: none; }
 .card-domain-url {
   font-size: 12px; color: var(--accent-light); font-weight: 600; flex: 1;
-  text-decoration: none; font-family: 'SF Mono', Consolas, monospace;
+  text-decoration: none; font-family: var(--font-mono);
 }
 .card-domain-url:hover { text-decoration: underline; }
-.card-domain-nourl { font-size: 12px; color: var(--text-deep); flex: 1; font-family: 'SF Mono', Consolas, monospace; }
+.card-domain-nourl { font-size: 12px; color: var(--text-deep); flex: 1; font-family: var(--font-mono); }
 .card-domain-meta { font-size: 10px; color: #4a5060; white-space: nowrap; }
 .card-port-badge {
-  font-size: 11px; color: #64748b; font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px; color: #64748b; font-family: var(--font-mono);
   background: rgba(100,116,139,.12); border: 1px solid rgba(100,116,139,.2);
   border-radius: 4px; padding: 1px 6px; white-space: nowrap; flex-shrink: 0;
   text-decoration: none; transition: all .15s;
@@ -346,7 +359,7 @@ body {
 .card-git-spark code {
   font-size: 10px; background: rgba(255,255,255,.04);
   padding: 1px 5px; border-radius: 3px; color: #4a5060;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .card-spark {
   display: flex; gap: 2px; align-items: flex-end;
@@ -576,7 +589,7 @@ body {
 .modal-path {
   font-size: 12px;
   color: var(--text-muted);
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .modal-close {
   background: none;
@@ -860,7 +873,7 @@ body {
 .ov-git-items { display: flex; flex-direction: column; gap: 6px; }
 .ov-git-kv { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
 .ov-git-kv .k { color: var(--text-muted); }
-.ov-git-kv .v { color: var(--text); font-family: 'SF Mono', Consolas, monospace; }
+.ov-git-kv .v { color: var(--text); font-family: var(--font-mono); }
 .ov-lang-list { display: flex; flex-direction: column; gap: 5px; }
 .ov-lang-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
 .ov-lang-name { width: 70px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -872,10 +885,10 @@ body {
 .git-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .git-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .git-item .key { color: var(--text-muted); }
-.git-item .val { color: var(--text); font-family: 'SF Mono', Consolas, monospace; }
+.git-item .val { color: var(--text); font-family: var(--font-mono); }
 .dirty-files { margin-top: 8px; }
 .dirty-file {
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 2px 0;
 }
@@ -897,7 +910,7 @@ body {
   color: var(--text-sec);
 }
 .commit-hash {
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--accent);
   flex-shrink: 0;
@@ -927,7 +940,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 14px;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--green-dim);
   white-space: pre-wrap;
@@ -1044,7 +1057,7 @@ body {
   background: rgba(255,255,255,0.07);
   padding: 1px 5px;
   border-radius: 3px;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: #c4b5fd;
 }
@@ -1093,7 +1106,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--green-dim);
 }
@@ -1124,7 +1137,7 @@ body {
   font-weight: 600;
   color: var(--text);
   margin-bottom: 8px;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .plan-progress-row {
   display: flex;
@@ -1398,7 +1411,7 @@ body {
 .chat-tool-exec {
   align-self: flex-start; max-width: 100%; width: 100%;
   background: var(--card-deep); border-radius: 8px; padding: 10px 12px;
-  font-size: 11px; font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px; font-family: var(--font-mono);
   border: 1px solid #1e2533;
 }
 .chat-tool-cmd { color: var(--green-dim); margin-bottom: 5px; }
