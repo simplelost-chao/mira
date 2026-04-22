@@ -29,8 +29,9 @@ _alerts: list[str] = []
 _AGENT_MODEL = "qwen2.5:7b"
 
 _DANGEROUS_PATTERNS = [
-    "rm -rf /", ":(){ :|:& };:", "mkfs", "dd if=/dev/zero",
-    "DROP TABLE", "DROP DATABASE", "> /dev/sda",
+    "rm -rf /", "rm -rf ~", ":(){ :|:& };:", "mkfs", "dd if=/dev/zero",
+    "> /dev/sd", "curl | bash", "wget | sh", "curl|bash", "wget|sh",
+    "chmod 777 /",
 ]
 
 _SHELL_TOOL = {
@@ -76,8 +77,9 @@ def _build_system_prompt(projects: list[dict]) -> str:
 
 def _run_shell(command: str, working_dir: str = "~") -> str:
     import subprocess, os
+    normalized = " ".join(command.split()).lower()
     for pattern in _DANGEROUS_PATTERNS:
-        if pattern.lower() in command.lower():
+        if pattern.lower() in normalized:
             return f"[拒绝执行] 包含危险操作：{pattern}"
     cwd = os.path.expanduser(working_dir)
     try:
@@ -106,11 +108,14 @@ def _check_anomalies(projects: list[dict]) -> None:
         if svc.get("port") and not svc.get("is_running"):
             new_alerts.append(f"{p['name']} 服务应运行在 :{svc['port']} 但当前未运行")
         git = p.get("git") or {}
-        if git.get("monthly_commits", 1) == 0:
+        monthly = git.get("monthly_commits")
+        if monthly is not None and monthly == 0:
             new_alerts.append(f"{p['name']} 本月没有新提交")
-    if new_alerts:
-        ts = datetime.now().strftime("%H:%M")
-        _alerts.extend(f"[{ts}] {a}" for a in new_alerts)
+    ts = datetime.now().strftime("%H:%M")
+    _alerts.clear()
+    _alerts.extend(f"[{ts}] {a}" for a in new_alerts)
+    if len(_alerts) > 50:
+        del _alerts[:-50]
 
 
 def _collect_one(item: dict) -> dict:
