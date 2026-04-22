@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vibe Manager</title>
+<title>Mira</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -79,9 +79,6 @@ body {
 .refresh-btn:hover { background: var(--accent); color: #fff; }
 .refresh-btn.loading { opacity: 0.6; cursor: default; }
 
-/* MAIN TABS */
-.tab-panel { display: none; padding: 24px; }
-.tab-panel.active { display: block; }
 
 /* FILTER BAR */
 .filter-bar {
@@ -103,6 +100,16 @@ body {
 }
 .filter-btn:hover { border-color: var(--accent); color: var(--text); }
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.trend-tab { font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all .15s; }
+.trend-tab:hover { border-color:var(--accent);color:var(--text); }
+.trend-tab.active { background:var(--accent);border-color:var(--accent);color:#fff; }
+.trend-card { background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:border-color .15s; }
+.trend-card:hover { border-color:rgba(129,140,248,.4); }
+.trend-card-title { font-size:13px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px; }
+.trend-card-desc { font-size:11px;color:var(--text-muted);line-height:1.5;flex:1; }
+.trend-card-meta { display:flex;gap:12px;align-items:center;font-size:10px;color:#3d4460;margin-top:2px; }
+.trend-card-lang { display:flex;align-items:center;gap:4px; }
+.trend-lang-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
 .filter-count {
   margin-left: 4px;
   font-size: 11px;
@@ -120,44 +127,69 @@ body {
 .project-card {
   background: var(--card);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
   border-radius: 12px;
-  padding: 18px;
+  overflow: hidden;
   cursor: pointer;
   transition: all 0.2s;
 }
 .project-card:hover {
   border-color: var(--accent);
+  border-left-color: var(--accent);
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(79,70,229,0.15);
+}
+.project-card.card-running {
+  border-left-color: var(--green);
+}
+.project-card.card-running:hover {
+  border-left-color: var(--green);
 }
 .card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 8px;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid rgba(45,49,72,0.6);
 }
 .card-name {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text);
 }
 .status-badge {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.status-active { background: rgba(34,197,94,0.15); color: var(--green); }
-.status-paused { background: rgba(251,146,60,0.15); color: var(--orange); }
-.status-done { background: rgba(168,85,247,0.15); color: var(--purple); }
-.status-unknown { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+.status-active { background: rgba(34,197,94,0.12); color: var(--green); }
+.status-paused { background: rgba(251,146,60,0.12); color: var(--orange); }
+.status-done { background: rgba(168,85,247,0.12); color: var(--purple); }
+.status-unknown { background: rgba(100,116,139,0.12); color: var(--text-muted); }
+.status-badge-clickable { cursor: pointer; user-select: none; }
+.status-badge-clickable:hover { filter: brightness(1.2); }
+.status-dropdown-wrap { position: relative; }
+.status-menu {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 300;
+  background: #0e1422; border: 1px solid rgba(255,255,255,.12); border-radius: 6px;
+  overflow: hidden; min-width: 90px; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+.status-menu.open { display: block; }
+.status-opt {
+  padding: 7px 12px; font-size: 11px; cursor: pointer; color: var(--text-sec);
+  transition: background .1s;
+}
+.status-opt:hover { background: rgba(255,255,255,.06); color: var(--text); }
+.status-opt.selected { color: var(--accent); }
 
 .card-meta {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  padding: 11px 16px 13px;
 }
 .card-row {
   display: flex;
@@ -166,13 +198,13 @@ body {
   font-size: 12px;
   color: var(--text-sec);
 }
-.card-row .label { color: var(--text-muted); min-width: 56px; }
 .card-row code {
   background: rgba(255,255,255,0.05);
   padding: 1px 5px;
   border-radius: 3px;
   font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* Progress bar */
@@ -180,22 +212,23 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 4px 0;
 }
 .progress-bar {
   flex: 1;
-  height: 5px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 3px;
+  height: 3px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
   overflow: hidden;
 }
 .progress-fill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: 2px;
   background: linear-gradient(90deg, var(--accent), #818cf8);
   transition: width 0.3s;
 }
-.progress-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.progress-label { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+
+.card-divider { height: 1px; background: rgba(45,49,72,0.5); margin: 2px 0; }
 
 /* Service dot */
 .svc-dot {
@@ -213,6 +246,132 @@ body {
   50% { box-shadow: 0 0 10px var(--green); }
 }
 .card-alert { border-color: var(--red) !important; box-shadow: 0 0 12px rgba(224,108,117,0.3); }
+
+/* ── C1 card layout ─────────────────────────────────────── */
+.card-domain {
+  margin: 10px 14px 0; padding: 8px 11px; border-radius: 7px;
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.14);
+}
+.card-domain-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 5px var(--green); flex-shrink: 0;
+}
+.card-domain-dot.off { background: #2d3148; box-shadow: none; }
+.card-domain-url {
+  font-size: 12px; color: #818cf8; font-weight: 600; flex: 1;
+  text-decoration: none; font-family: 'SF Mono', Consolas, monospace;
+}
+.card-domain-url:hover { text-decoration: underline; }
+.card-domain-nourl { font-size: 12px; color: #3d4460; flex: 1; font-family: 'SF Mono', Consolas, monospace; }
+.card-domain-meta { font-size: 10px; color: #4a5060; white-space: nowrap; }
+.card-port-badge {
+  font-size: 11px; color: #64748b; font-family: 'SF Mono', Consolas, monospace;
+  background: rgba(100,116,139,.12); border: 1px solid rgba(100,116,139,.2);
+  border-radius: 4px; padding: 1px 6px; white-space: nowrap; flex-shrink: 0;
+  text-decoration: none; transition: all .15s;
+}
+.card-port-badge:hover { color: var(--accent); border-color: var(--accent); background: rgba(79,70,229,.1); }
+
+.card-stat-grid {
+  display: flex; margin: 8px 14px 0;
+  border: 1px solid rgba(255,255,255,.06); border-radius: 7px; overflow: hidden;
+}
+.card-stat {
+  flex: 1; padding: 7px 6px; text-align: center;
+  border-right: 1px solid rgba(255,255,255,.06);
+}
+.card-stat:last-child { border-right: none; }
+.card-sv { font-size: 13px; font-weight: 700; color: var(--text); }
+.card-sl { font-size: 8px; color: #3d4460; letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+.card-sv-purple { color: #818cf8; }
+.card-sl-purple { color: #3d3060; }
+
+.card-git-spark {
+  display: flex; align-items: center; gap: 8px;
+  margin: 7px 14px 0; font-size: 10px;
+}
+.card-git-spark code {
+  font-size: 10px; background: rgba(255,255,255,.04);
+  padding: 1px 5px; border-radius: 3px; color: #4a5060;
+  font-family: 'SF Mono', Consolas, monospace;
+}
+.card-spark {
+  display: flex; gap: 2px; align-items: flex-end;
+  margin-left: auto; height: 22px;
+}
+.card-spark-bar { width: 9px; border-radius: 1px; background: #1a2035; }
+.card-spark-bar.on { background: #4f46e5; }
+
+/* Claude mini block */
+.card-claude-mini {
+  margin: 7px 14px 0; padding: 8px 11px; border-radius: 7px;
+  background: rgba(79,70,229,.04); border: 1px solid rgba(79,70,229,.1);
+  display: flex; align-items: center; gap: 10px;
+}
+.card-claude-meta { flex: 1; }
+.ccm-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+.ccm-lbl { flex: 1; font-size: 8px; color: #2d3555; letter-spacing: 1px; text-transform: uppercase; }
+.ccm-val { flex: 1; font-size: 11px; font-weight: 600; color: #4a5060; }
+.card-spark15 {
+  display: flex; gap: 2px; align-items: flex-end; height: 44px; flex-shrink: 0;
+}
+.card-spark15-bar { width: 7px; border-radius: 1px 1px 0 0; background: #1e2538; min-height: 2px; }
+.card-spark15-bar.on { background: #818cf8; }
+.card-spark15-bar.hi { background: #a78bfa; }
+
+.card-footer-new {
+  padding: 9px 14px 13px; margin-top: 8px;
+  border-top: 1px solid rgba(255,255,255,.04);
+}
+.card-footer-row {
+  display: flex; flex-wrap: nowrap; gap: 4px;
+  min-height: 20px; align-items: center; overflow: hidden;
+}
+.card-footer-row + .card-footer-row { margin-top: 5px; }
+.card-svc-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; padding: 2px 7px; border-radius: 4px;
+}
+.card-svc-pill.on {
+  background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.15); color: #4a6a5a;
+}
+.card-svc-pill.off {
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); color: #334155;
+}
+.card-svc-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.card-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  background: rgba(255,255,255,.05); color: #64748b;
+  white-space: nowrap;
+}
+.card-tag-more {
+  font-size: 10px; padding: 1px 7px; border-radius: 3px;
+  background: rgba(255,255,255,.05); color: #94a3b8;
+  white-space: nowrap; cursor: default; position: relative;
+}
+.card-tag-more:hover .tag-more-tooltip {
+  display: block;
+}
+.tag-more-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e2535;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: none;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: max-content;
+  max-width: 200px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.card-tag-more:hover .tag-more-tooltip { display: flex; }
 
 /* Toast */
 #toast-container { position:fixed; bottom:24px; left:24px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
@@ -268,23 +427,37 @@ body {
 
 /* GLOBAL TAB */
 .kpi-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
+  display: flex;
+  gap: 10px;
   margin-bottom: 24px;
 }
 .kpi-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
+  padding: 22px 22px;
+  display: flex;
+  align-items: center;
+  gap: 0;
 }
-.kpi-label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
-.kpi-value { font-size: 28px; font-weight: 700; }
+.kpi-accent-bar {
+  width: 3px;
+  border-radius: 2px;
+  align-self: stretch;
+  flex-shrink: 0;
+  margin-right: 14px;
+}
+.kpi-inner { display: flex; gap: 18px; align-items: center; }
+.kpi-stat { display: flex; flex-direction: column; gap: 4px; }
+.kpi-vdiv { width: 1px; background: rgba(255,255,255,.06); align-self: stretch; }
+.kpi-label { font-size: 10px; color: var(--text-muted); letter-spacing: .3px; }
+.kpi-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 .kpi-green { color: var(--green); }
 .kpi-orange { color: var(--orange); }
 .kpi-accent { color: var(--accent); }
 .kpi-yellow { color: var(--yellow); }
+.kpi-purple { color: var(--purple); }
+.kpi-muted { color: #94a3b8; }
 
 .summary-table {
   width: 100%;
@@ -354,9 +527,6 @@ body {
   font-family: 'SF Mono', Consolas, monospace;
 }
 .modal-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
   background: none;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -369,6 +539,7 @@ body {
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 .modal-close:hover { background: rgba(239,68,68,0.1); border-color: var(--red); color: var(--red); }
 
@@ -397,6 +568,16 @@ body {
   flex: 1;
   overflow-y: auto;
 }
+.modal-footer {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  background: #0e1114;
+  border-radius: 0 0 12px 12px;
+  min-height: 44px;
+}
+#delete-init-btn:hover { border-color: #7a3030; color: #c06060; }
 .modal-tab-content { display: none; }
 .modal-tab-content.active { display: block; }
 
@@ -415,12 +596,225 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-/* ARCH SUMMARY */
+/* ── OVERVIEW HERO ─────────────────────────────────────────────── */
+.ov-hero {
+  background: linear-gradient(135deg, #141a1f 0%, #1a1f2a 100%);
+  border: 1px solid #2a3040;
+  border-radius: 10px;
+  padding: 20px 22px;
+  margin-bottom: 18px;
+  position: relative;
+}
+.ov-hero-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.ov-hero-oneliner {
+  font-size: 13px;
+  color: var(--text-sec);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.ov-hero-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ov-badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  border: 1px solid;
+  font-weight: 500;
+}
+.ov-badge-running { background: rgba(82,196,105,.12); border-color: rgba(82,196,105,.35); color: #52c469; }
+.ov-badge-stopped { background: rgba(224,108,117,.1); border-color: rgba(224,108,117,.3); color: #e06c75; }
+.ov-badge-deploy  { background: rgba(97,175,239,.1); border-color: rgba(97,175,239,.3); color: #61afef; }
+.ov-badge-status  { background: rgba(255,255,255,.06); border-color: #333; color: #aaa; }
+.ov-regen-btn {
+  position: absolute; top: 16px; right: 16px;
+  font-size: 11px; padding: 3px 10px; cursor: pointer;
+  border: 1px solid #333; border-radius: 4px;
+  background: #1e1e1e; color: #777;
+}
+.ov-regen-btn:hover { border-color: #555; color: #aaa; }
+
+/* ── TWO-COLUMN LAYOUT ─────────────────────────────────────────── */
+.ov-cols {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 16px;
+  margin-bottom: 18px;
+  align-items: start;
+}
+@media (max-width: 700px) { .ov-cols { grid-template-columns: 1fr; } }
+
+/* ── ARCH MARKDOWN ─────────────────────────────────────────────── */
 .arch-text {
   font-size: 13px;
   color: var(--text-sec);
-  line-height: 1.7;
+  line-height: 1.75;
+  background: #111418;
+  border: 1px solid #1e2530;
+  border-radius: 8px;
+  padding: 16px 18px;
 }
+.arch-text h1,.arch-text h2,.arch-text h3 {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--text-muted);
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #1e2530;
+}
+.arch-text h1:first-child,.arch-text h2:first-child,.arch-text h3:first-child { margin-top: 0; }
+.arch-text p { margin: 0 0 8px; }
+.arch-text ul { margin: 4px 0 8px 16px; padding: 0; }
+.arch-text li { margin-bottom: 3px; }
+.arch-text strong { color: #c8ccd4; }
+.arch-text code { background:#1a1a1a; border:1px solid #2a2a2a; border-radius:3px; padding:1px 5px; font-size:11px; color:#61afef; }
+.arch-text pre { background:#0e1114; border:1px solid #2a2a2a; border-radius:6px; padding:10px 12px; overflow-x:auto; }
+.arch-text pre code { background:none; border:none; padding:0; }
+
+/* ── TECH STACK PANEL ──────────────────────────────────────────── */
+.ov-tech-panel {
+  background: #111418;
+  border: 1px solid #1e2530;
+  border-radius: 8px;
+  padding: 14px 15px;
+}
+.ov-tech-panel-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.ov-tech-group { margin-bottom: 10px; }
+.ov-tech-group-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: #444;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+.ov-tech-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.ov-tech-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid;
+  line-height: 1.4;
+}
+.pill-lang   { background:rgba(97,175,239,.1);  border-color:rgba(97,175,239,.25);  color:#61afef; }
+.pill-db     { background:rgba(229,192,123,.1);  border-color:rgba(229,192,123,.25); color:#e5c07b; }
+.pill-ai     { background:rgba(198,120,221,.1);  border-color:rgba(198,120,221,.25); color:#c678dd; }
+.pill-web    { background:rgba(82,196,105,.1);   border-color:rgba(82,196,105,.25);  color:#52c469; }
+.pill-infra  { background:rgba(255,255,255,.07); border-color:#2a2a2a;               color:#888; }
+
+/* ── SERVICE MAP ───────────────────────────────────────────────── */
+.ov-svc-map {
+  background: #0e1114;
+  border: 1px solid #1e2530;
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+.ov-svc-map-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+.ov-svc-flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+.ov-svc-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ov-svc-node-box {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1.5px solid;
+  white-space: nowrap;
+}
+.ov-svc-node-box.self  { background:rgba(97,175,239,.12); border-color:rgba(97,175,239,.4); color:#61afef; }
+.ov-svc-node-box.ext   { background:#141a1f; border-color:#2a3040; color:#aaa; }
+.ov-svc-node-box.ext.shared { border-color:rgba(165,180,252,.35); color:#a5b4fc; }
+.ov-svc-node-meta { font-size: 10px; color: #555; }
+.ov-svc-arrow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: #333;
+  font-size: 16px;
+}
+.ov-svc-shared-badge {
+  font-size: 9px;
+  background: rgba(165,180,252,.1);
+  border: 1px solid rgba(165,180,252,.25);
+  color: #a5b4fc;
+  border-radius: 10px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* ── BOTTOM DATA ROW ───────────────────────────────────────────── */
+.ov-data-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+@media (max-width: 700px) { .ov-data-row { grid-template-columns: 1fr; } }
+.ov-data-card {
+  background: #111418;
+  border: 1px solid #1e2530;
+  border-radius: 8px;
+  padding: 14px 15px;
+}
+.ov-data-card-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.ov-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ov-stat { display: flex; flex-direction: column; gap: 2px; }
+.ov-stat-val { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.ov-stat-label { font-size: 10px; color: var(--text-muted); }
+.ov-git-items { display: flex; flex-direction: column; gap: 6px; }
+.ov-git-kv { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.ov-git-kv .k { color: var(--text-muted); }
+.ov-git-kv .v { color: var(--text); font-family: 'SF Mono', Consolas, monospace; }
+.ov-lang-list { display: flex; flex-direction: column; gap: 5px; }
+.ov-lang-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.ov-lang-name { width: 70px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-lang-track { flex: 1; height: 4px; background: #1e1e1e; border-radius: 2px; overflow: hidden; }
+.ov-lang-fill { height: 100%; border-radius: 2px; }
+.ov-lang-num { width: 45px; text-align: right; color: #555; }
 
 /* GIT STATUS */
 .git-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -738,15 +1132,250 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── infra services ── */
+.infra-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text-muted); margin: 0 0 14px;
+}
+.infra-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px; margin-bottom: 32px;
+}
+.infra-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; display: flex; align-items: flex-start; gap: 14px;
+  transition: border-color .15s;
+}
+.infra-card:hover { border-color: rgba(255,255,255,.15); }
+.infra-card.running { border-left: 3px solid var(--green); }
+.infra-card.stopped { border-left: 3px solid rgba(255,255,255,.08); }
+.infra-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+}
+.infra-icon.llm     { background: rgba(79,70,229,.15); }
+.infra-icon.voice   { background: rgba(92,208,138,.12); }
+.infra-icon.http    { background: rgba(78,158,255,.12); }
+.infra-icon.wiki    { background: rgba(217,179,107,.12); }
+.infra-icon.storage { background: rgba(229,166,80,.12); }
+.infra-icon.db      { background: rgba(176,124,255,.12); }
+.infra-icon.other   { background: rgba(255,255,255,.05); }
+.infra-body { flex: 1; min-width: 0; }
+.infra-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.infra-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.infra-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.infra-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.infra-dot.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.infra-dot.off { background: var(--text-muted); }
+.infra-status.on  { color: var(--green); }
+.infra-status.off { color: var(--text-muted); }
+.infra-port { color: var(--text-muted); }
+
+/* ── RESPONSIVE ────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Topbar */
+  .topbar { padding: 0 14px; gap: 8px; height: 48px; }
+  .topbar-title { font-size: 14px; }
+  .refresh-btn { font-size: 12px; padding: 4px 10px; }
+
+  /* Main page padding */
+  #panel-overview { padding: 0 12px 48px !important; }
+  .kpi-row { margin-top: 16px !important; }
+
+  /* KPI: stack on mobile */
+  .kpi-row { flex-direction: column; gap: 8px; }
+  .kpi-card { padding: 14px 16px; }
+  .kpi-value { font-size: 18px; }
+  .kpi-inner { gap: 14px; flex-wrap: wrap; }
+
+  /* Filter bar */
+  .filter-bar { gap: 6px; margin-bottom: 14px; }
+  .filter-btn { font-size: 11px; padding: 3px 10px; }
+
+  /* Project grid: single column */
+  .project-grid { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Summary table: scroll horizontally */
+  #summary-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: 12px; }
+  .summary-table th, .summary-table td { padding: 8px 10px; white-space: nowrap; }
+
+  /* Anomaly toggle */
+  #anomaly-toggle { bottom: 14px; right: 14px; }
+  #anomaly-panel { width: calc(100vw - 28px); max-width: 320px; }
+
+  /* Modal: fullscreen on mobile */
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal {
+    max-width: 100%;
+    min-height: 90vh;
+    border-radius: 16px 16px 0 0;
+  }
+  .modal-header { padding: 16px 16px 12px; }
+  .modal-title { font-size: 15px; }
+  .modal-path { display: none; }
+  .modal-tabs { padding: 8px 16px 0; gap: 0; }
+  .modal-tab-btn { padding: 6px 10px; font-size: 12px; }
+  .modal-body { padding: 14px 16px; }
+  #modal-overview-link { display: none; }
+
+  /* Design docs: stack sidebar on top */
+  .docs-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; gap: 0; min-height: auto; }
+  .docs-sidebar {
+    border-right: none; border-bottom: 1px solid var(--border);
+    padding-right: 0; padding-bottom: 10px; margin-bottom: 10px;
+    display: flex; flex-wrap: wrap; gap: 2px;
+  }
+  .docs-sidebar-title { display: none; }
+  .doc-file-item { padding: 4px 10px; font-size: 11px; border-radius: 12px; margin-bottom: 0; }
+  .doc-file-item.active { background: rgba(79,70,229,.2); }
+  .ai-cmd-section { width: 100%; margin-top: 6px; }
+
+  /* Import overlay */
+  #import-overlay > div { width: calc(100vw - 32px) !important; padding: 18px !important; }
+}
+
+@media (max-width: 480px) {
+  /* On very small screens, hide import button text */
+  .topbar .refresh-btn:first-of-type { font-size: 0; padding: 4px 8px; }
+  .topbar .refresh-btn:first-of-type::after { content: '+'; font-size: 14px; }
+}
+
+/* ── Summary tab ── */
+.sm-section { margin-bottom: 20px; }
+.sm-section-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+.sm-kpi-row { display: flex; gap: 10px; margin-bottom: 20px; }
+.sm-kpi { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
+.sm-kpi.accent { background: rgba(79,70,229,.06); border-color: rgba(79,70,229,.18); }
+.sm-kpi.green  { background: rgba(74,222,128,.04); border-color: rgba(74,222,128,.15); }
+.sm-kv { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sm-kv.purple { color: #818cf8; }
+.sm-kv.green  { color: var(--green); }
+.sm-kv.yellow { color: var(--yellow); }
+.sm-kl { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+.sm-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+.sm-col { display: flex; flex-direction: column; gap: 10px; }
+.sm-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+.sm-card.claude { background: rgba(79,70,229,.04); border-color: rgba(79,70,229,.15); }
+.sm-svc-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sm-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sm-dot.on { background: var(--green); box-shadow: 0 0 6px rgba(74,222,128,.5); }
+.sm-dot.off { background: #444; }
+.sm-svc-name { font-size: 13px; font-weight: 600; }
+.sm-svc-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.sm-domain { font-size: 12px; color: #818cf8; }
+.sm-tech-group { margin-bottom: 10px; }
+.sm-tech-label { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #334155; margin-bottom: 5px; }
+.sm-tech-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.sm-pill { font-size: 10px; padding: 2px 8px; border-radius: 4px; }
+.sm-pill.lang  { background: rgba(250,204,21,.08);  color: #a38a12; }
+.sm-pill.web   { background: rgba(129,140,248,.08); color: #818cf8; }
+.sm-pill.ai    { background: rgba(167,139,250,.08); color: #a78bfa; }
+.sm-pill.db    { background: rgba(74,222,128,.08);  color: #4ade80; }
+.sm-pill.infra { background: rgba(255,255,255,.05); color: #64748b; }
+.sm-feat-list { display: flex; flex-direction: column; gap: 5px; }
+.sm-feat { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; color: var(--text-sec); }
+.sm-feat-check { font-size: 10px; margin-top: 1px; flex-shrink: 0; }
+.sm-feat-check.done { color: var(--green); }
+.sm-feat-check.plan { color: #444; }
+.sm-cl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.sm-cl-stat { padding: 8px 10px; background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.05); border-radius: 6px; }
+.sm-cl-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: #818cf8; }
+.sm-cl-lbl { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+.sm-spark { display: flex; gap: 3px; align-items: flex-end; height: 40px; }
+.sm-sbar { flex: 1; border-radius: 2px 2px 0 0; background: #1e2538; min-height: 2px; }
+.sm-sbar.on { background: #818cf8; }
+.sm-sbar.hi { background: #a78bfa; }
+.sm-todo-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.sm-todo { font-size: 11px; display: flex; align-items: flex-start; gap: 6px; }
+.sm-todo-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.sm-todo-dot.completed   { background: var(--green); }
+.sm-todo-dot.in_progress { background: var(--yellow); }
+.sm-todo-dot.pending     { background: #3a4060; }
+@media (max-width: 640px) { .sm-cols { grid-template-columns: 1fr; } .sm-kpi-row { flex-wrap: wrap; } }
+/* ── Chat Agent Panel ───────────────────────────── */
+.chat-fab {
+  position: fixed; bottom: 24px; right: 24px; z-index: 200;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+  font-size: 22px; color: #fff; box-shadow: 0 4px 16px rgba(79,70,229,.45);
+  transition: transform .15s, box-shadow .15s;
+}
+.chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(79,70,229,.7); }
+.chat-panel {
+  position: fixed; right: 0; top: 0; bottom: 0; width: 380px; z-index: 199;
+  background: var(--card); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform .25s cubic-bezier(.4,0,.2,1);
+  box-shadow: -4px 0 32px rgba(0,0,0,.4);
+}
+.chat-panel.open { transform: translateX(0); }
+.chat-header {
+  display: flex; align-items: center; padding: 14px 16px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.chat-header-title { font-weight: 700; font-size: 15px; flex: 1; color: var(--text); }
+.chat-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px;
+}
+.chat-close:hover { color: var(--text); }
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.chat-msg {
+  max-width: 88%; padding: 9px 13px; border-radius: 12px;
+  font-size: 13px; line-height: 1.65; word-break: break-word; white-space: pre-wrap;
+}
+.chat-msg.user {
+  align-self: flex-end; background: var(--accent); color: #fff;
+  border-bottom-right-radius: 3px;
+}
+.chat-msg.assistant {
+  align-self: flex-start; background: #1e2235;
+  border-bottom-left-radius: 3px; color: var(--text);
+}
+.chat-msg.alert {
+  align-self: flex-start; max-width: 100%;
+  background: rgba(251,146,60,.08); border: 1px solid rgba(251,146,60,.25);
+  color: var(--orange); font-size: 12px; border-radius: 8px;
+}
+.chat-tool-exec {
+  align-self: flex-start; max-width: 100%; width: 100%;
+  background: #0d1117; border-radius: 8px; padding: 10px 12px;
+  font-size: 11px; font-family: 'SF Mono', Consolas, monospace;
+  border: 1px solid #1e2533;
+}
+.chat-tool-cmd { color: var(--green-dim); margin-bottom: 5px; }
+.chat-tool-out { color: #7a8aaa; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+.chat-input-row {
+  display: flex; gap: 8px; padding: 12px;
+  border-top: 1px solid var(--border); flex-shrink: 0;
+}
+.chat-input {
+  flex: 1; background: #0f1117; border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 13px;
+  padding: 8px 12px; outline: none; resize: none; height: 38px;
+  font-family: inherit;
+}
+.chat-input:focus { border-color: var(--accent); }
+.chat-send {
+  background: var(--accent); border: none; color: #fff;
+  padding: 0 16px; border-radius: 8px; cursor: pointer; font-size: 18px;
+  transition: background .15s;
+}
+.chat-send:hover { background: var(--accent-dim); }
+.chat-send:disabled { opacity: .45; cursor: default; }
 </style>
 </head>
 <body>
 
 <!-- TOP BAR -->
 <div class="topbar">
-  <span class="topbar-title">⚡ Vibe Manager</span>
-  <button class="tab-btn active" id="tab-overview-btn" onclick="showTab('overview')">📊 项目概览</button>
-  <button class="tab-btn" id="tab-global-btn" onclick="showTab('global')">🌐 全局面貌</button>
+  <span class="topbar-title">⚡ Mira</span>
   <div class="topbar-spacer"></div>
   <button class="refresh-btn" onclick="showImportModal()" style="background:#1e3a28;border-color:#4a7c59;color:#7fc794">+ 导入项目</button>
   <button class="refresh-btn" id="refresh-btn" onclick="loadProjects()">↻ 刷新</button>
@@ -757,7 +1386,7 @@ body {
 <!-- Anomaly Toggle -->
 <div id="anomaly-toggle" onclick="toggleAnomalyPanel()">
   <div id="anomaly-btn">
-    <span>⚠️ 异常</span>
+    <span>异常</span>
     <span id="anomaly-badge">0</span>
   </div>
   <div id="anomaly-panel">
@@ -781,33 +1410,42 @@ body {
   </div>
 </div>
 
-<!-- TAB 1: 项目概览 -->
-<div class="tab-panel active" id="panel-overview">
+<!-- MAIN PAGE -->
+<div id="panel-overview" style="padding: 0 28px 48px" class="main-page">
+  <div class="kpi-row" id="kpi-row" style="margin-top:24px"></div>
   <div class="filter-bar">
-    <button class="filter-btn active" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
-    <button class="filter-btn" id="filter-active" onclick="setFilter('active', this)">Active <span class="filter-count" id="count-active">0</span></button>
+    <button class="filter-btn" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
+    <button class="filter-btn active" id="filter-active" onclick="setFilter('active', this)">Active <span class="filter-count" id="count-active">0</span></button>
     <button class="filter-btn" id="filter-paused" onclick="setFilter('paused', this)">Paused <span class="filter-count" id="count-paused">0</span></button>
     <button class="filter-btn" id="filter-done" onclick="setFilter('done', this)">Done <span class="filter-count" id="count-done">0</span></button>
+    <button class="filter-btn" id="filter-trash" onclick="setFilter('trash', this)">🗑 Trash <span class="filter-count" id="count-trash">0</span></button>
   </div>
   <div class="project-grid" id="project-grid">
     <div class="loading-state">加载中...</div>
   </div>
-</div>
-
-<!-- TAB 2: 全局面貌 -->
-<div class="tab-panel" id="panel-global">
-  <div class="kpi-row" id="kpi-row">
-    <!-- KPI cards rendered here -->
+  <!-- GitHub Trending -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:32px 0 12px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-muted)">GitHub 热门</div>
+    <div style="display:flex;gap:6px" id="trending-filters">
+      <button onclick="loadTrending('daily',this)" class="trend-tab" data-period="daily">今日</button>
+      <button onclick="loadTrending('weekly',this)" class="trend-tab active" data-period="weekly">本周</button>
+      <button onclick="loadTrending('monthly',this)" class="trend-tab" data-period="monthly">本月</button>
+    </div>
   </div>
+  <div id="trending-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-bottom:32px">
+    <div style="color:var(--text-muted);font-size:12px;padding:12px">加载中...</div>
+  </div>
+
+  <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-muted);margin:32px 0 12px">全局面貌</div>
   <table class="summary-table" id="summary-table">
     <thead>
       <tr>
         <th>项目名称</th>
         <th>状态</th>
         <th>服务</th>
+        <th>域名</th>
         <th>部署</th>
-        <th>计划完成</th>
-        <th>本月 Commits</th>
+        <th>进度</th>
       </tr>
     </thead>
     <tbody id="summary-tbody"></tbody>
@@ -817,29 +1455,36 @@ body {
 <!-- PROJECT DETAIL MODAL -->
 <div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
   <div class="modal" id="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-title">Project Name</div>
-      <div class="modal-path" id="modal-path">/path/to/project</div>
+    <div class="modal-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div>
+        <div class="modal-title" id="modal-title">Project Name</div>
+        <div class="modal-path" id="modal-path">/path/to/project</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding-top:2px">
+        <a id="modal-overview-link" href="#" target="_blank"
+           style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);text-decoration:none;transition:all .15s"
+           onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+           onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">↗ 全页查看</a>
+        <button class="modal-close" onclick="closeModal()" style="position:static">✕</button>
+      </div>
     </div>
-    <button onclick="deleteCurrentProject()" title="从 Vibe Manager 移除此项目" style="position:absolute;top:16px;right:44px;background:none;border:1px solid #5a2a2a;border-radius:4px;color:#e06c75;cursor:pointer;font-size:12px;padding:2px 8px">🗑 移除</button>
-    <button class="modal-close" onclick="closeModal()">✕</button>
     <div class="modal-tabs">
-      <button class="modal-tab-btn active" id="mtab-overview" onclick="showModalTab('overview')">🌐 全局面貌</button>
-      <button class="modal-tab-btn" id="mtab-design" onclick="showModalTab('design')">📐 设计文档</button>
-      <button class="modal-tab-btn" id="mtab-plans" onclick="showModalTab('plans')">✅ 计划</button>
-      <button class="modal-tab-btn" id="mtab-docs" onclick="showModalTab('docs')">📄 文档</button>
+      <button class="modal-tab-btn active" id="mtab-summary" onclick="showModalTab('summary')">📋 概览</button>
+      <button class="modal-tab-btn" id="mtab-overview" onclick="showModalTab('overview')">🌐 全局面貌</button>
+      <button class="modal-tab-btn" id="mtab-design" onclick="showModalTab('design')">📐 文档</button>
     </div>
     <div class="modal-body">
-      <div class="modal-tab-content active" id="mcontent-overview"></div>
+      <div class="modal-tab-content active" id="mcontent-summary"></div>
+      <div class="modal-tab-content" id="mcontent-overview"></div>
       <div class="modal-tab-content" id="mcontent-design"></div>
-      <div class="modal-tab-content" id="mcontent-plans"></div>
-      <div class="modal-tab-content" id="mcontent-docs">
-        <div class="placeholder">
-          <div class="placeholder-icon">📄</div>
-          <div class="placeholder-title">文档查看器 — 即将推出</div>
-          <div>即将支持项目文档浏览</div>
-        </div>
+    </div>
+    <div class="modal-footer">
+      <div id="delete-confirm-row" style="display:none;align-items:center;gap:8px;font-size:12px;color:#e06c75;">
+        <span>确认从 Mira 移除此项目？（不会删除文件）</span>
+        <button onclick="confirmDeleteProject()" style="padding:3px 12px;border:1px solid #e06c75;border-radius:4px;background:rgba(224,108,117,.15);color:#e06c75;cursor:pointer;font-size:12px;">确认移除</button>
+        <button onclick="cancelDelete()" style="padding:3px 10px;border:1px solid #333;border-radius:4px;background:none;color:#777;cursor:pointer;font-size:12px;">取消</button>
       </div>
+      <button id="delete-init-btn" onclick="initDelete()" style="margin-left:auto;background:none;border:1px solid #3a2020;border-radius:4px;color:#7a4040;cursor:pointer;font-size:12px;padding:4px 12px;transition:all .15s">移除项目</button>
     </div>
   </div>
 </div>
@@ -847,10 +1492,12 @@ body {
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 let allProjects = [];
-let currentFilter = 'all';
+let allBaseServices = [];
+let currentFilter = 'active';
 let currentProject = null;
 let currentDocIdx = 0;
 let currentModalTab = 'overview';
+let wsSnapshot = {};  // projectId -> {is_running, port}
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
@@ -901,6 +1548,20 @@ function kpiCard(label, value, colorClass) {
   </div>`;
 }
 
+function kpiCard2(labelA, valueA, colorA, labelB, valueB, colorB) {
+  return `<div class="kpi-card" style="display:flex;gap:16px">
+    <div style="flex:1;min-width:0">
+      <div class="kpi-label">${escHtml(labelA)}</div>
+      <div class="kpi-value ${colorA || ''}" style="font-size:22px">${escHtml(String(valueA))}</div>
+    </div>
+    <div style="width:1px;background:var(--border);flex-shrink:0"></div>
+    <div style="flex:1;min-width:0">
+      <div class="kpi-label">${escHtml(labelB)}</div>
+      <div class="kpi-value ${colorB || ''}" style="font-size:22px">${escHtml(String(valueB))}</div>
+    </div>
+  </div>`;
+}
+
 function miniStat(label, value) {
   return `<div class="mini-stat">
     <div class="mini-stat-label">${escHtml(label)}</div>
@@ -908,15 +1569,71 @@ function miniStat(label, value) {
   </div>`;
 }
 
+const STATUS_META = {
+  active: { label: 'Active', cls: 'status-active' },
+  paused: { label: 'Paused', cls: 'status-paused' },
+  done:   { label: 'Done',   cls: 'status-done' },
+  trash:  { label: 'Trash',  cls: 'status-unknown' },
+};
+
 function statusBadge(status) {
-  const map = {
-    active: ['Active', 'status-active'],
-    paused: ['Paused', 'status-paused'],
-    done: ['Done', 'status-done'],
-  };
-  const [label, cls] = map[status] || [status || 'Unknown', 'status-unknown'];
+  const { label, cls } = STATUS_META[status] || { label: status || 'Unknown', cls: 'status-unknown' };
   return `<span class="status-badge ${cls}">${escHtml(label)}</span>`;
 }
+
+function statusDropdown(projectId, status) {
+  const { label, cls } = STATUS_META[status] || { label: status || 'Unknown', cls: 'status-unknown' };
+  const opts = Object.entries(STATUS_META).map(([k, v]) =>
+    `<div class="status-opt${k === status ? ' selected' : ''}" onclick="event.stopPropagation();setStatus('${escHtml(projectId)}','${k}',this)">${v.label}</div>`
+  ).join('');
+  return `<div class="status-dropdown-wrap" onclick="event.stopPropagation();toggleStatusMenu(this)">
+    <span class="status-badge ${cls} status-badge-clickable">${escHtml(label)} ▾</span>
+    <div class="status-menu">${opts}</div>
+  </div>`;
+}
+
+async function setStatus(projectId, newStatus, optEl) {
+  const wrap = optEl.closest('.status-dropdown-wrap');
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    // Update local state
+    const p = allProjects.find(p => p.id === projectId);
+    if (p) p.status = newStatus;
+    // Update badge (works for both card .status-badge and modal .ov-badge-status)
+    const { label, cls } = STATUS_META[newStatus] || {};
+    const badge = wrap.querySelector('.status-badge, .ov-badge-status');
+    if (badge) {
+      if (badge.classList.contains('status-badge')) {
+        badge.className = `status-badge ${cls} status-badge-clickable`;
+      }
+      badge.textContent = label + ' ▾';
+    }
+    wrap.querySelectorAll('.status-opt').forEach(o => o.classList.toggle('selected', o.textContent.trim() === label));
+    wrap.querySelector('.status-menu').classList.remove('open');
+    updateFilterCounts();
+    renderCards();
+  } catch(e) {
+    console.error('setStatus failed', e);
+  }
+}
+
+function toggleStatusMenu(wrap) {
+  const menu = wrap.querySelector('.status-menu');
+  const isOpen = menu.classList.contains('open');
+  // Close all others
+  document.querySelectorAll('.status-menu.open').forEach(m => m.classList.remove('open'));
+  if (!isOpen) menu.classList.add('open');
+}
+
+// Close status menus on outside click
+document.addEventListener('click', () => {
+  document.querySelectorAll('.status-menu.open').forEach(m => m.classList.remove('open'));
+});
 
 function svcDot(svc, id) {
   const attr = id ? ` data-svc-dot="${escHtml(id)}"` : '';
@@ -957,6 +1674,7 @@ async function loadProjects() {
     allProjects = await res.json();
     renderCards();
     renderGlobal();
+    loadTrending('weekly', document.querySelector('.trend-tab[data-period="weekly"]'));
     anomalies = collectAnomalies(allProjects, wsStatusPrev.snapshot || {});
     renderAnomalies();
     updateFilterCounts();
@@ -970,23 +1688,19 @@ async function loadProjects() {
 }
 
 function updateFilterCounts() {
-  const counts = { all: allProjects.length, active: 0, paused: 0, done: 0 };
+  const counts = { all: 0, active: 0, paused: 0, done: 0, trash: 0 };
   for (const p of allProjects) {
-    if (p.status in counts) counts[p.status]++;
+    const s = p.status || 'active';
+    if (s in counts) counts[s]++;
+    if (s !== 'trash') counts.all++;  // "全部" excludes trash
   }
   document.getElementById('count-all').textContent = counts.all;
   document.getElementById('count-active').textContent = counts.active;
   document.getElementById('count-paused').textContent = counts.paused;
   document.getElementById('count-done').textContent = counts.done;
+  document.getElementById('count-trash').textContent = counts.trash;
 }
 
-// ─── Tab Switching ────────────────────────────────────────────────────────────
-function showTab(name) {
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('panel-' + name).classList.add('active');
-  document.getElementById('tab-' + name + '-btn').classList.add('active');
-}
 
 function setFilter(status, btn) {
   currentFilter = status;
@@ -997,9 +1711,12 @@ function setFilter(status, btn) {
 
 // ─── Card Rendering ───────────────────────────────────────────────────────────
 function renderCards() {
-  const filtered = currentFilter === 'all'
-    ? allProjects
-    : allProjects.filter(p => p.status === currentFilter);
+  let filtered;
+  if (currentFilter === 'all') {
+    filtered = allProjects.filter(p => (p.status || 'active') !== 'trash');
+  } else {
+    filtered = allProjects.filter(p => (p.status || 'active') === currentFilter);
+  }
 
   const grid = document.getElementById('project-grid');
   if (filtered.length === 0) {
@@ -1018,89 +1735,311 @@ function deployLabel(deploy) {
   if (!deploy || deploy.type === 'none' || !deploy.type) return null;
   const icon = DEPLOY_ICONS[deploy.type] || '☁️';
   const label = deploy.type.toUpperCase();
-  const host = deploy.host ? `<code style="font-size:11px;opacity:.75">${escHtml(deploy.host)}</code>` : '';
-  return `${icon} <span style="color:var(--accent)">${label}</span> ${host}`;
+  const title = deploy.host ? ` title="${escHtml(deploy.host)}"` : '';
+  return `${icon} <span style="color:var(--accent);cursor:default"${title}>${label}</span>`;
 }
 
 function renderCard(p) {
   const git = p.git || {};
-  const plans = p.plans || {};
   const svc = p.service || {};
   const deploy = p.deploy || {};
-  const tags = (p.tech_stack || []).slice(0, 4);
-  const moreCount = (p.tech_stack || []).length - 4;
+  const loc = p.loc || {};
+  const ca = p.claude_activity;
+  const allTags = p.tech_stack || [];
+  const tags = allTags.slice(0, 4);
+  const moreTags = allTags.slice(4);
+  const isRunning = svc.is_running;
+  const deps = allBaseServices.filter(s => (s.used_by || []).includes(p.id));
 
-  const svcStatus = svc.port
-    ? `${svcDot(svc, p.id)} <span>:${svc.port}</span>`
-    : `${svcDot(null, p.id)} <span>无服务</span>`;
+  // ── Domain block (C1 style) ──────────────────────────────
+  const deployIcon = deploy.type && deploy.type !== 'none'
+    ? ` · ${DEPLOY_ICONS[deploy.type] || '☁️'} ${deploy.type.toUpperCase()}`
+    : '';
+  const deployMeta = deploy.type && deploy.type !== 'none'
+    ? `<span class="card-domain-meta">${DEPLOY_ICONS[deploy.type] || '☁️'} ${deploy.type.toUpperCase()}</span>`
+    : '';
+  const portBadge = svc.port
+    ? `<a class="card-port-badge" href="http://localhost:${svc.port}" target="_blank"
+         onclick="event.stopPropagation()" title="本地 :${svc.port}">:${svc.port}</a>`
+    : '';
+  const domainBlock = `
+    <div class="card-domain">
+      <span class="card-domain-dot${isRunning ? '' : ' off'}"></span>
+      ${svc.public_domain
+        ? `<a class="card-domain-url" href="https://${escHtml(svc.public_domain)}" target="_blank"
+             onclick="event.stopPropagation()">${escHtml(svc.public_domain)}</a>`
+        : `<span class="card-domain-nourl">无公开域名</span>`}
+      ${portBadge}
+      ${deployMeta}
+    </div>`;
 
-  const dLabel = deployLabel(deploy);
+  // ── Stats grid: commits | files | lines | Claude cost ───
+  const claudeCostVal = (() => {
+    if (!ca) return '—';
+    const c = ca.estimated_cost_usd || 0;
+    if (c === 0) return '—';
+    if (c < 1) return `$${c.toFixed(2)}`;
+    if (c < 100) return `$${c.toFixed(1)}`;
+    return `$${Math.round(c)}`;
+  })();
+  const claudeIsRecent = ca && ca.last_session && (Date.now() - new Date(ca.last_session)) < 7 * 86400000;
+  const claudeTip = (() => {
+    if (!ca) return 'Claude 无记录';
+    const parts = [];
+    if (ca.last_session) {
+      const diffH = Math.floor((Date.now() - new Date(ca.last_session)) / 3600000);
+      const diffD = Math.floor(diffH / 24);
+      parts.push(`上次: ${diffH < 1 ? '刚刚' : diffH < 24 ? diffH + 'h前' : diffD + 'd前'}`);
+    }
+    if (ca.session_count_7d) parts.push(`7天 ${ca.session_count_7d} 次`);
+    if (ca.output_tokens) parts.push(`输出 ${fmtNum(ca.output_tokens)} tok`);
+    if (ca.estimated_cost_usd) parts.push(`≈ $${ca.estimated_cost_usd.toFixed(2)}`);
+    return parts.join(' · ');
+  })();
+  const statGrid = `
+    <div class="card-stat-grid">
+      <div class="card-stat" title="本月提交数">
+        <div class="card-sv">↑${git.monthly_commits || 0}</div>
+        <div class="card-sl">提交/月</div>
+      </div>
+      <div class="card-stat" title="文件总数">
+        <div class="card-sv">${fmtNum(loc.file_count || 0)}</div>
+        <div class="card-sl">文件</div>
+      </div>
+      <div class="card-stat" title="代码行数">
+        <div class="card-sv">${fmtNum(loc.code_lines || 0)}</div>
+        <div class="card-sl">行代码</div>
+      </div>
+      <div class="card-stat" title="${escHtml(claudeTip)}">
+        <div class="card-sv ${claudeIsRecent ? 'card-sv-purple' : ''}">${claudeCostVal}</div>
+        <div class="card-sl ${claudeIsRecent ? 'card-sl-purple' : ''}">Claude</div>
+      </div>
+    </div>`;
 
-  return `<div class="project-card" data-project-id="${escHtml(p.id)}" onclick="openProject('${escHtml(p.id)}')">
+  // ── Git row (no sparkline) ────────────────────────────────
+  const gitSparkRow = `
+    <div class="card-git-spark">
+      <code>${escHtml(git.branch || '—')}</code>
+      <code>${escHtml((git.commit_hash || '').slice(0, 7) || '—')}</code>
+      <span style="margin-left:auto;font-size:10px;color:#2d3555">↑${git.monthly_commits || 0}/月</span>
+    </div>`;
+
+  // ── Claude mini block (option B) ─────────────────────────
+  const spark15 = ca && ca.session_spark_15d && ca.session_spark_15d.length === 15
+    ? ca.session_spark_15d : Array(15).fill(0);
+  const spark15Max = Math.max(...spark15, 1);
+  const spark15Bars = spark15.map(v => {
+    const h = v === 0 ? 100 : Math.min(100, Math.max(15, Math.round((v / 12) * 100)));
+    const cls = v === 0 ? '' : v >= 12 ? ' hi' : v >= spark15Max * 0.7 ? ' hi' : ' on';
+    return `<span class="card-spark15-bar${cls}" style="height:${h}%" title="${v.toFixed(1)}h 活跃"></span>`;
+  }).join('');
+
+  const fmtTok = t => t >= 1e9 ? (t/1e9).toFixed(1)+'B' : t >= 1e6 ? (t/1e6).toFixed(1)+'M' : t >= 1e3 ? (t/1e3).toFixed(0)+'k' : String(t);
+  const claudeLastStr = (() => {
+    if (!ca || !ca.last_session) return '—';
+    const diffH = Math.floor((Date.now() - new Date(ca.last_session)) / 3600000);
+    const diffD = Math.floor(diffH / 24);
+    return diffH < 1 ? '刚刚' : diffH < 24 ? `${diffH}h前` : `${diffD}d前`;
+  })();
+  const claudeMiniBlock = `
+    <div class="card-claude-mini">
+      <div class="card-claude-meta">
+        <div class="ccm-row"><span class="ccm-lbl">上次</span><span class="ccm-lbl">活跃</span><span class="ccm-lbl">30天会话</span></div>
+        <div class="ccm-row"><span class="ccm-val">${claudeLastStr}</span><span class="ccm-val">${ca ? (ca.active_hours||0) + 'h' : '—'}</span><span class="ccm-val">${ca ? ca.session_count_30d||0 : '—'}</span></div>
+        <div class="ccm-row" style="margin-top:4px"><span class="ccm-lbl">输出</span><span class="ccm-lbl">输入</span><span class="ccm-lbl">Cache读</span></div>
+        <div class="ccm-row"><span class="ccm-val">${ca ? fmtTok(ca.output_tokens||0) : '—'}</span><span class="ccm-val">${ca ? fmtTok(ca.input_tokens||0) : '—'}</span><span class="ccm-val">${ca ? fmtTok(ca.cache_read_tokens||0) : '—'}</span></div>
+      </div>
+      <div class="card-spark15">${spark15Bars}</div>
+    </div>`;
+
+  // ── Footer: row1=services, row2=tags ─────────────────────
+  const svcPills = deps.map(s => {
+    const on = s.is_running;
+    return `<span class="card-svc-pill ${on ? 'on' : 'off'}">
+      ${_INFRA_ICONS[s.type] || '⚙️'} ${escHtml(s.name)}
+      <span class="card-svc-dot" style="background:${on ? 'var(--green)' : '#334155'}"></span>
+    </span>`;
+  }).join('');
+  const tagSpans = tags.map(t => `<span class="card-tag">${escHtml(t.name || t)}</span>`).join('');
+  const moreTag = moreTags.length > 0
+    ? `<span class="card-tag-more">+${moreTags.length}</span>`
+    : '';
+  const footer = `
+    <div class="card-footer-new">
+      <div class="card-footer-row">${svcPills}</div>
+      <div class="card-footer-row">${tagSpans}${moreTag}</div>
+    </div>`;
+
+  return `<div class="project-card${isRunning ? ' card-running' : ''}" data-project-id="${escHtml(p.id)}">
     <div class="card-header">
+      ${isRunning
+        ? `<span style="width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);flex-shrink:0;animation:pulse-green 2s infinite"></span>`
+        : `<span style="width:8px;height:8px;border-radius:50%;background:#2d3148;flex-shrink:0"></span>`}
       <span class="card-name">${escHtml(p.name)}</span>
-      ${statusBadge(p.status)}
+      ${statusDropdown(p.id, p.status || 'active')}
+      <a href="/projects/${escHtml(p.id)}" target="_blank"
+         onclick="event.stopPropagation()"
+         title="在新标签页打开" style="margin-left:auto;font-size:13px;color:var(--text-muted);text-decoration:none;transition:color .15s"
+         onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">↗</a>
     </div>
-    <div class="card-meta">
-      <div class="card-row">
-        <span class="label">分支</span>
-        <code>${escHtml(git.branch || '—')}</code>
-        <code>${escHtml((git.commit_hash || '').slice(0, 7) || '—')}</code>
-        <span style="margin-left:auto;color:var(--text-muted)">↑${git.monthly_commits || 0} commits/月</span>
-      </div>
-      <div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">计划进度</div>
-        ${progressBar(plans.done || 0, plans.total || 0)}
-      </div>
-      <div class="card-row">
-        <span class="label">服务</span>
-        ${svcStatus}
-        ${dLabel ? `<span style="margin-left:8px;font-size:12px">${dLabel}</span>` : ''}
-      </div>
-      ${tags.length ? `<div class="tag-row">
-        ${tags.map(t => `<span class="tag">${escHtml(t.name || t)}</span>`).join('')}
-        ${moreCount > 0 ? `<span class="tag-more">+${moreCount}</span>` : ''}
-      </div>` : ''}
-    </div>
+    ${domainBlock}
+    ${statGrid}
+    ${gitSparkRow}
+    ${claudeMiniBlock}
+    ${footer}
   </div>`;
 }
 
+// ─── GitHub Trending ──────────────────────────────────────────────────────────
+const LANG_COLOR_MAP = {
+  Python:'#3572A5',JavaScript:'#f1e05a',TypeScript:'#3178c6',Go:'#00ADD8',
+  Rust:'#dea584',Java:'#b07219','C++':'#f34b7d',C:'#555555','C#':'#239120',
+  Swift:'#F05138',Kotlin:'#A97BFF',Ruby:'#701516',PHP:'#4F5D95',
+  Shell:'#89e051',HTML:'#e34c26',CSS:'#563d7c',Dart:'#00B4AB',
+  Scala:'#c22d40',Jupyter:'#DA5B0B',Vue:'#41b883',Svelte:'#ff3e00',
+};
+
+let _trendingCache = {};
+
+async function loadTrending(period = 'daily', btn) {
+  document.querySelectorAll('.trend-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const grid = document.getElementById('trending-grid');
+  if (_trendingCache[period]) { renderTrending(_trendingCache[period]); return; }
+
+  grid.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px">加载中...</div>';
+
+  try {
+    const res = await fetch(`/api/trending?period=${period}`);
+    if (!res.ok) throw new Error(res.status);
+    const items = await res.json();
+    _trendingCache[period] = items || [];
+    renderTrending(_trendingCache[period]);
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:12px">加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderTrending(repos) {
+  const grid = document.getElementById('trending-grid');
+  if (!repos.length) { grid.innerHTML = '<div style="color:var(--text-muted);font-size:12px">暂无数据</div>'; return; }
+  grid.innerHTML = repos.map(r => {
+    const lang = r.language || '';
+    const dot = lang ? `<span class="trend-lang-dot" style="background:${LANG_COLOR_MAP[lang]||'#555'}"></span>` : '';
+    const desc = r.description ? r.description.slice(0,80) + (r.description.length>80?'…':'') : '暂无描述';
+    const stars = r.stargazers_count >= 1000 ? (r.stargazers_count/1000).toFixed(1)+'k' : r.stargazers_count;
+    return `<div class="trend-card" onclick="window.open('${r.html_url}','_blank')">
+      <div class="trend-card-title">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="#818cf8"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/></svg>
+        ${escHtml(r.full_name)}
+      </div>
+      <div class="trend-card-desc">${escHtml(desc)}</div>
+      <div class="trend-card-meta">
+        ${lang ? `<span class="trend-card-lang">${dot}${escHtml(lang)}</span>` : ''}
+        <span>⭐ ${stars}</span>
+        <span>🍴 ${r.forks_count >= 1000 ? (r.forks_count/1000).toFixed(1)+'k' : r.forks_count}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // ─── Global Tab ───────────────────────────────────────────────────────────────
+function fmtNum(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(n);
+}
+
 function renderGlobal() {
   const active = allProjects.filter(p => p.status === 'active').length;
   const running = allProjects.filter(p => p.service && p.service.is_running).length;
   const commits = allProjects.reduce((s, p) => s + ((p.git && p.git.monthly_commits) || 0), 0);
+  const totalFiles = allProjects.reduce((s, p) => s + ((p.loc && p.loc.file_count) || 0), 0);
+  const totalLines = allProjects.reduce((s, p) => s + ((p.loc && p.loc.code_lines) || 0), 0);
+  const totalCost = allProjects.reduce((s, p) => s + ((p.claude_activity && p.claude_activity.estimated_cost_usd) || 0), 0);
+  const totalOut = allProjects.reduce((s, p) => s + ((p.claude_activity && p.claude_activity.output_tokens) || 0), 0);
+  const totalIn = allProjects.reduce((s, p) => s + ((p.claude_activity && p.claude_activity.input_tokens) || 0), 0);
+  const totalCacheR = allProjects.reduce((s, p) => s + ((p.claude_activity && p.claude_activity.cache_read_tokens) || 0), 0);
 
-  document.getElementById('kpi-row').innerHTML =
-    kpiCard('总项目', allProjects.length, 'kpi-accent') +
-    kpiCard('Active', active, 'kpi-green') +
-    kpiCard('服务运行中', running, 'kpi-orange') +
-    kpiCard('本月 Commits', commits, 'kpi-yellow');
+  document.getElementById('kpi-row').innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-accent-bar" style="background:var(--green)"></div>
+      <div class="kpi-inner">
+        <div class="kpi-stat"><span class="kpi-label">总项目</span><span class="kpi-value kpi-accent">${allProjects.length}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">Active</span><span class="kpi-value kpi-green">${active}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">运行中</span><span class="kpi-value kpi-green">${running}</span></div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-accent-bar" style="background:var(--yellow)"></div>
+      <div class="kpi-inner">
+        <div class="kpi-stat"><span class="kpi-label">本月提交</span><span class="kpi-value kpi-yellow">${commits}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">文件数</span><span class="kpi-value kpi-muted">${fmtNum(totalFiles)}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">代码行数</span><span class="kpi-value kpi-green">${fmtNum(totalLines)}</span></div>
+      </div>
+    </div>
+    <div class="kpi-card" style="flex:1.6;border-color:rgba(129,140,248,.2)">
+      <div class="kpi-accent-bar" style="background:var(--accent)"></div>
+      <div class="kpi-inner">
+        <div class="kpi-stat"><span class="kpi-label">Claude 花费</span><span class="kpi-value kpi-accent">$${totalCost.toFixed(0)}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">Cache 读取</span><span class="kpi-value kpi-purple">${fmtNum(totalCacheR)}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">输出</span><span class="kpi-value kpi-accent">${fmtNum(totalOut)}</span></div>
+        <div class="kpi-vdiv"></div>
+        <div class="kpi-stat"><span class="kpi-label">输入</span><span class="kpi-value kpi-muted">${fmtNum(totalIn)}</span></div>
+      </div>
+    </div>`;
 
   const tbody = document.getElementById('summary-tbody');
   tbody.innerHTML = allProjects.map(p => {
     const svc = p.service || {};
     const plans = p.plans || {};
-    const pct = planPct(plans);
+    const features = p.features || [];
+    const implCount = features.filter(f => f.implemented).length;
+    const totalFeatures = features.length;
     const svcCell = svc.port
       ? `${svcDot(svc, p.id)} :${escHtml(String(svc.port))}`
       : `${svcDot(null, p.id)} —`;
 
+    let progCell;
+    if (totalFeatures > 0) {
+      const pct = Math.round((implCount / totalFeatures) * 100);
+      progCell = `<div class="progress-wrap">
+        <div class="progress-bar" style="width:80px"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <span class="progress-label">${implCount}/${totalFeatures}</span>
+      </div>`;
+    } else if (plans.total > 0) {
+      const pct = planPct(plans);
+      progCell = `<div class="progress-wrap">
+        <div class="progress-bar" style="width:80px"><div class="progress-fill" style="width:${pct}%;opacity:.4"></div></div>
+        <span class="progress-label" style="opacity:.5">${pct}%</span>
+      </div>`;
+    } else {
+      progCell = `<span style="color:var(--text-muted)">—</span>`;
+    }
+
     const dLabel = deployLabel(p.deploy);
-    return `<tr onclick="openProject('${escHtml(p.id)}')" style="cursor:pointer">
+    const domain = svc.public_domain;
+    const domainCell = domain
+      ? `<a href="https://${escHtml(domain)}" target="_blank" onclick="event.stopPropagation()"
+           style="color:#818cf8;font-family:monospace;font-size:12px;text-decoration:none"
+           onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'"
+         >${escHtml(domain)}</a>`
+      : `<span style="color:var(--text-muted)">—</span>`;
+
+    return `<tr data-project-id="${escHtml(p.id)}" style="cursor:pointer">
       <td>${escHtml(p.name)}</td>
       <td>${statusBadge(p.status)}</td>
       <td style="display:flex;align-items:center;gap:6px">${svcCell}</td>
+      <td>${domainCell}</td>
       <td style="font-size:12px">${dLabel || '<span style="color:var(--text-muted)">—</span>'}</td>
-      <td>
-        <div class="progress-wrap">
-          <div class="progress-bar" style="width:80px">
-            <div class="progress-fill" style="width:${pct}%"></div>
-          </div>
-          <span class="progress-label">${pct}%</span>
-        </div>
-      </td>
-      <td style="color:var(--text-sec)">${(p.git && p.git.monthly_commits) || 0}</td>
+      <td>${progCell}</td>
     </tr>`;
   }).join('');
 }
@@ -1112,14 +2051,16 @@ function openProject(id) {
 
   document.getElementById('modal-title').textContent = currentProject.name;
   document.getElementById('modal-path').textContent = currentProject.path || '';
+  document.getElementById('modal-overview-link').href = `/projects/${encodeURIComponent(currentProject.id)}/overview`;
   document.getElementById('modal-overlay').classList.add('open');
 
   // Reset to first tab
-  showModalTab('overview');
+  showModalTab('summary');
 }
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
+  cancelDelete();
   currentProject = null;
 }
 
@@ -1135,9 +2076,142 @@ function showModalTab(tab) {
   document.getElementById('mcontent-' + tab).classList.add('active');
 
   if (!currentProject) return;
+  if (tab === 'summary') renderProjectSummary(currentProject);
   if (tab === 'overview') renderProjectOverview(currentProject);
   if (tab === 'design') renderDesignDocs(currentProject);
-  if (tab === 'plans') renderPlans(currentProject);
+}
+
+// ─── Tech stack categorization ────────────────────────────────────────────────
+const _TECH_AI    = new Set(['openai','anthropic','claude','deepseek','ollama','gemini','dashscope','qwen','cosy','whisper','sentence-transformers','chromadb','faiss','hdbscan','scikit-learn','transformers','langchain','llamaindex','huggingface']);
+const _TECH_DB    = new Set(['redis','postgres','postgresql','mysql','mongodb','sqlite','sqlalchemy','alembic','prisma','supabase','elasticsearch','kafka','rabbitmq','minio','s3']);
+const _TECH_WEB   = new Set(['fastapi','express','nextjs','react','vue','svelte','nuxt','remix','django','flask','uvicorn','gunicorn','nginx','vite','webpack','tailwind','axios','httpx','requests','websocket']);
+const _TECH_LANG  = new Set(['python','typescript','javascript','go','rust','java','kotlin','swift','ruby','php','c++','c#','lua','bash']);
+
+function classifyTech(name) {
+  const n = name.toLowerCase().replace(/[-_.@]/g, '');
+  if ([..._TECH_AI].some(k => n.includes(k))) return 'ai';
+  if ([..._TECH_DB].some(k => n.includes(k))) return 'db';
+  if ([..._TECH_WEB].some(k => n.includes(k))) return 'web';
+  if ([..._TECH_LANG].some(k => n.includes(k))) return 'lang';
+  return 'infra';
+}
+
+function techPillClass(cat) {
+  return { ai:'pill-ai', db:'pill-db', web:'pill-web', lang:'pill-lang', infra:'pill-infra' }[cat] || 'pill-infra';
+}
+
+// ─── Modal: 概览 Tab ─────────────────────────────────────────────────────────
+function renderProjectSummary(p) {
+  const el = document.getElementById('mcontent-summary');
+  const svc = p.service || {};
+  const ca = p.claude_activity;
+  const deploy = p.deploy || {};
+  const techStack = p.tech_stack || [];
+  const features = p.features || [];
+  const git = p.git || {};
+  const wsState = wsSnapshot[p.id];
+  const isRunning = wsState !== undefined ? wsState.is_running : svc.is_running;
+
+  // ── Top KPI row ──
+  const implCount = features.filter(f => f.implemented !== false).length;
+  function _ago(iso) {
+    const diff = (Date.now() - new Date(iso)) / 1000;
+    if (diff < 3600) return Math.round(diff/60) + 'm前';
+    if (diff < 86400) return Math.round(diff/3600) + 'h前';
+    return Math.round(diff/86400) + 'd前';
+  }
+  const caLast = ca && ca.last_session ? _ago(ca.last_session) : '—';
+  const kpiRow = `<div class="sm-kpi-row">
+    <div class="sm-kpi ${isRunning ? 'green' : ''}">
+      <div class="sm-kl">服务状态</div>
+      <div class="sm-kv ${isRunning ? 'green' : ''}">${isRunning ? '运行中' : (svc.port ? '停止' : '无服务')}</div>
+    </div>
+    <div class="sm-kpi">
+      <div class="sm-kl">本月提交</div>
+      <div class="sm-kv yellow">${git.monthly_commits || 0}</div>
+    </div>
+    <div class="sm-kpi">
+      <div class="sm-kl">功能实现</div>
+      <div class="sm-kv">${implCount}${features.length ? ' / ' + features.length : ''}</div>
+    </div>
+    <div class="sm-kpi ${ca ? 'accent' : ''}">
+      <div class="sm-kl">Claude 上次</div>
+      <div class="sm-kv purple">${caLast}</div>
+    </div>
+  </div>`;
+
+  // ── Left col: service + tech stack ──
+  const svcPort = svc.port ? `:${svc.port}` : '';
+  const svcDomain = svc.public_domain ? `<div class="sm-domain">${escHtml(svc.public_domain)}</div>` : '';
+  const svcIp = svc.public_ip ? `<div class="sm-svc-meta">${escHtml(svc.public_ip)}${svcPort}</div>` : (svcPort ? `<div class="sm-svc-meta">${svcPort}</div>` : '');
+  const deployLine = deploy.type && deploy.type !== 'none'
+    ? `<div class="sm-svc-meta">${DEPLOY_ICONS[deploy.type] || '☁️'} ${escHtml(deploy.type)}${deploy.host ? ' · ' + escHtml(deploy.host) : ''}</div>`
+    : '';
+
+  const svcCard = `<div class="sm-card">
+    <div class="sm-svc-row">
+      <div class="sm-dot ${isRunning ? 'on' : 'off'}"></div>
+      <div class="sm-svc-name">${escHtml(p.name)}</div>
+    </div>
+    ${svcIp}${svcDomain}${deployLine}
+    ${svc.url ? `<div class="sm-svc-meta" style="color:#4ade80">${escHtml(svc.url)}</div>` : ''}
+  </div>`;
+
+  const groups = { lang:[], web:[], ai:[], db:[], infra:[] };
+  techStack.forEach(t => { const n = t.name || t; groups[classifyTech(n)].push(n); });
+  const groupLabels = { lang:'语言', web:'框架', ai:'AI', db:'存储', infra:'工具链' };
+  const techHtml = Object.entries(groups).filter(([,v]) => v.length).map(([cat, items]) => `
+    <div class="sm-tech-group">
+      <div class="sm-tech-label">${groupLabels[cat]}</div>
+      <div class="sm-tech-pills">${items.map(n => `<span class="sm-pill ${cat}">${escHtml(n)}</span>`).join('')}</div>
+    </div>`).join('');
+  const techCard = techStack.length ? `<div class="sm-card">${techHtml}</div>` : '';
+
+  // ── Right col: Claude + features ──
+  let claudeCard = '';
+  if (ca) {
+    const spark = ca.session_spark_15d || [];
+    const sparkMax = Math.max(...spark, 0.1);
+    const sparkBars = spark.map(v => {
+      const h = v === 0 ? 100 : Math.min(100, Math.max(15, Math.round((v / 12) * 100)));
+      const cls = v === 0 ? '' : (v >= 12 || v >= sparkMax * 0.7) ? ' hi' : ' on';
+      return `<span class="sm-sbar${cls}" style="height:${h}%"></span>`;
+    }).join('');
+
+    const todos = (ca.todos || []).slice(0, 5);
+    const todoHtml = todos.length ? `<div class="sm-todo-list">${todos.map(t => {
+      const s = t.status || 'pending';
+      return `<div class="sm-todo"><div class="sm-todo-dot ${s}"></div><span style="color:${s==='completed'?'#4ade80':s==='in_progress'?'#facc15':'#4a5060'}">${escHtml(t.content || '')}</span></div>`;
+    }).join('')}</div>` : '';
+
+    claudeCard = `<div class="sm-card claude">
+      <div class="sm-section-title" style="margin-bottom:10px">Claude</div>
+      <div class="sm-cl-grid">
+        <div class="sm-cl-stat"><div class="sm-cl-val">$${(ca.estimated_cost_usd||0).toFixed(1)}</div><div class="sm-cl-lbl">累计花费</div></div>
+        <div class="sm-cl-stat"><div class="sm-cl-val">${ca.session_count_30d||0}</div><div class="sm-cl-lbl">30天会话</div></div>
+        <div class="sm-cl-stat"><div class="sm-cl-val">${fmtTok(ca.output_tokens||0)}</div><div class="sm-cl-lbl">输出 Token</div></div>
+        <div class="sm-cl-stat"><div class="sm-cl-val">${fmtTok(ca.cache_read_tokens||0)}</div><div class="sm-cl-lbl">Cache 读</div></div>
+      </div>
+      <div class="sm-spark">${sparkBars}</div>
+      ${todoHtml}
+    </div>`;
+  }
+
+  const featCard = features.length ? `<div class="sm-card">
+    <div class="sm-section-title" style="margin-bottom:10px">功能列表</div>
+    <div class="sm-feat-list">${features.map(f => {
+      const impl = f.implemented !== false;
+      return `<div class="sm-feat">
+        <span class="sm-feat-check ${impl ? 'done' : 'plan'}">${impl ? '✓' : '○'}</span>
+        <span>${escHtml(f.text || '')}</span>
+      </div>`;
+    }).join('')}</div>
+  </div>` : '';
+
+  el.innerHTML = kpiRow + `<div class="sm-cols">
+    <div class="sm-col">${svcCard}${techCard}</div>
+    <div class="sm-col">${claudeCard}${featCard}</div>
+  </div>`;
 }
 
 // ─── Modal: 全局面貌 ──────────────────────────────────────────────────────────
@@ -1146,161 +2220,191 @@ function renderProjectOverview(p) {
   const git = p.git || {};
   const deploy = p.deploy || {};
   const loc = p.loc || {};
+  const svc = p.service || {};
   const features = p.features || [];
-
-  let html = '';
-
-  // Arch summary
-  const summaryBtnId = `btn-summarize-${p.id}`;
-  if (p.arch_summary) {
-    html += `<div class="section">
-      <div class="section-title" style="display:flex;align-items:center;gap:8px;">
-        架构概述
-        <button id="${summaryBtnId}" onclick="generateSummary('${p.id}')" style="font-size:11px;padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:#aaa;">↻ 重新生成</button>
-      </div>
-      <div class="arch-text" id="arch-text-${p.id}">${simpleMarkdown(p.arch_summary)}</div>
-    </div>`;
-  } else {
-    html += `<div class="section">
-      <div class="section-title">架构概述</div>
-      <div style="color:#666;font-size:13px;margin-bottom:8px;">暂无总结</div>
-      <button id="${summaryBtnId}" onclick="generateSummary('${p.id}')" style="font-size:12px;padding:4px 12px;cursor:pointer;border:1px solid #4a7c59;border-radius:4px;background:#1e3a28;color:#7fc794;">✨ AI 生成总结</button>
-    </div>`;
-  }
-
-  // Tech stack
-  if ((p.tech_stack || []).length) {
-    html += `<div class="section">
-      <div class="section-title">技术栈</div>
-      <div class="tag-row">
-        ${(p.tech_stack || []).map(t => `<span class="tag">${escHtml(t.name || t)}</span>`).join('')}
-      </div>
-    </div>`;
-  }
-
-  // Git
-  html += `<div class="section">
-    <div class="section-title">Git 状态</div>
-    <div class="git-row">
-      <div class="git-item"><span class="key">分支</span><span class="val">${escHtml(git.branch || '—')}</span></div>
-      <div class="git-item"><span class="key">Commit</span><span class="val">${escHtml((git.commit_hash || '').slice(0, 8) || '—')}</span></div>
-      <div class="git-item"><span class="key">本月</span><span class="val">${git.monthly_commits || 0} commits</span></div>
-    </div>`;
-
-  if ((git.dirty_files || []).length) {
-    html += `<div class="dirty-files">
-      ${(git.dirty_files || []).map(f => {
-        const parts = f.trim().split(/\s+/);
-        const flag = parts[0] || '??';
-        const name = parts.slice(1).join(' ');
-        const cls = flag.includes('M') ? 'dirty-M'
-          : flag.includes('A') ? 'dirty-A'
-          : flag.includes('D') ? 'dirty-D'
-          : 'dirty-QQ';
-        return `<div class="dirty-file ${cls}">${escHtml(flag)} ${escHtml(name)}</div>`;
-      }).join('')}
-    </div>`;
-  }
-
-  if ((git.recent_commits || []).length) {
-    html += `<div class="recent-commits">
-      ${(git.recent_commits || []).slice(0, 8).map(c => {
-        const hash = typeof c === 'object' ? (c.hash || '') : '';
-        const msg = typeof c === 'object' ? (c.message || c.msg || String(c)) : String(c);
-        return `<div class="commit-item">
-          ${hash ? `<span class="commit-hash">${escHtml(hash.slice(0, 7))}</span>` : ''}
-          <span class="commit-msg">${escHtml(msg)}</span>
-        </div>`;
-      }).join('')}
-    </div>`;
-  }
-  html += `</div>`;
-
-  // Deploy
-  if (deploy && (deploy.type || deploy.host || deploy.url)) {
-    html += `<div class="section">
-      <div class="section-title">部署信息</div>
-      ${deploy.type ? `<span class="deploy-badge">${escHtml(deploy.type)}</span>` : ''}
-      <div class="deploy-grid">
-        ${deploy.host ? `<span class="deploy-key">Host</span><span class="deploy-val">${escHtml(deploy.host)}</span>` : ''}
-        ${deploy.url ? `<span class="deploy-key">URL</span><span class="deploy-val"><a href="${escHtml(deploy.url)}" target="_blank">${escHtml(deploy.url)}</a></span>` : ''}
-        ${deploy.remote_dir ? `<span class="deploy-key">目录</span><span class="deploy-val">${escHtml(deploy.remote_dir)}</span>` : ''}
-      </div>
-      ${deploy.cmd ? `<div class="deploy-cmd">${escHtml(deploy.cmd)}</div>` : ''}
-    </div>`;
-  }
-
-  // External dependencies
   const extDeps = p.external_deps || [];
-  if (extDeps.length) {
-    // Check which deps are shared with other projects
-    const shared = {};
-    allProjects.forEach(op => {
-      if (op.id === p.id) return;
-      (op.external_deps || []).forEach(od => {
-        extDeps.forEach(d => {
-          if (d.name === od.name || (d.port && d.port === od.port)) {
-            if (!shared[d.name]) shared[d.name] = [];
-            if (!shared[d.name].includes(op.name)) shared[d.name].push(op.name);
-          }
-        });
+
+  // ── Shared deps lookup ──
+  const shared = {};
+  allProjects.forEach(op => {
+    if (op.id === p.id) return;
+    (op.external_deps || []).forEach(od => {
+      extDeps.forEach(d => {
+        if (d.name === od.name || (d.port && d.port === od.port)) {
+          if (!shared[d.name]) shared[d.name] = [];
+          if (!shared[d.name].includes(op.name)) shared[d.name].push(op.name);
+        }
       });
     });
+  });
 
-    html += `<div class="section">
-      <div class="section-title">外部依赖服务</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
-        ${extDeps.map(d => {
-          const sharedWith = shared[d.name] || [];
-          const portStr = d.port ? `<code style="font-size:11px;color:#888">:${d.port}</code>` : '';
-          const sharedBadge = sharedWith.length
-            ? `<span style="font-size:10px;background:rgba(79,70,229,.15);border:1px solid rgba(79,70,229,.3);color:#a5b4fc;border-radius:10px;padding:1px 6px;margin-left:4px">共用 · ${escHtml(sharedWith.join(', '))}</span>`
-            : '';
-          return `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#1a1a1a;border-radius:4px;border:1px solid #2a2a2a;">
-            <span style="font-size:13px;color:#e0e0e0;font-weight:500">${escHtml(d.name)}</span>
-            ${portStr}
-            ${sharedBadge}
-            <span style="margin-left:auto;font-size:10px;color:#555">${escHtml(d.source)}</span>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
+  // ── Hero ──
+  const wsState = wsSnapshot[p.id];
+  const isRunning = wsState !== undefined ? wsState.is_running : svc.is_running;
+  const svcBadge = svc.port
+    ? `<span class="ov-badge ${isRunning ? 'ov-badge-running' : 'ov-badge-stopped'}">${isRunning ? '● 运行中' : '○ 停止'} :${svc.port}</span>`
+    : '';
+  const deployBadge = deploy.type && deploy.type !== 'none'
+    ? `<span class="ov-badge ov-badge-deploy">${escHtml(deploy.type)}${deploy.host ? ' · ' + escHtml(deploy.host) : ''}</span>`
+    : '';
+  const curStatus = p.status || 'active';
+  const statusOpts = Object.entries(STATUS_META).map(([k,v]) =>
+    `<div class="status-opt${k===curStatus?' selected':''}" onclick="event.stopPropagation();setStatus('${escHtml(p.id)}','${k}',this)">${v.label}</div>`
+  ).join('');
+  const statusBadge = `<div class="status-dropdown-wrap" onclick="event.stopPropagation();toggleStatusMenu(this)" style="display:inline-block">
+    <span class="ov-badge ov-badge-status status-badge-clickable">${escHtml(curStatus)} ▾</span>
+    <div class="status-menu">${statusOpts}</div>
+  </div>`;
+
+  // Extract one-liner: first non-heading line from arch_summary
+  let oneLiner = '';
+  if (p.arch_summary) {
+    const firstLine = p.arch_summary.split('\n').find(l => l.trim() && !l.startsWith('#'));
+    oneLiner = firstLine ? firstLine.replace(/^\*\*[^*]+\*\*[:：]\s*/, '').trim() : '';
   }
 
-  // LOC
-  if (loc.total_lines || loc.code_lines) {
-    const commentPct = loc.total_lines
-      ? Math.round(((loc.comment_lines || 0) / loc.total_lines) * 100)
-      : 0;
-    html += `<div class="section">
-      <div class="section-title">代码规模</div>
-      <div class="mini-stats">
-        ${miniStat('总行数', (loc.total_lines || 0).toLocaleString())}
-        ${miniStat('代码行', (loc.code_lines || 0).toLocaleString())}
-        ${miniStat('文件数', (loc.file_count || 0).toLocaleString())}
-        ${miniStat('注释率', commentPct + '%')}
-      </div>`;
+  const summaryBtnId = `btn-summarize-${p.id}`;
+  let html = `<div class="ov-hero">
+    <button class="ov-regen-btn" id="${summaryBtnId}" onclick="generateSummary('${escHtml(p.id)}')">↻ 重新生成</button>
+    <div class="ov-hero-title">${escHtml(p.name)}</div>
+    ${oneLiner ? `<div class="ov-hero-oneliner">${escHtml(oneLiner)}</div>` : ''}
+    <div class="ov-hero-badges">${svcBadge}${deployBadge}${statusBadge}</div>
+  </div>`;
 
-    const langs = loc.languages || [];
-    if (langs.length) {
-      const maxLines = Math.max(...langs.map(l => l.code || l.lines || 0), 1);
-      html += `<div class="lang-bar">
-        ${langs.slice(0, 8).map((l, i) => {
-          const lines = l.code || l.lines || 0;
-          const pct = Math.round((lines / maxLines) * 100);
-          const color = LANG_COLORS[i % LANG_COLORS.length];
-          return `<div class="lang-row">
-            <span class="lang-name">${escHtml(l.name || l.language || '')}</span>
-            <div class="lang-track"><div class="lang-fill" style="width:${pct}%;background:${color}"></div></div>
-            <span class="lang-count">${lines.toLocaleString()}</span>
-          </div>`;
-        }).join('')}
+  // ── Two-column: arch markdown + tech stack ──
+  const techStack = p.tech_stack || [];
+  const groups = { lang:[], web:[], ai:[], db:[], infra:[] };
+  techStack.forEach(t => {
+    const name = t.name || t;
+    groups[classifyTech(name)].push(name);
+  });
+  const groupLabels = { lang:'语言', web:'框架 / API', ai:'AI / ML', db:'存储', infra:'工具链' };
+
+  const techPanelHtml = Object.entries(groups)
+    .filter(([, items]) => items.length)
+    .map(([cat, items]) => `
+      <div class="ov-tech-group">
+        <div class="ov-tech-group-label">${groupLabels[cat]}</div>
+        <div class="ov-tech-pills">
+          ${items.map(n => `<span class="ov-tech-pill ${techPillClass(cat)}">${escHtml(n)}</span>`).join('')}
+        </div>
+      </div>`).join('');
+
+  if (p.arch_summary || techStack.length) {
+    html += `<div class="ov-cols">`;
+    if (p.arch_summary) {
+      html += `<div class="arch-text" id="arch-text-${p.id}">${simpleMarkdown(p.arch_summary)}</div>`;
+    } else {
+      html += `<div class="arch-text" style="color:#555;display:flex;align-items:center;justify-content:center;">
+        <button onclick="generateSummary('${escHtml(p.id)}')" style="font-size:12px;padding:6px 14px;cursor:pointer;border:1px solid #4a7c59;border-radius:5px;background:#1e3a28;color:#7fc794;">✨ AI 生成总结</button>
+      </div>`;
+    }
+    if (techStack.length) {
+      html += `<div class="ov-tech-panel">
+        <div class="ov-tech-panel-title">技术栈</div>
+        ${techPanelHtml}
       </div>`;
     }
     html += `</div>`;
   }
 
-  // Features
+  // ── Service map (project → external deps) ──
+  if (extDeps.length) {
+    const nodes = extDeps.map(d => {
+      const sharedWith = shared[d.name] || [];
+      const isShared = sharedWith.length > 0;
+      let meta = d.port ? `:${d.port}` : '';
+      if (!meta && d.url) { try { meta = new URL(d.url.startsWith('http') ? d.url : 'http://' + d.url).hostname; } catch(_) {} }
+      const sharedBadge = isShared
+        ? `<div class="ov-svc-shared-badge">共用 · ${escHtml(sharedWith.join(', '))}</div>`
+        : '';
+      return `
+        <div class="ov-svc-arrow">→</div>
+        <div class="ov-svc-node">
+          <div class="ov-svc-node-box ext${isShared ? ' shared' : ''}">${escHtml(d.name)}</div>
+          ${meta ? `<div class="ov-svc-node-meta">${escHtml(meta)}</div>` : ''}
+          ${sharedBadge}
+        </div>`;
+    }).join('');
+
+    html += `<div class="ov-svc-map">
+      <div class="ov-svc-map-title">服务依赖</div>
+      <div class="ov-svc-flow">
+        <div class="ov-svc-node">
+          <div class="ov-svc-node-box self">${escHtml(p.name)}</div>
+          ${svc.port ? `<div class="ov-svc-node-meta">:${svc.port}</div>` : ''}
+        </div>
+        ${nodes}
+      </div>
+    </div>`;
+  }
+
+  // ── Bottom data row: LOC · Git · Languages ──
+  const hasLoc = loc.total_lines || loc.code_lines;
+  const hasGit = git.branch;
+  const hasLangs = (loc.languages || []).length > 0;
+
+  if (hasLoc || hasGit || hasLangs) {
+    html += `<div class="ov-data-row">`;
+
+    // LOC card
+    if (hasLoc) {
+      html += `<div class="ov-data-card">
+        <div class="ov-data-card-title">代码规模</div>
+        <div class="ov-stat-grid">
+          <div class="ov-stat"><div class="ov-stat-val">${((loc.total_lines || 0) / 1000).toFixed(1)}k</div><div class="ov-stat-label">总行数</div></div>
+          <div class="ov-stat"><div class="ov-stat-val">${((loc.code_lines || 0) / 1000).toFixed(1)}k</div><div class="ov-stat-label">代码行</div></div>
+          <div class="ov-stat"><div class="ov-stat-val">${loc.file_count || 0}</div><div class="ov-stat-label">文件数</div></div>
+          <div class="ov-stat"><div class="ov-stat-val">${loc.total_lines ? Math.round(((loc.comment_lines || 0) / loc.total_lines) * 100) : 0}%</div><div class="ov-stat-label">注释率</div></div>
+        </div>
+      </div>`;
+    }
+
+    // Git card
+    if (hasGit) {
+      const recentCommits = (git.recent_commits || []).slice(0, 4);
+      html += `<div class="ov-data-card">
+        <div class="ov-data-card-title">Git</div>
+        <div class="ov-git-items">
+          <div class="ov-git-kv"><span class="k">分支</span><span class="v">${escHtml(git.branch || '—')}</span></div>
+          <div class="ov-git-kv"><span class="k">Commit</span><span class="v">${escHtml((git.commit_hash || '').slice(0, 7) || '—')}</span></div>
+          <div class="ov-git-kv"><span class="k">本月提交</span><span class="v">${git.monthly_commits || 0}</span></div>
+          ${(git.dirty_files || []).length ? `<div class="ov-git-kv"><span class="k">未提交</span><span class="v" style="color:var(--orange)">${git.dirty_files.length} 文件</span></div>` : ''}
+        </div>
+        ${recentCommits.length ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px;">
+          ${recentCommits.map(c => {
+            const msg = typeof c === 'object' ? (c.message || c.msg || String(c)) : String(c);
+            return `<div style="font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(msg)}</div>`;
+          }).join('')}
+        </div>` : ''}
+      </div>`;
+    }
+
+    // Languages card
+    if (hasLangs) {
+      const langs = (loc.languages || []).slice(0, 6);
+      const maxLines = Math.max(...langs.map(l => l.code || 0), 1);
+      html += `<div class="ov-data-card">
+        <div class="ov-data-card-title">语言分布</div>
+        <div class="ov-lang-list">
+          ${langs.map((l, i) => {
+            const lines = l.code || 0;
+            const pct = Math.round((lines / maxLines) * 100);
+            const color = LANG_COLORS[i % LANG_COLORS.length];
+            return `<div class="ov-lang-row">
+              <span class="ov-lang-name">${escHtml(l.name || '')}</span>
+              <div class="ov-lang-track"><div class="ov-lang-fill" style="width:${pct}%;background:${color}"></div></div>
+              <span class="ov-lang-num">${lines >= 1000 ? (lines/1000).toFixed(1)+'k' : lines}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  // ── Features (compact, below fold) ──
   if (features.length) {
     html += `<div class="section">
       <div class="section-title">功能列表</div>
@@ -1511,9 +2615,16 @@ async function doImport() {
     btn.disabled = false; btn.textContent = '导入';
   }
 }
-async function deleteCurrentProject() {
+function initDelete() {
+  document.getElementById('delete-confirm-row').style.display = 'flex';
+  document.getElementById('delete-init-btn').style.display = 'none';
+}
+function cancelDelete() {
+  document.getElementById('delete-confirm-row').style.display = 'none';
+  document.getElementById('delete-init-btn').style.display = '';
+}
+async function confirmDeleteProject() {
   if (!currentProject) return;
-  if (!confirm(`从 Vibe Manager 移除「${currentProject.name}」？\n（不会删除项目文件，只是不再追踪）`)) return;
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}`, { method: 'DELETE' });
     if (res.ok) {
@@ -1521,10 +2632,10 @@ async function deleteCurrentProject() {
       await loadProjects();
     } else {
       const d = await res.json();
-      alert('移除失败: ' + (d.detail || ''));
+      showToast('移除失败: ' + (d.detail || ''));
     }
   } catch(e) {
-    alert('移除失败: ' + e.message);
+    showToast('移除失败: ' + e.message);
   }
 }
 
@@ -1555,24 +2666,11 @@ function collectAnomalies(projects, wsSnapshot = {}) {
         icon: '🔴', title: `${p.name} 服务停止`, desc: `端口 ${svc.port} 无响应` });
     }
 
-    // 2. Many uncommitted changes
-    const dirty = (git.dirty_files || []).length;
-    if (dirty >= 10) {
-      result.push({ id: `git-${p.id}`, projectId: p.id, projectName: p.name,
-        icon: '📝', title: `${p.name} 有大量未提交变更`, desc: `${dirty} 个文件未提交` });
-    }
-
-    // 3. Stale design docs
+    // 2. Stale design docs
     const staleDocs = docs.filter(d => d.possibly_stale);
     if (staleDocs.length) {
       result.push({ id: `docs-${p.id}`, projectId: p.id, projectName: p.name,
         icon: '📄', title: `${p.name} 设计文档已过期`, desc: staleDocs.map(d => d.filename).join(', ') });
-    }
-
-    // 4. Active project, no commits in a month
-    if (p.status === 'active' && git.branch && git.monthly_commits === 0) {
-      result.push({ id: `idle-${p.id}`, projectId: p.id, projectName: p.name,
-        icon: '💤', title: `${p.name} 本月无提交`, desc: '活跃项目但近期无活动' });
     }
   }
   return result;
@@ -1591,7 +2689,7 @@ function renderAnomalies() {
     list.innerHTML = '<div style="padding:12px 14px;color:#666;font-size:12px">暂无异常 ✓</div>';
   } else {
     list.innerHTML = anomalies.map(a => `
-      <div class="anomaly-item" onclick="event.stopPropagation();openProject('${escHtml(a.projectId)}')">
+      <div class="anomaly-item" onclick="event.stopPropagation();window.location.href='/projects/${escHtml(a.projectId)}'">
         <span class="anomaly-icon">${a.icon}</span>
         <div>
           <div class="anomaly-title">${escHtml(a.title)}</div>
@@ -1641,11 +2739,12 @@ function connectStatusWs() {
       });
     }
 
-    // Save prev state
+    // Save prev state + update global snapshot
     Object.entries(snapshot).forEach(([id, svc]) => {
       wsStatusPrev[id] = svc.is_running;
     });
     wsStatusPrev.snapshot = snapshot;
+    wsSnapshot = snapshot;
 
     // Refresh anomaly panel with latest service states
     anomalies = collectAnomalies(allProjects, snapshot);
@@ -1655,9 +2754,55 @@ function connectStatusWs() {
   ws.onclose = () => setTimeout(connectStatusWs, 5000);  // reconnect after 5s
 }
 
+// ─── Infra Services ───────────────────────────────────────────────────────────
+const _INFRA_ICONS = {
+  llm: '🤖', voice: '🎙️', http: '🌐', wiki: '📖',
+  storage: '🗄️', db: '🗃️', other: '⚙️',
+};
+
+async function loadInfraServices() {
+  try {
+    const res = await fetch('/api/base-services');
+    allBaseServices = await res.json();
+    renderCards(); // re-render cards to show deps
+  } catch(e) {}
+}
+
+// ─── Navigation delegation ────────────────────────────────────────────────────
+document.getElementById('project-grid').addEventListener('click', e => {
+  const card = e.target.closest('[data-project-id]');
+  if (!card) return;
+  if (e.target.closest('a, button')) return;  // let links/buttons handle themselves
+  window.location.href = '/projects/' + card.dataset.projectId;
+});
+
+document.getElementById('summary-tbody').addEventListener('click', e => {
+  const row = e.target.closest('[data-project-id]');
+  if (!row) return;
+  if (e.target.closest('a, button')) return;
+  window.location.href = '/projects/' + row.dataset.projectId;
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadProjects();
+loadInfraServices();
 connectStatusWs();
 </script>
+<!-- ── Chat Agent ──────────────────────────────── -->
+<button class="chat-fab" id="chat-fab" onclick="toggleChat()" title="与 Mira 对话">💬</button>
+
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-header">
+    <span class="chat-header-title">✦ Mira</span>
+    <button class="chat-close" onclick="toggleChat()">×</button>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input-row">
+    <textarea class="chat-input" id="chat-input"
+      placeholder="问 Mira 任何关于项目的事..." rows="1"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+    <button class="chat-send" id="chat-send" onclick="sendChat()">↑</button>
+  </div>
+</div>
 </body>
 </html>
