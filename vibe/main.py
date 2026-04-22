@@ -2,7 +2,7 @@ import asyncio
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -579,6 +579,95 @@ def _check_service_statuses() -> dict:
         except Exception:
             result[p.name] = {"is_running": False, "port": None, "process_name": None}
     return result
+
+
+@api.get("/api/alerts")
+def get_alerts():
+    global _alerts
+    current = list(_alerts)
+    _alerts.clear()
+    return {"alerts": current}
+
+
+@api.post("/api/chat")
+async def chat_endpoint(body: dict):
+    import json as _json
+    import urllib.request as _ureq
+    import asyncio as _asyncio
+
+    message = (body.get("message") or "").strip()
+    history = body.get("history") or []
+    if not message:
+        raise HTTPException(status_code=400, detail="message required")
+
+    async def generate():
+        global _alerts
+
+        projects = await _asyncio.to_thread(get_all_projects)
+        system_prompt = _build_system_prompt(projects)
+
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": message})
+
+        # Tool calling loop (non-streaming, max 5 rounds)
+        for _ in range(5):
+            payload = _json.dumps({
+                "model": _AGENT_MODEL,
+                "messages": messages,
+                "tools": [_SHELL_TOOL],
+                "stream": False,
+            }).encode()
+            try:
+                req = _ureq.Request(
+                    "http://localhost:11434/api/chat",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with _ureq.urlopen(req, timeout=120) as resp:
+                    result = _json.loads(resp.read())
+            except Exception as e:
+                yield f"data: {_json.dumps({'type': 'error', 'content': f'无法连接到本地模型：{e}'})}\n\n"
+                return
+
+            msg = result.get("message", {})
+            tool_calls = msg.get("tool_calls") or []
+
+            if not tool_calls:
+                # Stream final response word by word
+                text = msg.get("content", "（无回复）")
+                words = text.split(" ")
+                for i, word in enumerate(words):
+                    chunk = word + (" " if i < len(words) - 1 else "")
+                    yield f"data: {_json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                    await _asyncio.sleep(0.015)
+                yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                return
+
+            # Execute tools
+            messages.append({
+                "role": "assistant",
+                "content": msg.get("content", ""),
+                "tool_calls": tool_calls,
+            })
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                if fn.get("name") == "run_shell":
+                    args = fn.get("arguments", {})
+                    cmd = args.get("command", "")
+                    cwd = args.get("working_dir", "~")
+                    output = await _asyncio.to_thread(_run_shell, cmd, cwd)
+                    yield f"data: {_json.dumps({'type': 'tool_exec', 'command': cmd, 'output': output})}\n\n"
+                    messages.append({"role": "tool", "content": output})
+
+        yield f"data: {_json.dumps({'type': 'error', 'content': '工具调用轮次超限'})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @api.websocket("/ws/status")
