@@ -131,7 +131,11 @@
 /* ── pixel-cyber: sharp edges + mosaic grid ────────────────────────────── */
 /* Fix hardcoded dark colors that don't use CSS variables */
 [data-theme="pixel-cyber"] .card-spark15-bar { background: transparent !important; }
+[data-theme="pixel-cyber"] .card-spark15-bar.on { background: var(--accent-light) !important; }
+[data-theme="pixel-cyber"] .card-spark15-bar.hi { background: var(--purple) !important; }
 [data-theme="pixel-cyber"] .sm-sbar { background: transparent !important; }
+[data-theme="pixel-cyber"] .sm-sbar.on { background: var(--accent-light) !important; }
+[data-theme="pixel-cyber"] .sm-sbar.hi { background: var(--purple) !important; }
 [data-theme="pixel-cyber"] .card-git-row,
 [data-theme="pixel-cyber"] .ov-section,
 [data-theme="pixel-cyber"] .ov-kv-row,
