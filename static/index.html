@@ -157,7 +157,6 @@
 [data-theme="pixel-cyber"] .card {
   box-shadow: 2px 2px 0 var(--border), inset 0 0 0 1px rgba(0,212,255,0.08);
 }
-[data-theme="pixel-cyber"] .refresh-btn,
 [data-theme="pixel-cyber"] .skin-btn {
   box-shadow: 2px 2px 0 var(--accent);
 }
@@ -521,35 +520,16 @@ body {
 .toast.toast-ok { background:rgba(74,222,128,.07); border-color:var(--green); }
 @keyframes toast-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
-/* Anomaly toggle */
-#anomaly-toggle {
-  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  cursor: pointer; user-select: none;
-}
-#anomaly-btn {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 14px; font-size: 13px; color: #ccc;
-}
+/* Anomaly badge on chat FAB */
 #anomaly-badge {
+  position: absolute; top: -4px; right: -4px;
   background: var(--red); color: #fff; border-radius: 10px;
-  font-size: 11px; font-weight: 700; padding: 1px 6px; min-width: 18px; text-align: center;
+  font-size: 10px; font-weight: 700; padding: 1px 5px; min-width: 16px;
+  text-align: center; line-height: 16px; height: 16px;
+  display: none;
 }
+#anomaly-badge.visible { display: block; }
 #anomaly-badge.ok { background: var(--green); }
-#anomaly-panel {
-  display: none; border-top: 1px solid #333;
-  max-height: 320px; overflow-y: auto; width: 320px;
-}
-#anomaly-panel.open { display: block; }
-.anomaly-item {
-  padding: 8px 14px; font-size: 12px; border-bottom: 1px solid #2a2a2a;
-  display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
-}
-.anomaly-item:hover { background: #252525; }
-.anomaly-item:last-child { border-bottom: none; }
-.anomaly-icon { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
-.anomaly-title { color: #e0e0e0; font-weight: 500; }
-.anomaly-desc { color: #888; font-size: 11px; margin-top: 2px; }
 
 /* Tech stack tags */
 .tag-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -1341,8 +1321,6 @@ body {
   .summary-table th, .summary-table td { padding: 8px 10px; white-space: nowrap; }
 
   /* Anomaly toggle */
-  #anomaly-toggle { bottom: 14px; right: 14px; }
-  #anomaly-panel { width: calc(100vw - 28px); max-width: 320px; }
 
   /* Modal: fullscreen on mobile */
   .modal-overlay { padding: 0; align-items: flex-end; }
@@ -1440,6 +1418,7 @@ body {
   background: var(--accent); border: none; cursor: pointer;
   font-size: 22px; color: #fff; box-shadow: 0 4px 16px rgba(var(--accent-rgb),.45);
   transition: transform .15s, box-shadow .15s;
+  display: flex; align-items: center; justify-content: center;
 }
 .chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(var(--accent-rgb),.7); }
 .chat-panel {
@@ -1556,21 +1535,10 @@ body {
     <button class="skin-btn" id="skin-btn" onclick="toggleSkinPicker()" aria-label="切换皮肤">◈ 皮肤</button>
     <div class="skin-picker" id="skin-picker"></div>
   </div>
-  <button class="refresh-btn" id="refresh-btn" onclick="loadProjects()">↻ 刷新</button>
 </div>
 
 <div id="toast-container"></div>
 
-<!-- Anomaly Toggle -->
-<div id="anomaly-toggle" onclick="toggleAnomalyPanel()">
-  <div id="anomaly-btn">
-    <span>异常</span>
-    <span id="anomaly-badge">0</span>
-  </div>
-  <div id="anomaly-panel">
-    <div id="anomaly-list"></div>
-  </div>
-</div>
 
 <!-- Import Modal -->
 <div id="import-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center">
@@ -1843,9 +1811,6 @@ const LANG_COLORS = [
 
 // ─── Load Projects ────────────────────────────────────────────────────────────
 async function loadProjects() {
-  const btn = document.getElementById('refresh-btn');
-  btn.classList.add('loading');
-  btn.textContent = '↻ 加载中…';
   try {
     const res = await fetch('/api/projects');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1860,8 +1825,6 @@ async function loadProjects() {
     document.getElementById('project-grid').innerHTML =
       `<div class="error-state">⚠ 加载失败: ${escHtml(e.message)}</div>`;
   } finally {
-    btn.classList.remove('loading');
-    btn.textContent = '↻ 刷新';
   }
 }
 
@@ -2856,29 +2819,12 @@ function collectAnomalies(projects, wsSnapshot = {}) {
 
 function renderAnomalies() {
   const badge = document.getElementById('anomaly-badge');
-  const list = document.getElementById('anomaly-list');
-  const toggle = document.getElementById('anomaly-toggle');
-
-  badge.textContent = anomalies.length;
-  badge.className = anomalies.length === 0 ? 'ok' : '';
-  toggle.style.borderColor = anomalies.length > 0 ? 'var(--red)' : '#444';
-
   if (anomalies.length === 0) {
-    list.innerHTML = '<div style="padding:12px 14px;color:#666;font-size:12px">暂无异常 ✓</div>';
+    badge.className = '';  // hide
   } else {
-    list.innerHTML = anomalies.map(a => `
-      <div class="anomaly-item" onclick="event.stopPropagation();window.location.href='/projects/${escHtml(a.projectId)}'">
-        <span class="anomaly-icon">${a.icon}</span>
-        <div>
-          <div class="anomaly-title">${escHtml(a.title)}</div>
-          <div class="anomaly-desc">${escHtml(a.desc)}</div>
-        </div>
-      </div>`).join('');
+    badge.textContent = anomalies.length;
+    badge.className = 'visible';
   }
-}
-
-function toggleAnomalyPanel() {
-  document.getElementById('anomaly-panel').classList.toggle('open');
 }
 
 // ─── WebSocket Service Monitor ────────────────────────────────────────────────
@@ -3133,7 +3079,7 @@ loadInfraServices();
 connectStatusWs();
 </script>
 <!-- ── Chat Agent ──────────────────────────────── -->
-<button class="chat-fab" id="chat-fab" onclick="toggleChat()" aria-label="打开 Mira 对话">⌘</button>
+<button class="chat-fab" id="chat-fab" onclick="toggleChat()" aria-label="打开 Mira 对话">⌘<span id="anomaly-badge"></span></button>
 
 <div class="chat-panel" id="chat-panel" role="dialog" aria-label="Mira 对话" aria-modal="true">
   <div class="chat-header">
