@@ -113,10 +113,10 @@
   --accent-light: #00ffe0;
   --accent-light-rgb: 0,255,224;
   /* ── 文字：全部提亮，确保可读性 ── */
-  --text: #e0f4ff;
-  --text-sec: #80c8e8;
-  --text-muted: #3d8aad;
-  --text-deep: #1a4060;
+  --text: #eef8ff;
+  --text-sec: #a8daf0;
+  --text-muted: #6bbad8;
+  --text-deep: #2a5570;
   /* ── 语义色：全部高饱和霓虹 ── */
   --green: #00ff88;
   --green-dim: #00d470;
@@ -129,6 +129,18 @@
 }
 
 /* ── pixel-cyber: sharp edges + mosaic grid ────────────────────────────── */
+/* Fix hardcoded dark colors that don't use CSS variables */
+[data-theme="pixel-cyber"] .card-spark15-bar { background: var(--card) !important; }
+[data-theme="pixel-cyber"] .sm-sbar { background: var(--card) !important; }
+[data-theme="pixel-cyber"] .card-git-row,
+[data-theme="pixel-cyber"] .ov-section,
+[data-theme="pixel-cyber"] .ov-kv-row,
+[data-theme="pixel-cyber"] .ov-git-kv,
+[data-theme="pixel-cyber"] .ov-svc-node { border-color: var(--border) !important; }
+[data-theme="pixel-cyber"] .trend-section { border-color: rgba(var(--border-subtle-rgb),0.4) !important; }
+[data-theme="pixel-cyber"] .card-stat-grid { border-color: rgba(var(--border-subtle-rgb),0.5) !important; }
+[data-theme="pixel-cyber"] .card-stat { border-right-color: rgba(var(--border-subtle-rgb),0.3) !important; }
+[data-theme="pixel-cyber"] .card-meta { border-top-color: rgba(var(--border-subtle-rgb),0.3) !important; }
 [data-theme="pixel-cyber"] * {
   border-radius: 0 !important;
 }
@@ -405,7 +417,7 @@ body {
 }
 .card-stat:last-child { border-right: none; }
 .card-sv { font-size: 13px; font-weight: 700; color: var(--text); }
-.card-sl { font-size: 8px; color: var(--text-deep); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+.card-sl { font-size: 8px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
 .card-sv-purple { color: var(--accent-light); }
 .card-sl-purple { color: #3d3060; }
 
@@ -434,7 +446,7 @@ body {
 .card-claude-meta { flex: 1; }
 .ccm-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
 .ccm-lbl { flex: 1; font-size: 8px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
-.ccm-val { flex: 1; font-size: 11px; font-weight: 600; color: #4a5060; }
+.ccm-val { flex: 1; font-size: 11px; font-weight: 600; color: var(--text-sec); }
 .card-spark15 {
   display: flex; gap: 2px; align-items: flex-end; height: 44px; flex-shrink: 0;
 }
