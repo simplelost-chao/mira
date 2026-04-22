@@ -25,6 +25,7 @@ _refreshing = False
 
 # ── Agent ──────────────────────────────────────────────────────────────────────
 _alerts: list[str] = []
+_alerts_lock = threading.Lock()
 
 _AGENT_MODEL = "qwen2.5:7b"
 
@@ -112,10 +113,11 @@ def _check_anomalies(projects: list[dict]) -> None:
         if monthly is not None and monthly == 0:
             new_alerts.append(f"{p['name']} 本月没有新提交")
     ts = datetime.now().strftime("%H:%M")
-    _alerts.clear()
-    _alerts.extend(f"[{ts}] {a}" for a in new_alerts)
-    if len(_alerts) > 50:
-        del _alerts[:-50]
+    with _alerts_lock:
+        _alerts.clear()
+        _alerts.extend(f"[{ts}] {a}" for a in new_alerts)
+        if len(_alerts) > 50:
+            del _alerts[:-50]
 
 
 def _collect_one(item: dict) -> dict:
@@ -583,9 +585,9 @@ def _check_service_statuses() -> dict:
 
 @api.get("/api/alerts")
 def get_alerts():
-    global _alerts
-    current = list(_alerts)
-    _alerts.clear()
+    with _alerts_lock:
+        current = list(_alerts)
+        _alerts.clear()
     return {"alerts": current}
 
 
@@ -625,8 +627,9 @@ async def chat_endpoint(body: dict):
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with _ureq.urlopen(req, timeout=120) as resp:
-                    result = _json.loads(resp.read())
+                result = await _asyncio.to_thread(
+                    lambda: _json.loads(_ureq.urlopen(req, timeout=120).read())
+                )
             except Exception as e:
                 yield f"data: {_json.dumps({'type': 'error', 'content': f'无法连接到本地模型：{e}'})}\n\n"
                 return
@@ -660,6 +663,8 @@ async def chat_endpoint(body: dict):
                     output = await _asyncio.to_thread(_run_shell, cmd, cwd)
                     yield f"data: {_json.dumps({'type': 'tool_exec', 'command': cmd, 'output': output})}\n\n"
                     messages.append({"role": "tool", "content": output})
+                else:
+                    messages.append({"role": "tool", "content": f"[未知工具：{fn.get('name')}]"})
 
         yield f"data: {_json.dumps({'type': 'error', 'content': '工具调用轮次超限'})}\n\n"
 
