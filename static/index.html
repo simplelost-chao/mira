@@ -53,6 +53,29 @@
   --border-subtle-rgb: 45,49,72;
 }
 
+[data-theme="neon-pixel"] {
+  --bg: #0a0a0a;
+  --card: #1a1a1a;
+  --border: #00ff00;
+  --accent: #ff00ff;
+  --accent-dim: #cc00cc;
+  --accent-rgb: 255,0,255;
+  --accent-light: #00ffff;
+  --accent-light-rgb: 0,255,255;
+  --text: #e0e0ff;
+  --text-sec: #a0a0cc;
+  --text-muted: #505070;
+  --text-deep: #282840;
+  --green: #00ff00;
+  --green-dim: #00cc00;
+  --orange: #ff8800;
+  --red: #ff0040;
+  --purple: #ff00ff;
+  --yellow: #ffff00;
+  --card-deep: #080808;
+  --border-subtle-rgb: 0,255,0;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -252,7 +275,7 @@ body {
 .progress-fill {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), #818cf8);
+  background: linear-gradient(90deg, var(--accent), var(--accent-light));
   transition: width 0.3s;
 }
 .progress-label { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
@@ -1943,7 +1966,7 @@ function renderCard(p) {
     <div class="card-header">
       ${isRunning
         ? `<span style="width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green);flex-shrink:0;animation:pulse-green 2s infinite"></span>`
-        : `<span style="width:8px;height:8px;border-radius:50%;background:#2d3148;flex-shrink:0"></span>`}
+        : `<span style="width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0"></span>`}
       <span class="card-name">${escHtml(p.name)}</span>
       ${statusDropdown(p.id, p.status || 'active')}
       <a href="/projects/${escHtml(p.id)}" target="_blank"
@@ -2052,7 +2075,7 @@ function renderGlobal() {
         <div class="kpi-stat"><span class="kpi-label">代码行数</span><span class="kpi-value kpi-green">${fmtNum(totalLines)}</span></div>
       </div>
     </div>
-    <div class="kpi-card" style="flex:1.6;border-color:rgba(129,140,248,.2)">
+    <div class="kpi-card" style="flex:1.6;border-color:rgba(var(--accent-light-rgb),.2)">
       <div class="kpi-accent-bar" style="background:var(--accent)"></div>
       <div class="kpi-inner">
         <div class="kpi-stat"><span class="kpi-label">Claude 花费</span><span class="kpi-value kpi-accent">$${totalCost.toFixed(0)}</span></div>
@@ -2967,6 +2990,7 @@ async function sendChat() {
 // ─── Skin System ──────────────────────────────────────────────────────────────
 const SKINS = [
   { id: 'default', name: '深空默认', preview: ['#0f1117', '#4f46e5'] },
+  { id: 'neon-pixel', name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] },
 ];
 
 function applySkin(id) {
