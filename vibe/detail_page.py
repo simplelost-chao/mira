@@ -206,7 +206,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
     background: rgba(255,255,255,.03); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px;
   }}
-  .stats-val {{ font-size: 20px; font-weight: 700; margin-bottom: 2px; font-variant-numeric: tabular-nums; }}
+  .stats-val {{ font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 2px; font-variant-numeric: tabular-nums; }}
   .stats-lbl {{ font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }}
   .summary-grid {{
     display: grid; grid-template-columns: 1fr 1fr;
@@ -217,7 +217,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
     border-radius: 8px; padding: 14px 16px;
   }}
   .summary-card.claude-card {{
-    background: rgba(79,70,229,.04); border-color: rgba(79,70,229,.15);
+    background: rgba(var(--accent-rgb, 79,70,229),.04); border-color: rgba(var(--accent-rgb, 79,70,229),.15);
   }}
   .card-section-title {{
     font-size: 9px; font-weight: 700; letter-spacing: 2px;
