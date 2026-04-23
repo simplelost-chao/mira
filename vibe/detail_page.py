@@ -422,7 +422,7 @@ async function loadOverview() {{
     </div>`;
 
     // ── Stats bar ──
-    const done = features.filter(f => f.implemented !== false);
+    const done = features.filter(f => f.implemented);
     const featPct = features.length ? Math.round(done.length / features.length * 100) : null;
     const codeLinesStr = loc.code_lines ? (loc.code_lines >= 1000 ? (loc.code_lines/1000).toFixed(1)+'k' : String(loc.code_lines)) : '—';
 
