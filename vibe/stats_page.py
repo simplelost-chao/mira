@@ -2,55 +2,26 @@
 
 
 def render_stats_page() -> str:
-    return '''<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>开发统计 · Mira</title>
-<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #080c14; --panel: rgba(14,20,36,.95); --border: rgba(255,255,255,.07);
-    --text: #eef1f7; --sub: #7a8499; --muted: #4a5060;
-    --accent: #4f46e5;
-    --green: #5cd08a; --blue: #4e9eff; --gold: #d9b36b; --red: #e06c75;
-    --mono: 'JetBrains Mono', monospace; --sans: 'Noto Sans SC', sans-serif;
-    --radius: 8px;
-  }
-  [data-theme="neon-pixel"] {
-    --bg: #0a0a0a; --panel: rgba(20,20,20,.95); --border: #00ff00;
-    --text: #e0e0ff; --sub: #a0a0cc; --muted: #505070; --accent: #ff00ff;
-    --green: #00ff00; --blue: #00ffff; --gold: #ffff00;
-    --radius: 0px;
-  }
-  [data-theme="pixel-cyber"] {
-    --bg: #020c1a; --panel: rgba(10,31,56,.95); --border: #00d4ff;
-    --text: #eef8ff; --sub: #a8daf0; --muted: #6bbad8; --accent: #ff0055;
-    --green: #00ff88; --blue: #00d4ff; --gold: #ffaa00;
-    --radius: 0px;
-  }
-  body { background: var(--bg); color: var(--text); font-family: var(--mono);
-         min-height: 100vh; padding: 0; }
+    from vibe.topbar import theme_vars_css, topbar_css, topbar_html, settings_overlay_html, topbar_js
+    _theme_css = theme_vars_css()
+    _tb_css    = topbar_css()
+    _tb_html   = topbar_html(title="统计", back_url="/")
+    _overlays  = settings_overlay_html()
+    _tb_js     = topbar_js()
+
+    page_css = r"""
   a { color: inherit; text-decoration: none; }
 
-  /* topbar */
-  .topbar { display: flex; align-items: center; gap: 10px; padding: 0 20px;
-            height: 52px; background: var(--panel); border-bottom: 1px solid var(--border);
-            position: sticky; top: 0; z-index: 100; }
-  .topbar-title { font-size: 18px; font-weight: 700; color: var(--accent); }
-  .topbar-spacer { flex: 1; }
-  .back-btn { background: none; border: 1px solid var(--border); color: var(--sub);
-              border-radius: var(--radius); padding: 4px 12px; font-size: 13px;
-              cursor: pointer; font-family: var(--mono); }
-  .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* range controls bar */
+  .stats-controls {
+    display: flex; align-items: center; gap: 8px; padding: 8px 20px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
   .range-toggle { display: flex; gap: 4px; }
   .range-btn { background: none; border: 1px solid var(--border); color: var(--sub);
-               border-radius: var(--radius); padding: 4px 12px; font-size: 12px;
+               border-radius: var(--radius-sm); padding: 4px 12px; font-size: 12px;
                cursor: pointer; font-family: var(--mono); transition: all .15s; }
-  .range-btn.active { background: var(--accent); border-color: var(--accent);
-                      color: #fff; }
+  .range-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   /* main layout */
   .stats-main { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
@@ -86,7 +57,7 @@ def render_stats_page() -> str:
   .rank-bar { background: var(--green); border-radius: 3px; height: 8px;
               transition: width .3s; }
   .rank-hours { font-size: 11px; color: var(--sub); text-align: right; }
-  .rank-cost  { font-size: 11px; color: var(--blue); text-align: right; }
+  .rank-cost  { font-size: 11px; color: var(--blue,#4e9eff); text-align: right; }
 
   /* empty state */
   .empty-state { text-align: center; color: var(--sub); padding: 60px 20px;
@@ -98,48 +69,12 @@ def render_stats_page() -> str:
     .rank-row    { grid-template-columns: 80px 1fr 50px; }
     .rank-cost   { display: none; }
   }
-</style>
-</head>
-<body>
+"""
 
-<div class="topbar">
-  <span class="topbar-title">&#128202; 开发统计</span>
-  <div class="topbar-spacer"></div>
-  <div class="range-toggle">
-    <button class="range-btn active" id="btn-30d">日 · 30天</button>
-    <button class="range-btn"        id="btn-12w">周 · 12周</button>
-  </div>
-  <button class="back-btn" onclick="location.href=\'/'">← 返回</button>
-</div>
-
-<div class="stats-main">
-  <div id="summary-row" class="summary-row"></div>
-  <div class="chart-row">
-    <div class="chart-card">
-      <div class="chart-title">活跃时长</div>
-      <svg id="chart-hours" class="chart-svg" height="80"></svg>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Token 花费（USD）</div>
-      <svg id="chart-cost" class="chart-svg" height="80"></svg>
-    </div>
-  </div>
-  <div class="ranking-card">
-    <div class="ranking-title">项目活跃度排行</div>
-    <div id="ranking-list"></div>
-  </div>
-</div>
-
-<script>
+    page_js = r"""
 const _PRICE_IN  = 3.0  / 1e6;
 const _PRICE_OUT = 15.0 / 1e6;
-
-let _adminToken = localStorage.getItem('mira-admin-token') || '';
 let _currentRange = '30d';
-
-function _authHeaders() {
-  return _adminToken ? { 'X-Admin-Token': _adminToken } : {};
-}
 
 function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -155,23 +90,10 @@ function setRange(r) {
   loadStats();
 }
 
-async function loadStats(retries) {
-  if (retries === undefined) retries = 0;
+async function loadStats() {
   try {
-    const res = await fetch('/api/stats?range=' + _currentRange,
-      { headers: _authHeaders() });
-    if (res.status === 401) {
-      if (retries >= 3) {
-        document.getElementById('summary-row').innerHTML =
-          '<div class="empty-state">认证失败，请刷新页面重试</div>';
-        return;
-      }
-      const tok = prompt('请输入管理员密码：');
-      if (!tok) return;
-      _adminToken = tok;
-      localStorage.setItem('mira-admin-token', tok);
-      return loadStats(retries + 1);
-    }
+    const res = await fetch('/api/stats?range=' + _currentRange, { headers: _authHeaders() });
+    if (res.status === 401) { openLoginModal(loadStats); return; }
     if (!res.ok) {
       document.getElementById('summary-row').innerHTML =
         '<div class="empty-state">加载失败，请刷新重试</div>';
@@ -255,7 +177,54 @@ function renderRanking(projects) {
   }).join('');
 }
 
-loadStats();
-</script>
-</body>
-</html>'''
+_initAuth().then(loadStats);
+"""
+
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="zh">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        "<title>开发统计 · Mira</title>\n"
+        "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>\n"
+        "<style>\n"
+        "  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;700&display=swap');\n"
+        + _theme_css
+        + _tb_css
+        + page_css
+        + "</style>\n</head>\n<body>\n\n"
+        + _tb_html + "\n\n"
+        + """\
+<div class="stats-controls">
+  <div class="range-toggle">
+    <button class="range-btn active" id="btn-30d">日 · 30天</button>
+    <button class="range-btn"        id="btn-12w">周 · 12周</button>
+  </div>
+</div>
+
+<div class="stats-main">
+  <div id="summary-row" class="summary-row"></div>
+  <div class="chart-row">
+    <div class="chart-card">
+      <div class="chart-title">活跃时长</div>
+      <svg id="chart-hours" class="chart-svg" height="80"></svg>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Token 花费（USD）</div>
+      <svg id="chart-cost" class="chart-svg" height="80"></svg>
+    </div>
+  </div>
+  <div class="ranking-card">
+    <div class="ranking-title">项目活跃度排行</div>
+    <div id="ranking-list"></div>
+  </div>
+</div>
+
+"""
+        + _overlays + "\n\n"
+        + "<script>\n"
+        + _tb_js + "\n"
+        + page_js
+        + "</script>\n</body>\n</html>\n"
+    )

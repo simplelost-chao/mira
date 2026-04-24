@@ -1,7 +1,22 @@
+import os
 import re
+import shutil
 import subprocess
 
 _TARGET_RE = re.compile(r'^[\w.-]+:\d+\.\d+$')
+
+# macOS launchd services have a minimal PATH that excludes Homebrew (/opt/homebrew/bin)
+# and set TMPDIR to a per-user /var/folders/... path instead of /tmp.
+# Both break tmux subprocess calls:
+#   - tmux binary not found (FileNotFoundError)
+#   - tmux can't find its socket (returns no sessions)
+# Fix: augment PATH to include common install locations, force TMUX_TMPDIR=/tmp.
+_EXTRA_PATHS = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+_PATH = os.environ.get("PATH", "") + ":" + ":".join(_EXTRA_PATHS)
+_TMUX_ENV = {**os.environ, "PATH": _PATH, "TMUX_TMPDIR": "/tmp"}
+
+# Resolve the tmux binary once at import time so we can use the full path.
+_TMUX_BIN = shutil.which("tmux", path=_PATH) or "tmux"
 
 
 def list_panes() -> list[dict]:
@@ -9,8 +24,8 @@ def list_panes() -> list[dict]:
     fmt = "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_title}"
     try:
         proc = subprocess.run(
-            ["tmux", "list-panes", "-a", "-F", fmt],
-            capture_output=True, text=True,
+            [_TMUX_BIN, "list-panes", "-a", "-F", fmt],
+            capture_output=True, text=True, env=_TMUX_ENV,
         )
     except FileNotFoundError:
         return []
@@ -42,8 +57,8 @@ def list_panes() -> list[dict]:
 def capture_pane(target: str, lines: int = 200) -> str:
     """Return recent output from a tmux pane."""
     proc = subprocess.run(
-        ["tmux", "capture-pane", "-t", target, "-p", "-J"],
-        capture_output=True, text=True,
+        [_TMUX_BIN, "capture-pane", "-t", target, "-p", "-J"],
+        capture_output=True, text=True, env=_TMUX_ENV,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"capture-pane failed for target '{target}': {proc.stderr.strip()}")
@@ -62,13 +77,13 @@ def send_keys(target: str, keys: str) -> None:
         raise RuntimeError(f"Invalid tmux target format: {target!r}")
 
     def _run(cmd: list[str]) -> None:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=_TMUX_ENV)
         if proc.returncode != 0:
             raise RuntimeError(f"send-keys failed for target '{target}': {proc.stderr.strip()}")
 
     parts = keys.split("\n")
     for i, part in enumerate(parts):
         if part:
-            _run(["tmux", "send-keys", "-t", target, part])
+            _run([_TMUX_BIN, "send-keys", "-t", target, part])
         if i < len(parts) - 1:
-            _run(["tmux", "send-keys", "-t", target, "Enter"])
+            _run([_TMUX_BIN, "send-keys", "-t", target, "Enter"])

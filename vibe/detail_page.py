@@ -1,6 +1,11 @@
 """Full project detail page with tabs: 全局面貌 · 设计文档 · 计划."""
 
 def render_detail_page(project_id: str, project_name: str) -> str:
+    from vibe.topbar import topbar_css, topbar_html, settings_overlay_html, topbar_js
+    _tb_css      = topbar_css()
+    _tb_html     = topbar_html()   # no title/back — detail page has its own subnav
+    _overlays    = settings_overlay_html()
+    _tb_js       = topbar_js()
     return f'''<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -57,56 +62,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   }}
   body {{ background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; }}
 
-  /* ── topbar ── */
-  .topbar {{
-    position: sticky; top: 0; z-index: 100;
-    background: var(--panel); border-bottom: 1px solid var(--border);
-    backdrop-filter: blur(12px);
-    display: flex; align-items: center; gap: 16px; padding: 0 24px; height: 52px;
-  }}
-  .topbar-title {{
-    margin-right: 8px; display: inline-flex; align-items: baseline; gap: 0;
-    letter-spacing: 3px; line-height: 1; text-transform: uppercase;
-  }}
-  .topbar-title .logo-m {{
-    font-size: 24px; font-weight: 900; color: var(--accent);
-    text-shadow: 0 0 10px var(--accent);
-  }}
-  .topbar-title .logo-ira {{ font-size: 18px; font-weight: 700; color: var(--text); opacity: .75; }}
-  .topbar-title .logo-cursor {{
-    font-size: 20px; font-weight: 400; color: var(--accent); opacity: .9;
-    animation: logo-blink 1.1s step-end infinite;
-  }}
-  @keyframes logo-blink {{ 0%, 100% {{ opacity: .9; }} 50% {{ opacity: 0; }} }}
-  .topbar-spacer {{ flex: 1; }}
-  .settings-btn {{
-    background: none; border: 1px solid var(--border); color: var(--sub);
-    font-size: 13px; padding: 5px 12px; border-radius: var(--radius-sm);
-    cursor: pointer; transition: all .15s; font-family: var(--mono);
-  }}
-  .settings-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
-  .skin-wrap {{ position: relative; }}
-  .skin-btn {{
-    background: none; border: 1px solid var(--border); color: var(--sub);
-    font-size: 13px; padding: 5px 12px; border-radius: var(--radius-sm);
-    cursor: pointer; transition: all .15s; font-family: var(--mono);
-  }}
-  .skin-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
-  .skin-picker {{
-    display: none; position: fixed;
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 10px; padding: 10px; z-index: 9999;
-    box-shadow: 0 8px 32px rgba(0,0,0,.5); min-width: 180px;
-  }}
-  .skin-picker.open {{ display: block; }}
-  .skin-picker-label {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }}
-  .skin-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }}
-  .skin-card {{ border: 1px solid var(--border); border-radius: 7px; padding: 8px; cursor: pointer; transition: border-color .15s; }}
-  .skin-card:hover {{ border-color: var(--accent); }}
-  .skin-card.active {{ border-color: var(--accent); }}
-  .skin-preview {{ height: 32px; border-radius: 4px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 6px; }}
-  .skin-preview div {{ height: 100%; }}
-  .skin-name {{ font-size: 11px; color: var(--sub); text-align: center; }}
+{_tb_css}
 
   /* ── subnav ── */
   .subnav {{
@@ -141,36 +97,6 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   }}
   .refresh-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
 
-  /* ── Settings Modal ── */
-  .settings-overlay {{
-    position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.6);
-    display: none; align-items: center; justify-content: center;
-  }}
-  .settings-overlay.open {{ display: flex; }}
-  .settings-modal {{
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 28px; width: 360px; max-width: 90vw;
-  }}
-  .settings-title {{ font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 20px; }}
-  .settings-group {{ margin-bottom: 14px; }}
-  .settings-label {{ font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing: .5px; }}
-  .settings-input {{
-    width: 100%; box-sizing: border-box;
-    background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px;
-    color: var(--text); font-size: 13px; font-family: var(--mono);
-    outline: none; transition: border-color .15s;
-  }}
-  .settings-input:focus {{ border-color: var(--accent); }}
-  .settings-footer {{ display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }}
-  .settings-btn-cancel {{
-    padding: 7px 16px; background: transparent; border: 1px solid var(--border);
-    border-radius: 6px; color: var(--sub); cursor: pointer; font-size: 13px; font-family: var(--mono);
-  }}
-  .settings-btn-save {{
-    padding: 7px 16px; background: var(--accent); border: none;
-    border-radius: 6px; color: #fff; cursor: pointer; font-size: 13px; font-family: var(--mono);
-  }}
 
   /* ── content ── */
   .content {{ position: relative; z-index: 1; }}
@@ -559,16 +485,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
 </head>
 <body>
 
-<div class="topbar">
-  <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
-  <div class="topbar-spacer"></div>
-  <button class="settings-btn" onclick="openSettings()">⚙ 设置</button>
-  <button class="settings-btn" id="logout-btn" onclick="logout()" style="display:none" title="退出登录">⏏</button>
-  <div class="skin-wrap">
-    <button class="skin-btn" id="skin-btn" onclick="toggleSkinPicker()" aria-label="切换皮肤">◈ 皮肤</button>
-    <div class="skin-picker" id="skin-picker"></div>
-  </div>
-</div>
+{_tb_html}
 <div class="subnav">
   <a class="subnav-back" href="/">← 返回列表</a>
   <div class="subnav-sep"></div>
@@ -1330,157 +1247,7 @@ async function reload() {{
   await init();
 }}
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-let _adminToken = localStorage.getItem('mira-admin-token') || '';
-let _isAdmin = false;
-
-function _authHeaders(extra = {{}}) {{
-  return _adminToken ? {{'X-Admin-Token': _adminToken, ...extra}} : extra;
-}}
-
-async function _initAuth() {{
-  try {{
-    const {{ admin }} = await fetch('/api/auth/check', {{headers: _authHeaders()}}).then(r => r.json());
-    _isAdmin = admin;
-    if (!admin) {{ _adminToken = ''; localStorage.removeItem('mira-admin-token'); }}
-  }} catch(_) {{ _isAdmin = true; }}
-  _updateLogoutBtn();
-}}
-
-function _updateLogoutBtn() {{
-  const btn = document.getElementById('logout-btn');
-  if (btn) btn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
-}}
-
-function logout() {{
-  _adminToken = ''; _isAdmin = false;
-  localStorage.removeItem('mira-admin-token');
-  _updateLogoutBtn();
-  location.reload();
-}}
-
-let _loginCallback = null;
-
-function openLoginModal(cb) {{
-  _loginCallback = cb || null;
-  const ov = document.getElementById('login-overlay');
-  ov.style.display = 'flex';
-  document.getElementById('login-password').value = '';
-  document.getElementById('login-error').style.display = 'none';
-  setTimeout(() => document.getElementById('login-password').focus(), 50);
-}}
-
-function closeLoginModal() {{
-  document.getElementById('login-overlay').style.display = 'none';
-  _loginCallback = null;
-}}
-
-async function doLogin() {{
-  const pw = document.getElementById('login-password').value;
-  try {{
-    const res = await fetch('/api/auth/login', {{
-      method: 'POST', headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{password: pw}}),
-    }});
-    if (!res.ok) throw new Error('wrong');
-    const {{ token }} = await res.json();
-    _adminToken = token; _isAdmin = true;
-    localStorage.setItem('mira-admin-token', token);
-    _updateLogoutBtn();
-    closeLoginModal();
-    if (_loginCallback) {{ const fn = _loginCallback; _loginCallback = null; fn(); }}
-  }} catch(e) {{
-    document.getElementById('login-error').style.display = '';
-  }}
-}}
-
-// ─── Settings ─────────────────────────────────────────────────────────────────
-async function openSettings() {{
-  if (!_isAdmin) {{ openLoginModal(openSettings); return; }}
-  const data = await fetch('/api/settings', {{headers: _authHeaders()}}).then(r => r.json());
-  document.getElementById('set-openrouter').value = '';
-  document.getElementById('set-deepseek').value = '';
-  document.getElementById('set-kimi').value = '';
-  document.getElementById('set-admin-password').value = '';
-  document.getElementById('set-openrouter').placeholder = data.openrouter_api_key || 'sk-or-...';
-  document.getElementById('set-deepseek').placeholder   = data.deepseek_api_key   || 'sk-...';
-  document.getElementById('set-kimi').placeholder       = data.kimi_api_key        || 'sk-...';
-  document.getElementById('set-admin-password').placeholder = data.admin_password ? '留空则不修改' : '未设置';
-  document.getElementById('settings-overlay').classList.add('open');
-}}
-
-function closeSettings() {{
-  document.getElementById('settings-overlay').classList.remove('open');
-}}
-
-async function saveSettings() {{
-  const body = {{
-    openrouter_api_key: document.getElementById('set-openrouter').value.trim(),
-    deepseek_api_key:   document.getElementById('set-deepseek').value.trim(),
-    kimi_api_key:       document.getElementById('set-kimi').value.trim(),
-    admin_password:     document.getElementById('set-admin-password').value.trim(),
-  }};
-  await fetch('/api/settings', {{ method: 'POST', headers: _authHeaders({{'Content-Type':'application/json'}}), body: JSON.stringify(body) }});
-  if (body.admin_password) {{
-    _adminToken = ''; _isAdmin = false;
-    localStorage.removeItem('mira-admin-token');
-    _updateLogoutBtn();
-  }}
-  closeSettings();
-}}
-
-// ─── Skin ─────────────────────────────────────────────────────────────────────
-const SKINS = [
-  {{ id: 'default',     name: '深空默认', preview: ['#0f1117', '#4f46e5'] }},
-  {{ id: 'neon-pixel',  name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] }},
-  {{ id: 'pixel-cyber', name: '像素赛博', preview: ['#000d1a', '#ff0066'] }},
-];
-
-function applySkin(id) {{
-  const skin = SKINS.find(s => s.id === id) ? id : 'default';
-  document.documentElement.dataset.theme = skin;
-  localStorage.setItem('mira-skin', skin);
-}}
-
-function renderSkinPicker() {{
-  const picker = document.getElementById('skin-picker');
-  const current = document.documentElement.dataset.theme || 'default';
-  picker.innerHTML =
-    `<div class="skin-picker-label">选择皮肤</div>` +
-    `<div class="skin-grid">` +
-    SKINS.map(s =>
-      `<div class="skin-card ${{s.id === current ? 'active' : ''}}"
-            data-skin-id="${{s.id}}"
-            onclick="applySkin(this.dataset.skinId);toggleSkinPicker();">
-        <div class="skin-preview">
-          <div style="background:${{s.preview[0]}}"></div>
-          <div style="background:${{s.preview[1]}}"></div>
-        </div>
-        <div class="skin-name">${{s.name}}</div>
-      </div>`
-    ).join('') +
-    `</div>`;
-}}
-
-function toggleSkinPicker() {{
-  const picker = document.getElementById('skin-picker');
-  const open = picker.classList.toggle('open');
-  if (open) {{
-    renderSkinPicker();
-    const btn = document.getElementById('skin-btn');
-    const rect = btn.getBoundingClientRect();
-    picker.style.top = (rect.bottom + 8) + 'px';
-    picker.style.right = (window.innerWidth - rect.right) + 'px';
-  }}
-}}
-
-document.addEventListener('click', e => {{
-  if (!e.target.closest('.skin-wrap')) {{
-    document.getElementById('skin-picker')?.classList.remove('open');
-  }}
-}});
-
-applySkin(localStorage.getItem('mira-skin') || 'default');
+{_tb_js}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {{
@@ -1499,48 +1266,7 @@ _initAuth().then(() => init());
 
 </script>
 
-<!-- Settings Modal -->
-<div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings()">
-  <div class="settings-modal">
-    <div class="settings-title">⚙ 设置 — API Keys</div>
-    <div class="settings-group">
-      <div class="settings-label">OpenRouter API Key</div>
-      <input class="settings-input" id="set-openrouter" type="password" placeholder="sk-or-..." autocomplete="off">
-    </div>
-    <div class="settings-group">
-      <div class="settings-label">DeepSeek API Key</div>
-      <input class="settings-input" id="set-deepseek" type="password" placeholder="sk-..." autocomplete="off">
-    </div>
-    <div class="settings-group">
-      <div class="settings-label">Kimi (Moonshot) API Key</div>
-      <input class="settings-input" id="set-kimi" type="password" placeholder="sk-..." autocomplete="off">
-    </div>
-    <div class="settings-group" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
-      <div class="settings-label">管理员密码</div>
-      <input class="settings-input" id="set-admin-password" type="password" placeholder="留空则不修改" autocomplete="new-password">
-    </div>
-    <div class="settings-footer">
-      <button class="settings-btn-cancel" onclick="closeSettings()">取消</button>
-      <button class="settings-btn-save" onclick="saveSettings()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- Login Modal -->
-<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);align-items:center;justify-content:center;" onclick="if(event.target===this)closeLoginModal()">
-  <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:32px 28px;width:320px;text-align:center">
-    <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px">🔒 管理员登录</div>
-    <div style="font-size:13px;color:var(--sub);margin-bottom:20px">此操作需要管理员权限</div>
-    <input id="login-password" type="password" placeholder="输入密码" autocomplete="current-password"
-      style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;margin-bottom:10px;box-sizing:border-box"
-      onkeydown="if(event.key==='Enter')doLogin()">
-    <div id="login-error" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none">密码错误，请重试</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="closeLoginModal()" style="background:none;border:1px solid var(--border);color:var(--sub);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:var(--mono)">取消</button>
-      <button onclick="doLogin()" style="background:var(--accent);border:none;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;font-family:var(--mono)">登录</button>
-    </div>
-  </div>
-</div>
+{_overlays}
 
 </body>
 </html>'''
