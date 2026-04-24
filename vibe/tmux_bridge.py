@@ -6,7 +6,7 @@ _TARGET_RE = re.compile(r'^[\w.-]+:\d+\.\d+$')
 
 def list_panes() -> list[dict]:
     """Return all tmux panes across all sessions."""
-    fmt = "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_command}\t#{pane_current_path}"
+    fmt = "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_title}"
     try:
         proc = subprocess.run(
             ["tmux", "list-panes", "-a", "-F", fmt],
@@ -25,6 +25,7 @@ def list_panes() -> list[dict]:
         if len(parts) < 5:
             continue
         session, window, pane, command, cwd = parts[:5]
+        title = parts[5] if len(parts) > 5 else ""
         target = f"{session}:{window}.{pane}"
         panes.append({
             "target": target,
@@ -33,6 +34,7 @@ def list_panes() -> list[dict]:
             "pane": int(pane),
             "command": command,
             "cwd": cwd,
+            "title": title,
         })
     return panes
 

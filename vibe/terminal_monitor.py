@@ -11,6 +11,7 @@ _terminal_alerts: list[dict] = []
 _monitor_lock = threading.Lock()
 
 _AUTO_COMMANDS = {"claude", "ccc"}
+_AUTO_TITLE_FRAGMENTS = {"Claude Code"}
 
 WAIT_PATTERNS = [
     r"do you want to",
@@ -90,7 +91,11 @@ def _poll_once() -> None:
     # Auto-discover Claude panes — compute project_id OUTSIDE the lock (I/O)
     new_entries = {}
     for pane in all_panes:
-        if pane["command"] in _AUTO_COMMANDS:
+        title = pane.get("title", "")
+        is_claude = pane["command"] in _AUTO_COMMANDS or any(
+            frag in title for frag in _AUTO_TITLE_FRAGMENTS
+        )
+        if is_claude:
             new_entries[pane["target"]] = (pane, _match_project(pane["cwd"]))
 
     with _monitor_lock:

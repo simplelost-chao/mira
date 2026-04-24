@@ -1376,6 +1376,50 @@ body {
 
 /* ── RESPONSIVE ────────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  /* ── Dev mode: stack vertically ── */
+  #panel-dev { height: calc(100vh - 48px); }
+  .dev-layout { flex-direction: column; }
+
+  /* Sidebar → horizontal scrollable pill row */
+  .dev-sidebar {
+    width: 100%;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+    height: auto;
+  }
+  .dev-sidebar-header { display: none; }
+  .dev-pane-list {
+    display: flex;
+    flex-direction: row;
+    padding: 6px 8px;
+    gap: 6px;
+    overflow-x: auto;
+    flex: 1;
+  }
+  .dev-pane-empty { padding: 10px 14px; white-space: nowrap; }
+  .dev-pane-item {
+    padding: 6px 12px;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .dev-pane-item:hover { border-left-color: transparent; border-bottom-color: rgba(var(--accent-rgb),.4); }
+  .dev-pane-item.active { border-left-color: transparent; border-bottom-color: var(--accent); }
+  .dev-pane-target { display: none; }
+  .dev-pane-waiting { display: inline; margin-top: 0; margin-left: 4px; }
+
+  /* Terminal fills remaining space */
+  .dev-terminal { flex: 1; min-height: 0; }
+  .dev-terminal-output { font-size: 11px; }
+  .dev-input { font-size: 13px; }
+
   /* Topbar */
   .topbar { padding: 0 14px; gap: 8px; height: 48px; }
   .topbar-title .logo-m { font-size: 24px; }
