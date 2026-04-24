@@ -838,6 +838,45 @@ def history_sessions(request: Request, project_id: str = ""):
     return get_sessions(project_id)
 
 
+@api.get("/api/stats")
+def stats_view(request: Request, range: str = "30d"):  # noqa: A002
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+
+    # Parse range param: "30d" → 30 days, "2w" → 14 days
+    range_str = range
+    _is_weekly = range_str.endswith("w")
+    try:
+        n = int(range_str.rstrip("dw"))
+    except ValueError:
+        n = 30
+        _is_weekly = False
+    range_days = max(7, min(n * 7 if _is_weekly else n, 365))
+
+    from vibe.history_db import get_stats
+    data = get_stats(range_days=range_days)
+
+    if _is_weekly:
+        # Collapse daily → weekly buckets (7 days each)
+        weeks = []
+        chunk_days = data["days"]
+        i = 0
+        while i < len(chunk_days):
+            chunk = chunk_days[i:i + 7]
+            i += 7
+            weeks.append({
+                "date":          chunk[-1]["date"],
+                "sessions":      sum(d["sessions"]      for d in chunk),
+                "messages":      sum(d["messages"]      for d in chunk),
+                "input_tokens":  sum(d["input_tokens"]  for d in chunk),
+                "output_tokens": sum(d["output_tokens"] for d in chunk),
+                "active_hours":  round(sum(d["active_hours"] for d in chunk), 2),
+            })
+        data["days"] = weeks
+
+    return data
+
+
 # ── Terminal Bridge ────────────────────────────────────────────────────────────
 
 @api.get("/api/terminals")

@@ -158,3 +158,46 @@ def test_terminals_send_empty_keys():
             headers={'X-Admin-Token': 'x'},
         )
     assert resp.status_code == 400
+
+
+def test_stats_no_auth():
+    resp = client.get('/api/stats')
+    assert resp.status_code == 401
+
+
+def test_stats_admin_returns_shape():
+    from unittest.mock import patch
+    mock_data = {
+        'days': [{'date': '2026-04-24', 'sessions': 1, 'messages': 10,
+                  'input_tokens': 500, 'output_tokens': 200, 'active_hours': 0.5}],
+        'projects': [{'project_id': 'mira', 'project_name': 'Mira', 'sessions': 1,
+                      'total_messages': 10, 'total_input_tokens': 500,
+                      'total_output_tokens': 200, 'total_hours': 0.5, 'total_cost_usd': 0.01}],
+        'totals': {'active_hours': 0.5, 'input_tokens': 500, 'output_tokens': 200,
+                   'estimated_cost_usd': 0.01, 'sessions': 1},
+    }
+    with patch('vibe.main._is_admin', return_value=True), \
+         patch('vibe.history_db.get_stats', return_value=mock_data):
+        resp = client.get('/api/stats?range=30d', headers={'X-Admin-Token': 'any'})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert 'days' in data
+    assert 'projects' in data
+    assert 'totals' in data
+
+
+def test_stats_weekly_aggregation():
+    from unittest.mock import patch
+    # 14 days of data → 2 weeks expected
+    days = [{'date': f'2026-04-{i+1:02d}', 'sessions': 1, 'messages': 5,
+             'input_tokens': 100, 'output_tokens': 40, 'active_hours': 0.2}
+            for i in range(14)]
+    mock_data = {'days': days, 'projects': [], 'totals': {}}
+    with patch('vibe.main._is_admin', return_value=True), \
+         patch('vibe.history_db.get_stats', return_value=mock_data):
+        resp = client.get('/api/stats?range=2w', headers={'X-Admin-Token': 'any'})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data['days']) == 2
+    assert data['days'][0]['sessions'] == 7   # first week
+    assert data['days'][0]['active_hours'] == pytest.approx(1.4, abs=0.01)
