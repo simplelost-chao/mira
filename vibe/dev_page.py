@@ -177,6 +177,15 @@ def render_dev_page() -> str:
   }
   .attach-rm:hover { background: var(--red); }
 
+  /* iOS paste tip */
+  .attach-tip {
+    font-size: 11px; color: var(--sub); text-align: center;
+    max-height: 0; overflow: hidden; opacity: 0;
+    transition: max-height .2s, opacity .2s, padding .2s;
+    padding: 0 10px;
+  }
+  .attach-tip.visible { max-height: 2em; opacity: 1; padding: 5px 10px 0; }
+
   /* Attach button (image icon, left of textarea) */
   .term-attach-btn {
     flex-shrink: 0; background: none;
@@ -609,14 +618,34 @@ document.getElementById('term-input').addEventListener('paste', function(e) {
   }
 });
 
-// file picker
+// iOS detection — file picker always triggers action sheet, use paste instead
+function _isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+// Attach button: open file picker on Android/desktop; show paste tip on iOS
 document.getElementById('btn-attach').addEventListener('click', function() {
+  if (_isIOS()) {
+    _showAttachTip('截图后在输入框长按 → 粘贴');
+    return;
+  }
   document.getElementById('term-file-input').click();
 });
 document.getElementById('term-file-input').addEventListener('change', function() {
   Array.from(this.files).forEach(_addAttachment);
   this.value = '';
 });
+
+// Transient tip near the inputbar (iOS paste guidance)
+let _attachTipTimer = null;
+function _showAttachTip(msg) {
+  let el = document.getElementById('attach-tip');
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(_attachTipTimer);
+  _attachTipTimer = setTimeout(function() { el.classList.remove('visible'); }, 2400);
+}
 
 // drag & drop onto output area
 (function() {
@@ -732,6 +761,7 @@ init();
       </div>
     </div>
     <div class="term-inputbar">
+      <div class="attach-tip" id="attach-tip"></div>
       <div class="term-attachments" id="term-attachments"></div>
       <div class="term-input-row">
         <button class="term-attach-btn" id="btn-attach" disabled title="添加图片（或直接粘贴截图）">
