@@ -630,6 +630,7 @@ function showTab(name) {{
     renderPrompts();
   }}
   if (name === 'terminals') {{
+    clearInterval(_termPollTimer);
     _loadTerminalsTab();
     _termPollTimer = setInterval(() => {{
       _loadTerminalsTab();
@@ -1240,6 +1241,10 @@ function _loadTerminalsTab() {{
         row.addEventListener('click', () =>
           _selectTermPane(row.dataset.target, row.dataset.cmd));
       }});
+      const _activeTargets = new Set(mine.map(p => p.target));
+      if (_termCurrentTarget && !_activeTargets.has(_termCurrentTarget)) {{
+        _termCurrentTarget = null;
+      }}
       if (!_termCurrentTarget && mine.length) {{
         _selectTermPane(mine[0].target, mine[0].command || '');
       }}
