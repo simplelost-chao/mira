@@ -83,7 +83,6 @@ def test_terminals_no_auth():
 
 
 def test_terminals_list_empty():
-    from unittest.mock import patch
     with patch('vibe.main._is_admin', return_value=True), \
          patch('vibe.terminal_monitor.get_panes', return_value=[]):
         resp = client.get('/api/terminals', headers={'X-Admin-Token': 'x'})
@@ -92,7 +91,6 @@ def test_terminals_list_empty():
 
 
 def test_terminals_register_and_list():
-    from unittest.mock import patch
     fake_pane = {'target': 'work:0.0', 'label': 'test', 'waiting': False}
     with patch('vibe.main._is_admin', return_value=True), \
          patch('vibe.terminal_monitor.register_pane') as mock_reg, \
@@ -104,8 +102,26 @@ def test_terminals_register_and_list():
         mock_reg.assert_called_once_with('work:0.0', 'test')
 
 
+def test_terminals_output_success():
+    with patch('vibe.main._is_admin', return_value=True), \
+         patch('vibe.tmux_bridge.capture_pane', return_value='line1\nline2'):
+        resp = client.get('/api/terminals/work%3A0.0/output',
+                          headers={'X-Admin-Token': 'x'})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data['target'] == 'work:0.0'
+    assert 'line1' in data['output']
+
+
+def test_terminals_output_error():
+    with patch('vibe.main._is_admin', return_value=True), \
+         patch('vibe.tmux_bridge.capture_pane', side_effect=RuntimeError('bad target')):
+        resp = client.get('/api/terminals/bad%3A9.9/output',
+                          headers={'X-Admin-Token': 'x'})
+    assert resp.status_code == 400
+
+
 def test_terminals_send_keys():
-    from unittest.mock import patch
     with patch('vibe.main._is_admin', return_value=True), \
          patch('vibe.tmux_bridge.send_keys') as mock_send:
         resp = client.post('/api/terminals/work%3A0.0/send',
@@ -116,7 +132,6 @@ def test_terminals_send_keys():
 
 
 def test_terminals_send_keys_tmux_error():
-    from unittest.mock import patch
     with patch('vibe.main._is_admin', return_value=True), \
          patch('vibe.tmux_bridge.send_keys', side_effect=RuntimeError('bad target')):
         resp = client.post('/api/terminals/bad%3A9.9/send',
@@ -126,7 +141,6 @@ def test_terminals_send_keys_tmux_error():
 
 
 def test_terminals_alerts():
-    from unittest.mock import patch
     fake = [{'target': 'work:0.0', 'label': 'claude/mira', 'snippet': 'proceed?', 'ts': 0}]
     with patch('vibe.main._is_admin', return_value=True), \
          patch('vibe.terminal_monitor.get_terminal_alerts', return_value=fake):
