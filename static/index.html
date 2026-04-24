@@ -1382,7 +1382,7 @@ body {
   .topbar-title .logo-ira { font-size: 18px; }
   .topbar-title .logo-cursor { font-size: 20px; }
   .refresh-btn { font-size: 12px; padding: 4px 10px; }
-  .settings-btn, .skin-btn, .search-btn, .chat-fab {
+  .settings-btn, .skin-btn, .search-btn, .stats-nav-btn, .chat-fab {
     display: inline-flex; align-items: center; justify-content: center;
     height: 30px; padding: 0 8px; font-size: 17px;
   }
@@ -1717,6 +1717,14 @@ body {
   font-size: 17px; padding: 5px 10px; border-radius: 6px; cursor: pointer; transition: all .15s; line-height: 1; }
 .settings-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ── Stats Nav Button ────────────────────────────────────────────────────── */
+.stats-nav-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+  border-radius: 6px; padding: 4px 10px; font-size: 13px; cursor: pointer;
+  display: none; text-decoration: none; line-height: 24px;
+}
+.stats-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── History Search ──────────────────────────────────────────────────────── */
 .search-btn {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
@@ -1789,6 +1797,7 @@ body {
 <div class="topbar">
   <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
+  <a href="/stats" class="stats-nav-btn" id="stats-nav-btn" title="开发统计">📊 统计</a>
   <button class="search-btn" id="search-btn" onclick="toggleSearch()" title="搜索历史">⌕</button>
   <button class="chat-fab" id="chat-fab" onclick="toggleChat()" aria-label="打开 Mira 对话" style="position:relative">⌘<span id="anomaly-badge"></span></button>
 <button class="settings-btn" onclick="openSettings()" title="设置">⚙</button>
@@ -1948,6 +1957,8 @@ async function _initAuth() {
 function _updateLogoutBtn() {
   const sBtn = document.getElementById('search-btn');
   if (sBtn) sBtn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
+  const statsBtn = document.getElementById('stats-nav-btn');
+  if (statsBtn) statsBtn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
 }
 
 function logout() {
