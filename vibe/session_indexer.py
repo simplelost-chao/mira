@@ -121,7 +121,7 @@ def _compute_session_stats(lines: list[str]) -> 'dict | None':
         if gap < GAP_THRESHOLD:
             active_secs += gap
 
-    date_str = timestamps[-1].strftime('%Y-%m-%d')
+    date_str = timestamps[-1].astimezone().strftime('%Y-%m-%d')
     return {
         'date':          date_str,
         'messages':      message_count,
