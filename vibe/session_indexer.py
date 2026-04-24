@@ -62,10 +62,10 @@ def _parse_line(line: str):
     return role, text, ts_ms
 
 
-def _compute_session_stats(path: "Path") -> "dict | None":
+def _compute_session_stats(lines: list[str]) -> 'dict | None':
     """Full-file scan to compute token usage, active hours, and date.
 
-    Returns None if the file is unreadable or has no timestamps.
+    Returns None if lines has no timestamps.
     """
     GAP_THRESHOLD = 30 * 60  # seconds
     timestamps: list[datetime] = []
@@ -73,47 +73,43 @@ def _compute_session_stats(path: "Path") -> "dict | None":
     output_tokens = 0
     message_count = 0
 
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
 
-                # Collect timestamps for active-hours calculation
-                ts_str = obj.get("timestamp", "")
-                if ts_str:
-                    try:
-                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                        timestamps.append(ts)
-                    except Exception:
-                        pass
+        # Collect timestamps for active-hours calculation
+        ts_str = obj.get('timestamp', '')
+        if ts_str:
+            try:
+                ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                timestamps.append(ts)
+            except (ValueError, AttributeError):
+                pass
 
-                # Count text-bearing messages
-                if obj.get("type") in ("user", "assistant"):
-                    msg = obj.get("message", {})
-                    content = msg.get("content", "")
-                    has_text = False
-                    if isinstance(content, str) and content.strip():
+        # Count text-bearing messages
+        if obj.get('type') in ('user', 'assistant'):
+            msg = obj.get('message', {})
+            content = msg.get('content', '')
+            has_text = False
+            if isinstance(content, str) and content.strip():
+                has_text = True
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get('type') == 'text' and block.get('text', '').strip():
                         has_text = True
-                    elif isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get("type") == "text" and block.get("text", "").strip():
-                                has_text = True
-                                break
-                    if has_text:
-                        message_count += 1
+                        break
+            if has_text:
+                message_count += 1
 
-                # Token usage from assistant messages
-                usage = (obj.get("message") or {}).get("usage") or {}
-                if usage.get("output_tokens"):
-                    input_tokens  += usage.get("input_tokens", 0)
-                    output_tokens += usage.get("output_tokens", 0)
-    except OSError:
-        return None
+        # Token usage from assistant messages
+        usage = (obj.get('message') or {}).get('usage') or {}
+        if usage.get('output_tokens'):
+            input_tokens += usage.get('input_tokens', 0)
+            output_tokens += usage.get('output_tokens', 0)
 
     if not timestamps:
         return None
@@ -125,13 +121,13 @@ def _compute_session_stats(path: "Path") -> "dict | None":
         if gap < GAP_THRESHOLD:
             active_secs += gap
 
-    date_str = timestamps[-1].astimezone().strftime("%Y-%m-%d")
+    date_str = timestamps[-1].strftime('%Y-%m-%d')
     return {
-        "date":          date_str,
-        "messages":      message_count,
-        "input_tokens":  input_tokens,
-        "output_tokens": output_tokens,
-        "active_hours":  round(active_secs / 3600, 4),
+        'date':          date_str,
+        'messages':      message_count,
+        'input_tokens':  input_tokens,
+        'output_tokens': output_tokens,
+        'active_hours':  round(active_secs / 3600, 4),
     }
 
 
@@ -172,7 +168,7 @@ def index_file(path: Path, session_id: str, project_id: str, project_name: str) 
 
     # Update daily stats for this session
     try:
-        stats = _compute_session_stats(path)
+        stats = _compute_session_stats(lines)
         if stats:
             from vibe.history_db import upsert_daily_stats
             upsert_daily_stats(
@@ -184,7 +180,7 @@ def index_file(path: Path, session_id: str, project_id: str, project_name: str) 
                 output_tokens=stats["output_tokens"],
                 active_hours=stats["active_hours"],
             )
-    except Exception as e:
+    except Exception as e:  # DB errors (OperationalError, IntegrityError, etc.) are non-fatal
         logger.warning("upsert_daily_stats failed for %s: %s", path, e)
 
 

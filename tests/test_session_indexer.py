@@ -200,17 +200,16 @@ def test_index_file_writes_daily_stats(tmp_path):
         assert result['totals']['active_hours'] > 0  # 5min gap counted
 
 
-def test_compute_session_stats_returns_none_on_missing_file(tmp_path):
+def test_compute_session_stats_returns_none_on_missing_file():
     from vibe.session_indexer import _compute_session_stats
-    result = _compute_session_stats(tmp_path / 'nonexistent.jsonl')
+    result = _compute_session_stats([])
     assert result is None
 
 
-def test_compute_session_stats_no_timestamps(tmp_path):
-    """A file with no timestamps should return None (can't determine date)."""
+def test_compute_session_stats_no_timestamps():
+    """Lines with no timestamps should return None (can't determine date)."""
     import json
     from vibe.session_indexer import _compute_session_stats
-    jsonl = tmp_path / 'no_ts.jsonl'
-    jsonl.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + '\n')
-    result = _compute_session_stats(jsonl)
+    lines = [json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + '\n']
+    result = _compute_session_stats(lines)
     assert result is None
