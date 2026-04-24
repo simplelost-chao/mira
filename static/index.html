@@ -3469,6 +3469,7 @@ function showMainTab(tab) {
 async function loadDevPanes() {
   try {
     const res = await fetch('/api/terminals', { headers: _authHeaders() });
+    if (res.status === 401) { openLoginModal(() => loadDevPanes()); return; }
     if (!res.ok) return;
     const panes = await res.json();
     const listEl = document.getElementById('dev-pane-list');
