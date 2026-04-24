@@ -12,7 +12,27 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 cli = typer.Typer()
-api = FastAPI(title="Vibe Manager")
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    global _cache, _cache_ts
+    from vibe.cache_db import init_db, load_projects
+    init_db()
+    cached, ts = load_projects()
+    if cached:
+        _cache, _cache_ts = cached, ts
+    threading.Thread(target=_background_refresh, daemon=True).start()
+    from vibe.history_db import init_db as history_init_db
+    from vibe.session_indexer import run_indexer
+    history_init_db()
+    threading.Thread(target=run_indexer, daemon=True).start()
+    from vibe.terminal_monitor import run_monitor
+    threading.Thread(target=run_monitor, daemon=True).start()
+    yield
+
+api = FastAPI(title="Vibe Manager", lifespan=_lifespan)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -343,23 +363,6 @@ def _background_refresh():
         except Exception:
             pass
 
-@api.on_event("startup")
-def _on_startup():
-    global _cache, _cache_ts
-    from vibe.cache_db import init_db, load_projects
-    init_db()
-    cached, ts = load_projects()
-    if cached:
-        _cache, _cache_ts = cached, ts
-    threading.Thread(target=_background_refresh, daemon=True).start()
-    # Start session indexer
-    from vibe.history_db import init_db as history_init_db
-    from vibe.session_indexer import run_indexer
-    history_init_db()
-    threading.Thread(target=run_indexer, daemon=True).start()
-    # Start terminal monitor
-    from vibe.terminal_monitor import run_monitor
-    threading.Thread(target=run_monitor, daemon=True).start()
 
 def _mask_projects(projects: list[dict]) -> list[dict]:
     """Remove sensitive cost/token fields and add _masked flag for non-admin responses."""
@@ -482,6 +485,38 @@ def get_project_prompts(project_id: str):
             return entries
         i += 2
     return []
+
+
+@api.get("/api/prompts")
+def get_all_prompts():
+    """Return all prompts grouped by project: {projects: [{id, name, prompts}]}."""
+    import re as _re
+    prompts_file = Path(__file__).parent.parent / "docs" / "prompts.md"
+    if not prompts_file.exists():
+        return {"projects": []}
+    text = prompts_file.read_text(encoding="utf-8")
+    # Split by sections: ## Project Name {#id}
+    sections = _re.split(r'^## (.+?) \{#([\w-]+)\}', text, flags=_re.MULTILINE)
+    # sections: [preamble, name, id, content, name, id, content, ...]
+    projects = []
+    i = 1
+    while i + 2 < len(sections):
+        name, pid, content = sections[i].strip(), sections[i + 1].strip(), sections[i + 2]
+        entries = []
+        blocks = _re.split(r'^> \*\*([^*]+)\*\*', content, flags=_re.MULTILINE)
+        j = 1
+        while j + 1 < len(blocks):
+            date = blocks[j].strip()
+            body = blocks[j + 1]
+            lines = [_re.sub(r'^>\s?', '', line) for line in body.split('\n')]
+            prompt_text = '\n'.join(lines).strip().rstrip('…').strip()
+            if prompt_text:
+                entries.append({"date": date, "text": prompt_text})
+            j += 2
+        if entries:
+            projects.append({"id": pid, "name": name, "prompts": entries})
+        i += 3
+    return {"projects": projects}
 
 
 @api.get("/api/trending")
