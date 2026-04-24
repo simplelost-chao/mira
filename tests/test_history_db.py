@@ -79,3 +79,75 @@ def test_search_bad_fts_syntax_returns_empty(tmp_path):
         from vibe.history_db import init_db, search
         init_db()
         assert search('hello)') == []
+
+
+def test_daily_stats_upsert_and_get(tmp_path):
+    db_file = tmp_path / 'h.db'
+    with patch('vibe.history_db.DB_PATH', db_file):
+        from vibe.history_db import init_db, upsert_daily_stats, get_stats
+        init_db()
+        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 10, 5000, 2000, 1.5)
+        result = get_stats(range_days=30)
+        assert result['totals']['sessions'] == 1
+        assert result['totals']['active_hours'] == 1.5
+        assert result['totals']['input_tokens'] == 5000
+        day = next(d for d in result['days'] if d['date'] == '2026-04-20')
+        assert day['sessions'] == 1
+        assert day['active_hours'] == 1.5
+        assert len(result['projects']) == 1
+        assert result['projects'][0]['project_id'] == 'proj1'
+        assert result['projects'][0]['total_hours'] == 1.5
+
+
+def test_daily_stats_idempotent(tmp_path):
+    db_file = tmp_path / 'h.db'
+    with patch('vibe.history_db.DB_PATH', db_file):
+        from vibe.history_db import init_db, upsert_daily_stats, get_stats
+        init_db()
+        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 10, 5000, 2000, 1.5)
+        # Same session re-indexed — values should be replaced, not doubled
+        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 12, 5500, 2200, 1.6)
+        result = get_stats(range_days=30)
+        assert result['totals']['sessions'] == 1
+        assert result['totals']['active_hours'] == 1.6
+        assert result['totals']['input_tokens'] == 5500
+
+
+def test_daily_stats_multiple_sessions_same_day(tmp_path):
+    db_file = tmp_path / 'h.db'
+    with patch('vibe.history_db.DB_PATH', db_file):
+        from vibe.history_db import init_db, upsert_daily_stats, get_stats
+        init_db()
+        upsert_daily_stats('sessA', 'proj1', '2026-04-20', 10, 5000, 2000, 1.5)
+        upsert_daily_stats('sessB', 'proj1', '2026-04-20', 8, 3000, 1000, 0.8)
+        result = get_stats(range_days=30)
+        day = next(d for d in result['days'] if d['date'] == '2026-04-20')
+        assert day['sessions'] == 2
+        assert day['active_hours'] == pytest.approx(2.3, abs=0.01)
+        assert result['totals']['input_tokens'] == 8000
+
+
+def test_get_stats_fills_missing_days(tmp_path):
+    db_file = tmp_path / 'h.db'
+    with patch('vibe.history_db.DB_PATH', db_file):
+        from vibe.history_db import init_db, upsert_daily_stats, get_stats
+        init_db()
+        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 5, 1000, 400, 0.5)
+        result = get_stats(range_days=7)
+        assert len(result['days']) == 7
+        empty_days = [d for d in result['days'] if d['date'] != '2026-04-20']
+        for d in empty_days:
+            assert d['sessions'] == 0
+            assert d['active_hours'] == 0.0
+
+
+def test_get_stats_empty(tmp_path):
+    db_file = tmp_path / 'h.db'
+    with patch('vibe.history_db.DB_PATH', db_file):
+        from vibe.history_db import init_db, get_stats
+        init_db()
+        result = get_stats(range_days=30)
+        assert all(d['sessions'] == 0 for d in result['days'])
+        assert result['totals']['sessions'] == 0
+        assert result['totals']['estimated_cost_usd'] == 0.0
+        assert result['projects'] == []

@@ -39,6 +39,17 @@ def init_db() -> None:
                 message_id  UNINDEXED,
                 tokenize='trigram'
             );
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                session_id     TEXT PRIMARY KEY,
+                project_id     TEXT NOT NULL,
+                date           TEXT NOT NULL,
+                messages       INTEGER DEFAULT 0,
+                input_tokens   INTEGER DEFAULT 0,
+                output_tokens  INTEGER DEFAULT 0,
+                active_hours   REAL    DEFAULT 0.0
+            );
+            CREATE INDEX IF NOT EXISTS daily_stats_project_date
+                ON daily_stats(project_id, date);
         """)
 
 
@@ -157,3 +168,120 @@ def search(query: str, limit: int = 20) -> list[dict]:
             except sqlite3.OperationalError:
                 return []
         return [dict(r) for r in rows]
+
+
+def upsert_daily_stats(
+    session_id: str,
+    project_id: str,
+    date: str,
+    messages: int,
+    input_tokens: int,
+    output_tokens: int,
+    active_hours: float,
+) -> None:
+    """Insert or fully replace stats for one session (idempotent re-index)."""
+    with _conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO daily_stats
+                (session_id, project_id, date, messages, input_tokens, output_tokens, active_hours)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                project_id    = excluded.project_id,
+                date          = excluded.date,
+                messages      = excluded.messages,
+                input_tokens  = excluded.input_tokens,
+                output_tokens = excluded.output_tokens,
+                active_hours  = excluded.active_hours
+            """,
+            (session_id, project_id, date, messages, input_tokens, output_tokens, active_hours),
+        )
+
+
+def get_stats(range_days: int = 30) -> dict:
+    """Return aggregated daily stats and project rankings for the last range_days days."""
+    from datetime import date as _date, timedelta
+
+    cutoff = (_date.today() - timedelta(days=range_days - 1)).isoformat()
+
+    _PRICE_INPUT  = 3.0  / 1_000_000
+    _PRICE_OUTPUT = 15.0 / 1_000_000
+
+    try:
+        with _conn() as conn:
+            day_rows = conn.execute(
+                """
+                SELECT date,
+                       COUNT(DISTINCT session_id) AS sessions,
+                       SUM(messages)              AS messages,
+                       SUM(input_tokens)          AS input_tokens,
+                       SUM(output_tokens)         AS output_tokens,
+                       SUM(active_hours)          AS active_hours
+                FROM   daily_stats
+                WHERE  date >= ?
+                GROUP  BY date
+                ORDER  BY date
+                """,
+                (cutoff,),
+            ).fetchall()
+
+            proj_rows = conn.execute(
+                """
+                SELECT ds.project_id,
+                       COALESCE(MAX(s.project_name), ds.project_id) AS project_name,
+                       COUNT(DISTINCT ds.session_id)                AS sessions,
+                       SUM(ds.messages)                             AS total_messages,
+                       SUM(ds.input_tokens)                         AS total_input_tokens,
+                       SUM(ds.output_tokens)                        AS total_output_tokens,
+                       SUM(ds.active_hours)                         AS total_hours
+                FROM   daily_stats ds
+                LEFT   JOIN sessions s ON ds.session_id = s.id
+                WHERE  ds.date >= ?
+                GROUP  BY ds.project_id
+                ORDER  BY total_hours DESC
+                LIMIT  20
+                """,
+                (cutoff,),
+            ).fetchall()
+    except Exception:
+        day_rows, proj_rows = [], []
+
+    # Build zero-padded days list
+    day_map = {r["date"]: dict(r) for r in day_rows}
+    days = []
+    for i in range(range_days):
+        d = (_date.today() - timedelta(days=range_days - 1 - i)).isoformat()
+        row = day_map.get(d, {})
+        days.append({
+            "date": d,
+            "sessions":      row.get("sessions", 0),
+            "messages":      row.get("messages", 0),
+            "input_tokens":  row.get("input_tokens", 0),
+            "output_tokens": row.get("output_tokens", 0),
+            "active_hours":  round(row.get("active_hours") or 0.0, 2),
+        })
+
+    projects = []
+    for r in proj_rows:
+        r = dict(r)
+        r["total_cost_usd"] = round(
+            (r["total_input_tokens"] or 0) * _PRICE_INPUT
+            + (r["total_output_tokens"] or 0) * _PRICE_OUTPUT,
+            2,
+        )
+        r["total_hours"] = round(r.get("total_hours") or 0.0, 2)
+        projects.append(r)
+
+    total_input  = sum(d["input_tokens"]  for d in days)
+    total_output = sum(d["output_tokens"] for d in days)
+    return {
+        "days": days,
+        "projects": projects,
+        "totals": {
+            "active_hours":       round(sum(d["active_hours"] for d in days), 1),
+            "input_tokens":       total_input,
+            "output_tokens":      total_output,
+            "estimated_cost_usd": round(total_input * _PRICE_INPUT + total_output * _PRICE_OUTPUT, 2),
+            "sessions":           sum(d["sessions"] for d in days),
+        },
+    }
