@@ -1375,26 +1375,15 @@ body {
 .infra-port { color: var(--text-muted); }
 
 /* ── RESPONSIVE ────────────────────────────────────────────────── */
-@media (max-width: 640px) {
-  /* ── Dev mode: mobile master-detail ── */
-  #panel-dev { height: calc(100vh - 48px); }
+
+/* Dev panel: master-detail on anything narrower than 900px (phones + small tablets) */
+@media (max-width: 900px) {
+  #panel-dev { height: calc(100vh - 52px); }
   .dev-layout { flex-direction: column; }
 
-  /* Topbar: compact tab buttons to avoid overflow */
-  .tab-btn { padding: 4px 10px; }
-
-  /* LIST VIEW (default on mobile) */
-  .dev-sidebar {
-    width: 100%;
-    flex: 1;
-    border-right: none;
-    border-bottom: none;
-  }
-  .dev-sidebar-header {
-    display: flex;
-    padding: 14px 16px 10px;
-    font-size: 11px;
-  }
+  /* LIST VIEW (default) */
+  .dev-sidebar { width: 100%; flex: 1; border-right: none; border-bottom: none; }
+  .dev-sidebar-header { display: flex; padding: 14px 16px 10px; font-size: 11px; }
   .dev-pane-list { padding: 0; overflow-y: auto; }
   .dev-pane-empty {
     padding: 40px 24px;
@@ -1404,38 +1393,36 @@ body {
     line-height: 1.9;
   }
   .dev-pane-item {
-    display: flex;
-    align-items: center;
-    padding: 14px 16px;
+    position: relative;
+    padding: 14px 48px 14px 16px;
     border-left: none;
     border-bottom: 1px solid var(--border);
     border-radius: 0;
     white-space: normal;
+    cursor: pointer;
   }
   .dev-pane-item::after {
     content: '›';
-    margin-left: auto;
-    padding-left: 12px;
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--text-muted);
-    font-size: 20px;
-    flex-shrink: 0;
+    font-size: 22px;
     line-height: 1;
   }
   .dev-pane-item:hover { background: rgba(255,255,255,0.04); border-left-color: transparent; }
   .dev-pane-item.active { background: rgba(var(--accent-rgb), 0.08); border-left-color: transparent; }
-  .dev-pane-label { font-size: 14px; }
-  .dev-pane-target { display: block; font-size: 11px; margin-top: 2px; }
-  .dev-pane-waiting { margin-top: 2px; margin-left: 0; }
+  .dev-pane-label { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+  .dev-pane-target { display: block; font-size: 11px; margin-top: 3px; }
+  .dev-pane-waiting { display: inline-block; margin-top: 4px; margin-left: 0; }
 
   /* DETAIL VIEW: hidden until pane selected */
   .dev-terminal { display: none; }
   .dev-layout.dev-pane-open .dev-sidebar { display: none; }
-  .dev-layout.dev-pane-open .dev-terminal {
-    display: flex;
-    flex: 1;
-  }
+  .dev-layout.dev-pane-open .dev-terminal { display: flex; flex: 1; }
 
-  /* Back button (mobile only) */
+  /* Back button */
   .dev-back-btn {
     display: inline-flex;
     align-items: center;
@@ -1448,11 +1435,16 @@ body {
     flex-shrink: 0;
   }
 
-  /* Terminal detail adjustments */
-  .dev-terminal-output { font-size: 11px; padding: 8px 12px; }
+  /* Terminal adjustments */
+  .dev-terminal-output { font-size: 12px; padding: 10px 14px; }
   .dev-input-row { padding: 8px 10px; }
   .dev-input { font-size: 14px; padding: 8px 10px; }
   .dev-send-btn { padding: 8px 16px; font-size: 13px; }
+}
+
+@media (max-width: 640px) {
+  /* topbar adjustments on narrow phones */
+  #panel-dev { height: calc(100vh - 48px); }
 
   /* Topbar: compact for mobile */
   .topbar { padding: 0 12px; gap: 4px; height: 48px; overflow: hidden; }
