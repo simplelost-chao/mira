@@ -77,9 +77,42 @@ _SHELL_TOOL = {
     },
 }
 
+_READ_TERMINAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "read_terminal",
+        "description": "读取一个 tmux pane 的最新输出，用于了解任务进度或判断是否在等待确认。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "tmux pane target，如 work:0.1"},
+                "lines":  {"type": "integer", "description": "读取行数，默认 50"},
+            },
+            "required": ["target"],
+        },
+    },
+}
+
+_SEND_TERMINAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "send_to_terminal",
+        "description": "向 tmux pane 发送按键或文字，用于确认操作或输入指令。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "tmux pane target，如 work:0.1"},
+                "keys":   {"type": "string", "description": "要发送的按键，如 'y\\n'、'no\\n'、'exit\\n'"},
+            },
+            "required": ["target", "keys"],
+        },
+    },
+}
+
 
 def _build_system_prompt(projects: list[dict]) -> str:
     from datetime import datetime
+    from vibe.terminal_monitor import get_panes
     lines = []
     for p in projects:
         svc = p.get("service") or {}
@@ -89,18 +122,33 @@ def _build_system_prompt(projects: list[dict]) -> str:
         domain = svc.get("public_domain", "")
         commits = git.get("monthly_commits", 0)
         branch = git.get("branch", "?")
-        path = p.get("path", "")
         lines.append(
             f"- {p['name']}（{p.get('status', 'active')}）："
-            f"{status}{port}，{domain}，{commits}次提交/月，branch={branch}，路径={path}"
+            f"{status}{port}，{domain}，{commits}次提交/月，branch={branch}"
         )
     summary = "\n".join(lines) if lines else "（暂无数据）"
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Terminal panes summary
+    try:
+        panes = get_panes()
+        if panes:
+            pane_lines = []
+            for pn in panes:
+                status_str = "⚠ 等待确认" if pn.get("waiting") else "运行中"
+                pane_lines.append(f"  - {pn['target']} [{pn['label']}] {status_str}")
+            terminal_section = "\n已监控的 terminal panes：\n" + "\n".join(pane_lines)
+        else:
+            terminal_section = ""
+    except Exception:
+        terminal_section = ""
+
     return (
-        f"你是 Mira，一个本地项目管理 agent。今天是 {date}。运行在 macOS。\n"
-        f"用中文回答。需要查看实际情况时使用 run_shell 工具。\n"
-        f"如果工具执行后仍然找不到所需信息，或问题超出你的能力范围，直接告诉用户你不知道，不要反复重试。\n\n"
+        f"你是 Mira，一个本地项目管理 agent。今天是 {date}。\n"
+        f"用中文回答。需要查看实际情况时使用 run_shell 工具。"
+        f"需要读取 terminal 输出时使用 read_terminal，需要发送指令时使用 send_to_terminal。\n\n"
         f"当前项目状态（共 {len(projects)} 个项目）：\n{summary}"
+        f"{terminal_section}"
     )
 
 
@@ -889,7 +937,7 @@ async def chat_endpoint(request: Request, body: dict):
             payload = _json.dumps({
                 "model": _AGENT_MODEL,
                 "messages": messages,
-                "tools": [_SHELL_TOOL],
+                "tools": [_SHELL_TOOL, _READ_TERMINAL_TOOL, _SEND_TERMINAL_TOOL],
                 "stream": False,
             }).encode()
             try:
@@ -934,6 +982,29 @@ async def chat_endpoint(request: Request, body: dict):
                     cwd = args.get("working_dir", "~")
                     output = await _asyncio.to_thread(_run_shell, cmd, cwd)
                     yield f"data: {_json.dumps({'type': 'tool_exec', 'command': cmd, 'output': output})}\n\n"
+                    messages.append({"role": "tool", "content": output, "tool_call_id": tc.get("id", "")})
+                elif fn.get("name") == "read_terminal":
+                    args = fn.get("arguments", {})
+                    t_target = args.get("target", "")
+                    t_lines = int(args.get("lines", 50))
+                    try:
+                        from vibe.tmux_bridge import capture_pane
+                        output = capture_pane(t_target, lines=t_lines)
+                    except RuntimeError as e:
+                        output = f"[错误] {e}"
+                    yield f"data: {_json.dumps({'type': 'tool_exec', 'command': f'read_terminal {t_target}', 'output': output})}\n\n"
+                    messages.append({"role": "tool", "content": output, "tool_call_id": tc.get("id", "")})
+                elif fn.get("name") == "send_to_terminal":
+                    args = fn.get("arguments", {})
+                    t_target = args.get("target", "")
+                    t_keys = args.get("keys", "")
+                    try:
+                        from vibe.tmux_bridge import send_keys
+                        send_keys(t_target, t_keys)
+                        output = f"[已发送] {repr(t_keys)} → {t_target}"
+                    except RuntimeError as e:
+                        output = f"[错误] {e}"
+                    yield f"data: {_json.dumps({'type': 'tool_exec', 'command': f'send_to_terminal {t_target}', 'output': output})}\n\n"
                     messages.append({"role": "tool", "content": output, "tool_call_id": tc.get("id", "")})
                 else:
                     messages.append({"role": "tool", "content": f"[未知工具：{fn.get('name')}]", "tool_call_id": tc.get("id", "")})
