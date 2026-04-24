@@ -73,4 +73,6 @@ def collect_design_docs(path: Path) -> list[DesignDoc]:
             ))
         except Exception:
             continue
+    # vibe-summary.md always first
+    docs.sort(key=lambda d: (0 if d.filename in ("vibe-summary.md", "docs/vibe-summary.md") else 1, d.filename))
     return docs

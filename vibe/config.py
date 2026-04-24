@@ -27,8 +27,12 @@ def load_global_config(config_path: Optional[Path] = None) -> dict:
         "exclude": data.get("exclude", _DEFAULT_EXCLUDE),
         "port": data.get("port", 8888),
         "openrouter_api_key": data.get("openrouter_api_key"),
+        "deepseek_api_key": data.get("deepseek_api_key"),
+        "kimi_api_key": data.get("kimi_api_key"),
         "extra_projects": [str(Path(d).expanduser()) for d in data.get("extra_projects", [])],
         "excluded_paths": [str(Path(d).expanduser()) for d in data.get("excluded_paths", [])],
+        "base_services": data.get("base_services", []),
+        "admin_password": data.get("admin_password"),
     }
 
 

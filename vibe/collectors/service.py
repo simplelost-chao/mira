@@ -1,5 +1,6 @@
 # vibe/collectors/service.py
 import re
+import socket
 from pathlib import Path
 from typing import Optional
 import psutil
@@ -61,6 +62,33 @@ def _get_listening_ports(proc: psutil.Process) -> list[int]:
     return ports
 
 
+def _port_is_healthy(port: int, health_path: str = '/', health_token: str | None = None) -> bool:
+    """TCP check + HTTP health check with optional token verification."""
+    import urllib.request, urllib.error
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=1):
+            pass
+    except OSError:
+        return False
+
+    req = urllib.request.Request(
+        f'http://127.0.0.1:{port}{health_path}',
+        headers={'User-Agent': 'mira-healthcheck/1.0'},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status >= 500:
+                return False
+            if health_token:
+                body = resp.read().decode('utf-8', errors='replace')
+                return health_token in body
+            return True
+    except urllib.error.HTTPError as e:
+        return e.code < 500 and not health_token  # token required but got error → down
+    except Exception:
+        return not health_token  # non-HTTP service: ok if no token required
+
+
 def _port_owner_project(port: int, path: Path) -> bool:
     """Check if the process listening on this port has cwd inside this project."""
     path_str = str(path.resolve())
@@ -111,38 +139,96 @@ def _scan_code_for_port(path: Path) -> Optional[int]:
     return candidates[0] if candidates else None
 
 
+def _domain_is_healthy(domain: str, health_path: str = '/', health_token: str | None = None) -> bool:
+    """Check public domain via HTTPS with optional token verification."""
+    import urllib.request, urllib.error
+    url = f'https://{domain}{health_path}'
+    req = urllib.request.Request(url, headers={'User-Agent': 'mira-healthcheck/1.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status >= 500:
+                return False
+            if health_token:
+                body = resp.read().decode('utf-8', errors='replace')
+                return health_token in body
+            return True
+    except urllib.error.HTTPError as e:
+        return e.code < 500 and not health_token
+    except Exception:
+        return False
+
+
 def collect_service(path: Path, vibe_cfg: Optional[dict]) -> ServiceInfo:
     cfg_port = None
     cfg_process = None
     deploy_url = None
+    cfg_domain = None
+    health_path = '/'
+    health_token = None
+    domain_health_path = None
     if vibe_cfg:
         svc = vibe_cfg.get('service', {})
         cfg_port = svc.get('port')
         cfg_process = svc.get('process')
+        health_path = svc.get('health_path', '/')
+        health_token = svc.get('health_token')
+        domain_health_path = svc.get('domain_health_path')    # optional path override for domain check
+        domain_health_token = svc.get('domain_health_token')  # explicit override; falls back to health_token
         deploy_url = vibe_cfg.get('deploy', {}).get('url')
+        domains_val = vibe_cfg.get('domains') or vibe_cfg.get('domain')
+        if isinstance(domains_val, list):
+            cfg_domain = domains_val[0] if domains_val else None
+        else:
+            cfg_domain = domains_val
 
-    # 1. Find processes in this project that are actually listening on ports
-    listening = _find_listening_procs(path)
-    if listening:
-        proc, ports = listening[0]
+    # 1. Determine the expected port from config or code scan
+    port = cfg_port or _scan_code_for_port(path)
+
+    # Check domain health — always verify health_token (暗号) if configured
+    domain_ok: Optional[bool] = None
+    if cfg_domain:
+        d_path = domain_health_path or health_path
+        d_token = domain_health_token if domain_health_token is not None else health_token
+        domain_ok = _domain_is_healthy(cfg_domain, d_path, d_token)
+
+    # 2. Check if expected port is healthy (TCP + HTTP + optional token)
+    if port and _port_is_healthy(port, health_path, health_token):
+        proc_name = cfg_process
+        if not proc_name:
+            listening = _find_listening_procs(path)
+            if listening:
+                proc_name = listening[0][0].name()
         return ServiceInfo(
-            port=cfg_port or ports[0],
-            process_name=cfg_process or proc.name(),
+            port=port,
+            process_name=proc_name,
             is_running=True,
             url=deploy_url,
+            public_domain=cfg_domain,
+            domain_ok=domain_ok,
         )
 
-    # 2. Determine port from config or code scan
-    port = cfg_port or _scan_code_for_port(path)
+    # 3. If no expected port, fall back to checking any listening process (no token check)
     if not port:
-        return ServiceInfo(url=deploy_url)
+        listening = _find_listening_procs(path)
+        if listening:
+            proc, ports = listening[0]
+            actual_port = ports[0]
+            return ServiceInfo(
+                port=actual_port,
+                process_name=cfg_process or proc.name(),
+                is_running=True,
+                url=deploy_url,
+                public_domain=cfg_domain,
+                domain_ok=domain_ok,
+            )
+        return ServiceInfo(url=deploy_url, public_domain=cfg_domain, domain_ok=domain_ok)
 
-    # 3. Check if this port is owned by a process in this project
-    is_running = _port_owner_project(port, path)
-
+    # 4. Port not open locally — but domain may still be reachable (remote deployment)
     return ServiceInfo(
         port=port,
         process_name=cfg_process,
-        is_running=is_running,
+        is_running=bool(domain_ok),  # running if domain is up, even if local port is closed
         url=deploy_url,
+        public_domain=cfg_domain,
+        domain_ok=domain_ok,
     )

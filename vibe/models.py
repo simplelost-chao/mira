@@ -8,6 +8,24 @@ class GitInfo(BaseModel):
     dirty_files: list[str]
     monthly_commits: int
     recent_commits: list[str]  # list of "hash msg" strings
+    github_url: Optional[str] = None  # e.g. "https://github.com/user/repo"
+    commit_heatmap: list[int] = []    # 84 daily commit counts (day 0 = 83 days ago)
+
+
+class ClaudeActivity(BaseModel):
+    last_session: Optional[str] = None   # ISO datetime
+    session_count_7d: int = 0
+    session_count_30d: int = 0
+    todos: list[dict] = []
+    todo_summary: dict = {}              # {completed, in_progress, pending}
+    # token usage (summed across all matching sessions)
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
+    estimated_cost_usd: float = 0.0     # rough estimate based on Sonnet 4.x pricing
+    active_hours: float = 0.0           # sum of inter-message gaps < 30min
+    session_spark_15d: list[float] = []  # per-day active hours, last 15 days (12h = full)
 
 
 class PlanTask(BaseModel):
@@ -31,6 +49,9 @@ class ServiceInfo(BaseModel):
     process_name: Optional[str] = None
     is_running: bool = False
     url: Optional[str] = None
+    public_domain: Optional[str] = None  # e.g. "vibe.zhuchao.life"
+    public_ip: Optional[str] = None      # resolved IP of public_domain
+    domain_ok: Optional[bool] = None     # None = no domain configured
 
 
 class LocLanguage(BaseModel):
@@ -120,4 +141,6 @@ class ProjectInfo(BaseModel):
     deploy: Optional[DeployInfo] = None
     arch_summary: Optional[str] = None
     external_deps: list[ExternalDep] = []
+    llm_apis: list[str] = []
+    claude_activity: Optional[ClaudeActivity] = None
     error: Optional[str] = None

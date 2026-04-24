@@ -5,6 +5,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
 <html lang="zh">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{project_name} · Mira</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>
 <style>
@@ -22,6 +23,8 @@ def render_detail_page(project_id: str, project_name: str) -> str:
     --red: #e06c75;
     --mono: 'JetBrains Mono', monospace;
     --sans: 'Noto Sans SC', sans-serif;
+    --radius: 8px; --radius-sm: 4px; --radius-pill: 20px;
+    --card-shadow: none;
   }}
   [data-theme="neon-pixel"] {{
     --bg: #0a0a0a; --panel: rgba(20,20,20,.95); --border: #00ff00;
@@ -32,6 +35,8 @@ def render_detail_page(project_id: str, project_name: str) -> str:
     --green: #00ff00; --green-dim: rgba(0,255,0,.12); --green-border: rgba(0,255,0,.3);
     --purple: #ff00ff; --purple-dim: rgba(255,0,255,.12); --purple-border: rgba(255,0,255,.3);
     --orange: #ff8800; --red: #ff0040;
+    --radius: 0px; --radius-sm: 0px; --radius-pill: 0px;
+    --card-shadow: 2px 2px 0 var(--border);
   }}
   [data-theme="pixel-cyber"] {{
     --bg: #020c1a; --panel: rgba(10,31,56,.95); --border: #00d4ff;
@@ -42,59 +47,130 @@ def render_detail_page(project_id: str, project_name: str) -> str:
     --green: #00ff88; --green-dim: rgba(0,255,136,.12); --green-border: rgba(0,255,136,.3);
     --purple: #dd00ff; --purple-dim: rgba(221,0,255,.12); --purple-border: rgba(221,0,255,.3);
     --orange: #ffaa00; --red: #ff3355;
+    --radius: 0px; --radius-sm: 0px; --radius-pill: 0px;
+    --card-shadow: 2px 2px 0 var(--border);
   }}
   [data-theme="pixel-cyber"] body {{
     background-image: linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
                       linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
     background-size: 8px 8px;
   }}
-  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; }}
 
-  /* ── topbar (matches main page) ── */
+  /* ── topbar ── */
   .topbar {{
     position: sticky; top: 0; z-index: 100;
     background: var(--panel); border-bottom: 1px solid var(--border);
     backdrop-filter: blur(12px);
-    display: flex; align-items: center; gap: 8px; padding: 0 20px; height: 52px;
+    display: flex; align-items: center; gap: 16px; padding: 0 24px; height: 52px;
   }}
-  .topbar-brand {{
-    font-size: 15px; font-weight: 700; color: var(--text);
-    text-decoration: none; letter-spacing: -0.3px; flex-shrink: 0;
+  .topbar-title {{
+    margin-right: 8px; display: inline-flex; align-items: baseline; gap: 0;
+    letter-spacing: 3px; line-height: 1; text-transform: uppercase;
   }}
-  .topbar-sep {{
-    width: 1px; height: 18px; background: var(--border); flex-shrink: 0; margin: 0 4px;
+  .topbar-title .logo-m {{
+    font-size: 24px; font-weight: 900; color: var(--accent);
+    text-shadow: 0 0 10px var(--accent);
   }}
-  .back-btn {{
-    display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--sub);
-    text-decoration: none; transition: color .15s; flex-shrink: 0;
+  .topbar-title .logo-ira {{ font-size: 18px; font-weight: 700; color: var(--text); opacity: .75; }}
+  .topbar-title .logo-cursor {{
+    font-size: 20px; font-weight: 400; color: var(--accent); opacity: .9;
+    animation: logo-blink 1.1s step-end infinite;
   }}
-  .back-btn:hover {{ color: var(--text); }}
-  .proj-name {{
-    font-size: 13px; font-weight: 600; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;
-  }}
+  @keyframes logo-blink {{ 0%, 100% {{ opacity: .9; }} 50% {{ opacity: 0; }} }}
   .topbar-spacer {{ flex: 1; }}
-  .refresh-btn {{
-    font-size: 11px; padding: 5px 10px; background: none; border: 1px solid var(--border);
-    border-radius: 5px; color: var(--sub); cursor: pointer; font-family: var(--mono);
-    transition: all .15s;
+  .settings-btn {{
+    background: none; border: 1px solid var(--border); color: var(--sub);
+    font-size: 13px; padding: 5px 12px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: all .15s; font-family: var(--mono);
   }}
-  .refresh-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .settings-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .skin-wrap {{ position: relative; }}
+  .skin-btn {{
+    background: none; border: 1px solid var(--border); color: var(--sub);
+    font-size: 13px; padding: 5px 12px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: all .15s; font-family: var(--mono);
+  }}
+  .skin-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .skin-picker {{
+    display: none; position: fixed;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px; z-index: 9999;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5); min-width: 180px;
+  }}
+  .skin-picker.open {{ display: block; }}
+  .skin-picker-label {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }}
+  .skin-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }}
+  .skin-card {{ border: 1px solid var(--border); border-radius: 7px; padding: 8px; cursor: pointer; transition: border-color .15s; }}
+  .skin-card:hover {{ border-color: var(--accent); }}
+  .skin-card.active {{ border-color: var(--accent); }}
+  .skin-preview {{ height: 32px; border-radius: 4px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 6px; }}
+  .skin-preview div {{ height: 100%; }}
+  .skin-name {{ font-size: 11px; color: var(--sub); text-align: center; }}
 
-  /* ── subnav (tab bar) ── */
+  /* ── subnav ── */
   .subnav {{
     position: sticky; top: 52px; z-index: 99;
     background: var(--panel); border-bottom: 1px solid var(--border);
     backdrop-filter: blur(8px);
-    display: flex; align-items: stretch; padding: 0 20px; height: 40px; gap: 2px;
+    display: flex; align-items: center; padding: 0 20px; height: 40px; gap: 0;
   }}
+  .subnav-back {{
+    font-size: 12px; color: var(--sub); text-decoration: none;
+    flex-shrink: 0; transition: color .15s; white-space: nowrap;
+  }}
+  .subnav-back:hover {{ color: var(--text); }}
+  .subnav-sep {{ width: 1px; height: 16px; background: var(--border); flex-shrink: 0; margin: 0 12px; }}
+  .subnav-proj {{
+    font-size: 13px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; flex-shrink: 1;
+  }}
+  .subnav-spacer {{ flex: 1; min-width: 12px; }}
+  .subnav-tabs {{ display: flex; align-items: stretch; height: 100%; flex-shrink: 0; }}
   .tab-btn {{
-    height: 100%; padding: 0 16px; background: none; border: none;
+    height: 40px; padding: 0 14px; background: none; border: none;
     font-family: var(--mono); font-size: 12px; color: var(--sub); cursor: pointer;
-    border-bottom: 2px solid transparent; transition: all .15s;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
   }}
   .tab-btn:hover {{ color: var(--text); }}
   .tab-btn.active {{ color: var(--accent); border-bottom-color: var(--accent); }}
+  .refresh-btn {{
+    margin-left: 8px; font-size: 13px; padding: 4px 8px; background: none;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--sub); cursor: pointer; font-family: var(--mono); transition: all .15s; flex-shrink: 0;
+  }}
+  .refresh-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+
+  /* ── Settings Modal ── */
+  .settings-overlay {{
+    position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center;
+  }}
+  .settings-overlay.open {{ display: flex; }}
+  .settings-modal {{
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px; width: 360px; max-width: 90vw;
+  }}
+  .settings-title {{ font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 20px; }}
+  .settings-group {{ margin-bottom: 14px; }}
+  .settings-label {{ font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing: .5px; }}
+  .settings-input {{
+    width: 100%; box-sizing: border-box;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+    color: var(--text); font-size: 13px; font-family: var(--mono);
+    outline: none; transition: border-color .15s;
+  }}
+  .settings-input:focus {{ border-color: var(--accent); }}
+  .settings-footer {{ display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }}
+  .settings-btn-cancel {{
+    padding: 7px 16px; background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--sub); cursor: pointer; font-size: 13px; font-family: var(--mono);
+  }}
+  .settings-btn-save {{
+    padding: 7px 16px; background: var(--accent); border: none;
+    border-radius: 6px; color: #fff; cursor: pointer; font-size: 13px; font-family: var(--mono);
+  }}
 
   /* ── content ── */
   .content {{ position: relative; z-index: 1; }}
@@ -142,9 +218,9 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   .doc-content li {{ margin-bottom: 4px; }}
   .doc-content strong {{ color: var(--text); }}
   .doc-content code {{ font-family: var(--mono); font-size: 11px; background: rgba(255,255,255,.07);
-    border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--gold); }}
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 6px; color: var(--gold); }}
   .doc-content pre {{ background: rgba(0,0,0,.4); border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 10px 0; font-size: 12px; }}
+    border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; margin: 10px 0; font-size: 12px; }}
   .doc-content pre code {{ background: none; border: none; padding: 0; }}
   .doc-content hr {{ border: none; border-top: 1px solid var(--border); margin: 16px 0; }}
   .doc-content blockquote {{ border-left: 3px solid var(--gold); padding-left: 14px; color: var(--sub); }}
@@ -167,7 +243,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   .plan-fill  {{ height: 100%; background: var(--green); border-radius: 2px; transition: width .3s; }}
   .task-item {{
     display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px;
-    border-radius: 6px; margin-bottom: 4px; font-size: 13px; line-height: 1.55;
+    border-radius: var(--radius-sm); margin-bottom: 4px; font-size: 13px; line-height: 1.55;
     transition: background .15s;
   }}
   .task-item:hover {{ background: rgba(255,255,255,.03); }}
@@ -182,12 +258,12 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   .prompts-wrap {{ padding: 24px 32px; max-width: 860px; }}
   .prompts-search {{
     width: 100%; padding: 9px 14px; background: var(--panel); border: 1px solid var(--border);
-    border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 13px;
+    border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 13px;
     outline: none; margin-bottom: 20px; transition: border-color .15s;
   }}
   .prompts-search:focus {{ border-color: var(--accent); }}
   .prompt-card {{
-    padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);
+    padding: 12px 16px; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--card-shadow);
     background: rgba(255,255,255,.02); margin-bottom: 10px;
     transition: border-color .15s; cursor: default;
   }}
@@ -204,7 +280,8 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   }}
   .stats-cell {{
     background: rgba(255,255,255,.03); border: 1px solid var(--border);
-    border-radius: 8px; padding: 10px 12px;
+    border-radius: var(--radius); padding: 10px 12px; box-shadow: var(--card-shadow);
+    min-width: 0; overflow: hidden;
   }}
   .stats-val {{ font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 2px; font-variant-numeric: tabular-nums; }}
   .stats-lbl {{ font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }}
@@ -214,7 +291,8 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   }}
   .summary-card {{
     background: rgba(255,255,255,.025); border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px 16px;
+    border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow);
+    min-width: 0; overflow: hidden;
   }}
   .summary-card.claude-card {{
     background: rgba(var(--accent-rgb, 79,70,229),.04); border-color: rgba(var(--accent-rgb, 79,70,229),.15);
@@ -223,14 +301,61 @@ def render_detail_page(project_id: str, project_name: str) -> str:
     font-size: 9px; font-weight: 700; letter-spacing: 2px;
     text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
   }}
-  .commit-list {{ display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }}
-  .commit-row {{ display: flex; gap: 8px; font-size: 11px; line-height: 1.5; }}
+  .commit-list {{ display: flex; flex-direction: column; gap: 4px; margin-top: 10px; overflow: hidden; }}
+  .commit-row {{ display: flex; gap: 8px; font-size: 11px; line-height: 1.5; min-width: 0; }}
   .commit-hash {{ color: var(--purple); flex-shrink: 0; font-family: var(--mono); }}
-  .commit-msg {{ color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+  .commit-msg {{ color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }}
   .tech-full-card {{
     background: rgba(255,255,255,.025); border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px 16px;
+    border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow);
   }}
+  /* hero */
+  .summary-wrap {{ padding: 20px; max-width: 960px; }}
+  .hero-row {{ display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }}
+  .proj-title {{ font-size: 22px; font-weight: 700; margin-bottom: 5px; }}
+  .proj-path {{ font-size: 11px; color: var(--muted); margin-bottom: 10px; }}
+  .badge-row {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+  .claude-last {{ font-size: 11px; color: var(--muted); flex-shrink: 0; padding-top: 4px; }}
+  /* badges */
+  .badge {{ font-size: 11px; padding: 4px 12px; border-radius: var(--radius-pill); border: 1px solid; display: inline-flex; align-items: center; gap: 5px; }}
+  .badge-green   {{ border-color: rgba(92,208,138,.25);  background: rgba(92,208,138,.08);  color: var(--green); }}
+  .badge-stopped {{ border-color: rgba(255,255,255,.1);  background: rgba(255,255,255,.04); color: var(--sub); }}
+  .badge-purple  {{ border-color: rgba(129,140,248,.2);  background: rgba(129,140,248,.06); color: var(--purple); }}
+  .badge-dim     {{ border-color: rgba(255,255,255,.1);  background: rgba(255,255,255,.04); color: var(--sub); }}
+  .badge-dot {{ width: 6px; height: 6px; border-radius: 50%; background: currentColor; }}
+  /* stats val color variants */
+  .stats-val.gold   {{ color: var(--gold); }}
+  .stats-val.purple {{ color: var(--purple); }}
+  .stats-val.green  {{ color: var(--green); }}
+  /* card internals */
+  .card-stats {{ display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }}
+  .card-stat-val {{ font-size: 16px; font-weight: 700; margin-bottom: 2px; }}
+  .card-stat-val.purple    {{ color: var(--purple); }}
+  .card-stat-val.gold      {{ color: var(--gold); }}
+  .card-stat-val.dirty-ok  {{ color: var(--green); }}
+  .card-stat-val.dirty-warn {{ color: var(--orange); }}
+  .card-stat-lbl {{ font-size: 9px; color: var(--muted); margin-top: 2px; }}
+  /* todos */
+  .todo-list {{ margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }}
+  .todo-item {{ display: flex; align-items: flex-start; gap: 5px; font-size: 10px; }}
+  .todo-dot {{ width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }}
+  .todo-dot.done {{ background: var(--green); }}
+  .todo-dot.wip  {{ background: var(--gold); }}
+  .todo-dot.pend {{ background: var(--border); }}
+  .todo-text.done {{ color: var(--green); }}
+  .todo-text.wip  {{ color: var(--gold); }}
+  .todo-text.pend {{ color: var(--sub); }}
+  .summary-card-empty {{ display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }}
+  /* tech stack */
+  .tech-row {{ display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }}
+  .tech-cat-lbl {{ font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; width: 60px; flex-shrink: 0; color: var(--muted); }}
+  .tech-badges {{ display: flex; flex-wrap: wrap; gap: 4px; }}
+  .tech-badge {{ font-size: 10px; padding: 2px 8px; border-radius: var(--radius-sm); }}
+  .tech-badge.lang  {{ background: rgba(250,204,21,.08); color: var(--gold); }}
+  .tech-badge.web   {{ background: rgba(129,140,248,.08); color: var(--purple); }}
+  .tech-badge.ai    {{ background: rgba(167,139,250,.08); color: var(--purple); }}
+  .tech-badge.db    {{ background: rgba(92,208,138,.08);  color: var(--green); }}
+  .tech-badge.infra {{ background: rgba(255,255,255,.05); color: var(--sub); }}
 
   /* ── loading ── */
   .loading {{ display: flex; align-items: center; justify-content: center; height: calc(100vh - 92px); color: var(--muted); font-size: 13px; gap: 8px; }}
@@ -240,7 +365,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   /* Claude panel */
   .cl-wrap {{ max-width: 860px; padding: 24px; }}
   .cl-summary {{ display: flex; gap: 12px; margin-bottom: 20px; }}
-  .cl-sum-card {{ flex: 1; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }}
+  .cl-sum-card {{ flex: 1; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--card-shadow); }}
   .cl-sum-card.purple {{ background: rgba(var(--accent-rgb, 79,70,229),.06); border-color: rgba(var(--accent-rgb, 79,70,229),.2); }}
   .cl-sum-card.green  {{ background: var(--green-dim); border-color: var(--green-border); }}
   .cl-sv {{ font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 2px; }}
@@ -249,7 +374,7 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   .cl-sl {{ font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; }}
   .cl-section-title {{ font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; margin-top: 18px; }}
   .cl-tok-grid {{ display: flex; gap: 8px; }}
-  .cl-tok-col {{ flex: 1; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }}
+  .cl-tok-col {{ flex: 1; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--card-shadow); }}
   .cl-tv {{ font-size: 14px; font-weight: 700; color: var(--text); }}
   .cl-tl {{ font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }}
   .cl-tsub {{ font-size: 10px; color: var(--muted); margin-top: 3px; }}
@@ -267,29 +392,99 @@ def render_detail_page(project_id: str, project_name: str) -> str:
   .cl-summary-text {{ font-size: 12px; color: var(--sub); line-height: 1.9; margin-top: 6px; }}
   .cl-summary-text b {{ color: var(--text); }}
   .cl-todos {{ display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }}
-  .cl-todo {{ font-size: 11px; padding: 5px 8px; border-radius: 4px; color: var(--sub); }}
+  .cl-todo {{ font-size: 11px; padding: 5px 8px; border-radius: var(--radius-sm); color: var(--sub); }}
   .cl-todo.done {{ color: var(--green); opacity: .6; }}
   .cl-todo.wip  {{ color: var(--accent); background: var(--panel); }}
   .cl-todo.pend {{ color: var(--muted); }}
+
+  /* ── docs mobile views ── */
+  .docs-mobile-list {{ display: none; flex-direction: column; }}
+  .docs-mobile-back {{
+    display: none; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--sub); cursor: pointer;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }}
+  .docs-mobile-back:hover {{ color: var(--text); }}
+  .docs-mobile-item {{
+    display: block; padding: 12px 16px; font-size: 13px; color: var(--sub);
+    border-bottom: 1px solid var(--border); cursor: pointer;
+    transition: background .15s;
+  }}
+  .docs-mobile-item:hover {{ background: rgba(255,255,255,.03); color: var(--text); }}
+  .docs-mobile-item-name {{ font-size: 13px; margin-bottom: 3px; }}
+  .docs-mobile-item-meta {{ font-size: 10px; color: var(--muted); }}
+  .docs-mobile-item.stale {{ opacity: .55; }}
+
+  @media (max-width: 640px) {{
+    /* topbar */
+    .topbar {{ padding: 0 12px; gap: 8px; }}
+    .topbar-title .logo-m {{ font-size: 20px; }}
+    .topbar-title .logo-ira {{ font-size: 15px; }}
+    .topbar-title .logo-cursor {{ font-size: 17px; }}
+    .skin-btn {{ font-size: 0 !important; }}
+    .skin-btn::before {{ content: '◈'; font-size: 15px; line-height: 1; }}
+    .settings-btn {{ font-size: 0 !important; }}
+    .settings-btn::before {{ content: '⚙\FE0E'; font-size: 15px; line-height: 1; }}
+
+    /* subnav */
+    .subnav {{ padding: 0 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+    .subnav-proj {{ max-width: 100px; }}
+    .tab-btn {{ padding: 0 10px; white-space: nowrap; flex-shrink: 0; }}
+
+    /* summary */
+    .summary-wrap {{ padding: 14px; overflow-x: hidden; }}
+    .stats-bar {{ grid-template-columns: repeat(3, 1fr); }}
+    .summary-grid {{ grid-template-columns: 1fr; }}
+    .proj-title {{ font-size: 18px; word-break: break-all; }}
+    .proj-path {{ word-break: break-all; }}
+    .hero-row {{ flex-wrap: wrap; gap: 8px; }}
+    .commit-row {{ min-width: 0; }}
+    .commit-msg {{ min-width: 0; }}
+    .card-stats {{ gap: 10px; }}
+    .cl-summary {{ flex-wrap: wrap; }}
+    .cl-tok-grid {{ flex-wrap: wrap; }}
+    .cl-bottom {{ flex-direction: column; }}
+
+    /* plans / prompts */
+    .plans-wrap {{ padding: 20px 16px; }}
+    .prompts-wrap {{ padding: 16px; }}
+
+    /* design docs — hide desktop sidebar, collapse layout */
+    .docs-layout {{ display: block; }}
+    .docs-sidebar {{ display: none; }}
+    .docs-body {{ padding: 16px; max-height: none; overflow-y: visible; }}
+
+    /* show mobile docs components */
+    .docs-mobile-list {{ display: flex; }}
+  }}
 
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <a class="topbar-brand" href="/">✦ Mira</a>
-  <div class="topbar-sep"></div>
-  <a class="back-btn" href="/">← 项目列表</a>
-  <div class="topbar-sep"></div>
-  <span class="proj-name" id="proj-name">{project_name}</span>
+  <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
-  <button class="refresh-btn" onclick="reload()">↻</button>
+  <button class="settings-btn" onclick="openSettings()">⚙ 设置</button>
+  <button class="settings-btn" id="logout-btn" onclick="logout()" style="display:none" title="退出登录">⏏</button>
+  <div class="skin-wrap">
+    <button class="skin-btn" id="skin-btn" onclick="toggleSkinPicker()" aria-label="切换皮肤">◈ 皮肤</button>
+    <div class="skin-picker" id="skin-picker"></div>
+  </div>
 </div>
 <div class="subnav">
-  <button class="tab-btn active" id="tab-summary" onclick="showTab('summary')">概览</button>
-  <button class="tab-btn" id="tab-overview" onclick="showTab('overview')">系统架构</button>
-  <button class="tab-btn" id="tab-design" onclick="showTab('design')">设计文档</button>
-  <button class="tab-btn" id="tab-prompts" onclick="showTab('prompts')">Prompts</button>
+  <a class="subnav-back" href="/">← 返回列表</a>
+  <div class="subnav-sep"></div>
+  <span class="subnav-proj" id="proj-name">{project_name}</span>
+  <div class="subnav-spacer"></div>
+  <div class="subnav-tabs">
+    <button class="tab-btn active" id="tab-summary" onclick="showTab('summary')">概览</button>
+    <button class="tab-btn" id="tab-overview" onclick="showTab('overview')">系统架构</button>
+    <button class="tab-btn" id="tab-design" onclick="showTab('design')">设计文档</button>
+    <button class="tab-btn" id="tab-prompts" onclick="showTab('prompts')">Prompts</button>
+  </div>
+  <button class="refresh-btn" onclick="reload()" title="刷新">↻</button>
 </div>
 
 <div class="content">
@@ -323,7 +518,10 @@ function showTab(name) {{
   if (name === 'summary'  && !summaryLoaded)  renderSummary();
   if (name === 'overview' && !overviewLoaded) loadOverview();
   if (name === 'design'   && !designLoaded)   renderDesign();
-  if (name === 'prompts'  && !promptsLoaded)  renderPrompts();
+  if (name === 'prompts'  && !promptsLoaded) {{
+    if (!_isAdmin) {{ openLoginModal(() => {{ promptsLoaded = false; renderPrompts(); }}); return; }}
+    renderPrompts();
+  }}
 }}
 
 function escHtml(s) {{
@@ -396,29 +594,29 @@ async function loadOverview() {{
 
     // ── Hero ──
     const svcBadge = svc.port
-      ? `<span style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid ${{isRunning ? 'rgba(92,208,138,.25)' : 'rgba(255,255,255,.1)'}};background:${{isRunning ? 'rgba(92,208,138,.08)' : 'rgba(255,255,255,.04)'}};color:${{isRunning ? 'var(--green)' : 'var(--sub)'}};display:inline-flex;align-items:center;gap:5px">
-          <span style="width:6px;height:6px;border-radius:50%;background:${{isRunning ? 'var(--green)' : 'var(--border)'}}"></span>
-          ${{isRunning ? '运行中' : '停止'}} ${{svcPort}}
-        </span>`
+      ? `<span class="badge ${{isRunning ? 'badge-green' : 'badge-stopped'}}">
+           <span class="badge-dot"></span>
+           ${{isRunning ? '运行中' : '停止'}} ${{svcPort}}
+         </span>`
       : '';
     const domainBadge = svc.public_domain
-      ? `<span style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid rgba(129,140,248,.2);background:rgba(129,140,248,.06);color:var(--purple)">${{escHtml(svc.public_domain)}}</span>`
+      ? `<span class="badge badge-purple">${{escHtml(svc.public_domain)}}</span>`
       : '';
     const deployBadge = deploy.type && deploy.type !== 'none'
-      ? `<span style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--sub)">☁️ ${{escHtml(deploy.type)}}${{deploy.host ? ' · '+escHtml(deploy.host) : ''}}</span>`
+      ? `<span class="badge badge-dim">☁️ ${{escHtml(deploy.type)}}${{deploy.host ? ' · '+escHtml(deploy.host) : ''}}</span>`
       : '';
-    const statusBadge = `<span style="font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--sub)">${{escHtml(p.status || 'active')}}</span>`;
+    const statusBadge = `<span class="badge badge-dim">${{escHtml(p.status || 'active')}}</span>`;
 
-    let html = `<div style="padding:20px;max-width:960px">`;
+    let html = `<div class="summary-wrap">`;
 
     // Hero row
-    html += `<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
+    html += `<div class="hero-row">
       <div>
-        <div style="font-size:22px;font-weight:700;margin-bottom:5px">${{escHtml(p.name || '')}}</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${{escHtml(p.path || '')}}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">${{svcBadge}}${{domainBadge}}${{deployBadge}}${{statusBadge}}</div>
+        <div class="proj-title">${{escHtml(p.name || '')}}</div>
+        <div class="proj-path">${{escHtml(p.path || '')}}</div>
+        <div class="badge-row">${{svcBadge}}${{domainBadge}}${{deployBadge}}${{statusBadge}}</div>
       </div>
-      ${{caLastStr ? `<div style="font-size:11px;color:var(--muted);flex-shrink:0;padding-top:4px">Claude ${{caLastStr}}</div>` : ''}}
+      ${{caLastStr ? `<div class="claude-last">Claude ${{caLastStr}}</div>` : ''}}
     </div>`;
 
     // ── Stats bar ──
@@ -427,26 +625,11 @@ async function loadOverview() {{
     const codeLinesStr = loc.code_lines ? (loc.code_lines >= 1000 ? (loc.code_lines/1000).toFixed(1)+'k' : String(loc.code_lines)) : '—';
 
     html += `<div class="stats-bar">
-      <div class="stats-cell">
-        <div class="stats-val" style="color:var(--gold)">${{git.monthly_commits ?? 0}}</div>
-        <div class="stats-lbl">本月提交</div>
-      </div>
-      <div class="stats-cell">
-        <div class="stats-val" style="color:var(--purple)">${{ca ? '$' + (ca.estimated_cost_usd||0).toFixed(1) : '—'}}</div>
-        <div class="stats-lbl">Claude 花费</div>
-      </div>
-      <div class="stats-cell">
-        <div class="stats-val" style="color:var(--purple)">${{ca ? (ca.session_count_30d||0) : '—'}}</div>
-        <div class="stats-lbl">30天会话</div>
-      </div>
-      <div class="stats-cell">
-        <div class="stats-val">${{codeLinesStr}}</div>
-        <div class="stats-lbl">代码行</div>
-      </div>
-      <div class="stats-cell">
-        <div class="stats-val" style="color:var(--green)">${{featPct !== null ? featPct+'%' : '—'}}</div>
-        <div class="stats-lbl">功能完成</div>
-      </div>
+      <div class="stats-cell"><div class="stats-val gold">${{git.monthly_commits ?? 0}}</div><div class="stats-lbl">本月提交</div></div>
+      <div class="stats-cell"><div class="stats-val purple">${{ca ? (ca._masked ? '***' : '$' + (ca.estimated_cost_usd||0).toFixed(1)) : '—'}}</div><div class="stats-lbl">Claude 花费</div></div>
+      <div class="stats-cell"><div class="stats-val purple">${{ca ? (ca.session_count_30d||0) : '—'}}</div><div class="stats-lbl">30天会话</div></div>
+      <div class="stats-cell"><div class="stats-val">${{codeLinesStr}}</div><div class="stats-lbl">代码行</div></div>
+      <div class="stats-cell"><div class="stats-val green">${{featPct !== null ? featPct+'%' : '—'}}</div><div class="stats-lbl">功能完成</div></div>
     </div>`;
 
     // ── 2-col grid: Claude | Git ──
@@ -465,31 +648,30 @@ async function loadOverview() {{
       const todos = (ca.todos || []).slice(0, 4);
       const todoHtml = todos.map(t => {{
         const s = t.status || 'pending';
-        const dotColor = s==='completed'?'var(--green)':s==='in_progress'?'var(--gold)':'var(--border)';
-        const textColor = s==='completed'?'var(--green)':s==='in_progress'?'var(--gold)':'var(--sub)';
-        return `<div style="display:flex;align-items:flex-start;gap:5px;font-size:10px">
-          <div style="width:5px;height:5px;border-radius:50%;background:${{dotColor}};flex-shrink:0;margin-top:3px"></div>
-          <span style="color:${{textColor}}">${{escHtml(t.content||'')}}</span>
+        const cls = s==='completed'?'done':s==='in_progress'?'wip':'pend';
+        return `<div class="todo-item">
+          <div class="todo-dot ${{cls}}"></div>
+          <span class="todo-text ${{cls}}">${{escHtml(t.content||'')}}</span>
         </div>`;
       }}).join('');
 
       html += `<div class="summary-card claude-card">
         <div class="card-section-title">Claude</div>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">
-          <div><div style="font-size:16px;font-weight:700;color:var(--purple)">${{ca ? '$' + (ca.estimated_cost_usd||0).toFixed(1) : '—'}}</div><div style="font-size:9px;color:var(--muted);margin-top:2px">累计花费</div></div>
-          <div><div style="font-size:16px;font-weight:700;color:var(--purple)">${{ca.session_count_30d||0}}</div><div style="font-size:9px;color:var(--muted);margin-top:2px">30天会话</div></div>
-          <div><div style="font-size:16px;font-weight:700;color:var(--purple)">${{fmtTok(ca.output_tokens||0)}}</div><div style="font-size:9px;color:var(--muted);margin-top:2px">输出</div></div>
+        <div class="card-stats">
+          <div><div class="card-stat-val purple">${{ca._masked ? '***' : '$' + (ca.estimated_cost_usd||0).toFixed(1)}}</div><div class="card-stat-lbl">累计花费</div></div>
+          <div><div class="card-stat-val purple">${{ca.session_count_30d||0}}</div><div class="card-stat-lbl">30天会话</div></div>
+          <div><div class="card-stat-val purple">${{ca._masked ? '***' : fmtTok(ca.output_tokens||0)}}</div><div class="card-stat-lbl">输出</div></div>
         </div>
         <div class="cl-spark">${{sparkBars}}</div>
-        ${{todoHtml ? `<div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">${{todoHtml}}</div>` : ''}}
+        ${{todoHtml ? `<div class="todo-list">${{todoHtml}}</div>` : ''}}
       </div>`;
     }} else {{
-      html += `<div class="summary-card" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">暂无 Claude 数据</div>`;
+      html += `<div class="summary-card summary-card-empty">暂无 Claude 数据</div>`;
     }}
 
     // Git card
     const dirtyCount = (git.dirty_files || []).length;
-    const dirtyColor = dirtyCount > 0 ? 'var(--orange)' : 'var(--green)';
+    const dirtyDirtyCls = dirtyCount > 0 ? 'dirty-warn' : 'dirty-ok';
     const recentCommits = (git.recent_commits || []).slice(0, 3);
     const commitHtml = recentCommits.map(c => {{
       const h = typeof c === 'object' ? (c.hash || c.sha || '').slice(0,7) : '';
@@ -502,10 +684,10 @@ async function loadOverview() {{
 
     html += `<div class="summary-card">
       <div class="card-section-title">代码库</div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap">
-        <div><div style="font-size:16px;font-weight:700;color:var(--gold)">${{git.monthly_commits ?? 0}}</div><div style="font-size:9px;color:var(--muted);margin-top:2px">本月提交</div></div>
-        <div><div style="font-size:16px;font-weight:700;color:var(--text)">${{codeLinesStr}}</div><div style="font-size:9px;color:var(--muted);margin-top:2px">代码行</div></div>
-        <div><div style="font-size:16px;font-weight:700;color:${{dirtyColor}}">${{dirtyCount}}</div><div style="font-size:9px;color:var(--muted);margin-top:2px">未提交</div></div>
+      <div class="card-stats">
+        <div><div class="card-stat-val gold">${{git.monthly_commits ?? 0}}</div><div class="card-stat-lbl">本月提交</div></div>
+        <div><div class="card-stat-val">${{codeLinesStr}}</div><div class="card-stat-lbl">代码行</div></div>
+        <div><div class="card-stat-val ${{dirtyDirtyCls}}">${{dirtyCount}}</div><div class="card-stat-lbl">未提交</div></div>
       </div>
       ${{commitHtml ? `<div class="commit-list">${{commitHtml}}</div>` : ''}}
     </div>`;
@@ -528,19 +710,12 @@ async function loadOverview() {{
         else                      groups.infra.push(t.name||t);
       }});
       const glabels = {{lang:'语言',web:'框架',ai:'AI',db:'存储',infra:'工具链'}};
-      const gcolors = {{
-        lang:'rgba(250,204,21,.08);color:var(--gold)',
-        web:'rgba(129,140,248,.08);color:var(--purple)',
-        ai:'rgba(167,139,250,.08);color:var(--purple)',
-        db:'rgba(92,208,138,.08);color:var(--green)',
-        infra:'rgba(255,255,255,.05);color:var(--sub)'
-      }};
       let techHtml = '';
       for (const [cat, items] of Object.entries(groups)) {{
         if (!items.length) continue;
-        techHtml += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
-          <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;width:60px;flex-shrink:0;color:var(--muted)">${{glabels[cat]}}</span>
-          <div style="display:flex;flex-wrap:wrap;gap:4px">${{items.map(n=>`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${{gcolors[cat]}}">${{escHtml(n)}}</span>`).join('')}}</div>
+        techHtml += `<div class="tech-row">
+          <span class="tech-cat-lbl">${{glabels[cat]}}</span>
+          <div class="tech-badges">${{items.map(n=>`<span class="tech-badge ${{cat}}">${{escHtml(n)}}</span>`).join('')}}</div>
         </div>`;
       }}
       if (techHtml) {{
@@ -569,14 +744,32 @@ function renderDesign() {{
     <div class="doc-item${{d.possibly_stale?' stale':''}}${{i===0?' active':''}}" id="ditem-${{i}}" onclick="showDoc(${{i}})">
       ${{escHtml(d.filename)}}${{d.possibly_stale?' ⚠':''}}</div>`).join('');
 
-  el.innerHTML = `<div class="docs-layout">
-    <div class="docs-sidebar">
-      <div class="docs-sidebar-title">设计文档</div>
-      ${{sidebar}}
-    </div>
-    <div class="docs-body" id="docs-body"></div>
-  </div>`;
-  showDoc(0);
+  let mobileList = docs.map((d,i) => `
+    <div class="docs-mobile-item${{d.possibly_stale?' stale':''}}" onclick="docsMobileSelect(${{i}})">
+      <div class="docs-mobile-item-name">${{escHtml(d.filename)}}${{d.possibly_stale?' ⚠':''}}</div>
+      <div class="docs-mobile-item-meta">${{new Date(d.mtime*1000).toLocaleDateString('zh-CN')}}</div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="docs-mobile-list" id="docs-m-list">${{mobileList}}</div>
+    <div class="docs-mobile-back" id="docs-m-back" onclick="docsMobileBack()">← 文档列表</div>
+    <div class="docs-layout" id="docs-desktop">
+      <div class="docs-sidebar">
+        <div class="docs-sidebar-title">设计文档</div>
+        ${{sidebar}}
+      </div>
+      <div class="docs-body" id="docs-body"></div>
+    </div>`;
+
+  // On mobile: hide desktop layout initially, show list
+  if (window.innerWidth <= 640) {{
+    document.getElementById('docs-desktop').style.display = 'none';
+    document.getElementById('docs-m-back').style.display = 'none';
+  }} else {{
+    document.getElementById('docs-m-list').style.display = 'none';
+    document.getElementById('docs-m-back').style.display = 'none';
+    showDoc(0);
+  }}
   designLoaded = true;
 }}
 
@@ -590,6 +783,19 @@ function showDoc(i) {{
     <div class="doc-title">${{escHtml(d.title || d.filename)}}</div>
     <div class="doc-meta">${{escHtml(d.filename)}} · ${{mtime}}${{d.possibly_stale?' · <span style="color:var(--red)">⚠ 可能已过期</span>':''}}</div>
     <div class="doc-content">${{simpleMarkdown(d.content)}}</div>`;
+}}
+
+function docsMobileSelect(i) {{
+  document.getElementById('docs-m-list').style.display = 'none';
+  document.getElementById('docs-m-back').style.display = 'flex';
+  document.getElementById('docs-desktop').style.display = 'block';
+  showDoc(i);
+}}
+
+function docsMobileBack() {{
+  document.getElementById('docs-m-list').style.display = '';
+  document.getElementById('docs-m-back').style.display = 'none';
+  document.getElementById('docs-desktop').style.display = 'none';
 }}
 
 // ── Features / Roadmap ────────────────────────────────────────────────────────
@@ -729,6 +935,8 @@ function renderClaude() {{
     return `<span class="${{cls}}" style="height:${{h}}%" title="${{v.toFixed(1)}}h 活跃"></span>`;
   }}).join('');
 
+  const masked = !!(ca._masked);
+
   // cost breakdown bar widths
   const outCost  = (ca.output_tokens         || 0) * 15.00 / 1e6;
   const cwCost   = (ca.cache_creation_tokens || 0) * 3.75  / 1e6;
@@ -754,7 +962,7 @@ function renderClaude() {{
 
     <div class="cl-summary">
       <div class="cl-sum-card purple">
-        <div class="cl-sv">${{fmtCost(ca.estimated_cost_usd)}}</div>
+        <div class="cl-sv">${{masked ? '***' : fmtCost(ca.estimated_cost_usd)}}</div>
         <div class="cl-sl">累计费用</div>
       </div>
       <div class="cl-sum-card">
@@ -773,10 +981,10 @@ function renderClaude() {{
 
     <div class="cl-section-title">Token 用量</div>
     <div class="cl-tok-grid">
-      <div class="cl-tok-col"><div class="cl-tv">${{fmtTok(ca.output_tokens)}}</div><div class="cl-tl">输出</div><div class="cl-tsub">$15/MTok</div></div>
-      <div class="cl-tok-col"><div class="cl-tv">${{fmtTok(ca.input_tokens)}}</div><div class="cl-tl">输入</div><div class="cl-tsub">$3/MTok</div></div>
-      <div class="cl-tok-col"><div class="cl-tv">${{fmtTok(ca.cache_creation_tokens)}}</div><div class="cl-tl">Cache 写</div><div class="cl-tsub">$3.75/MTok</div></div>
-      <div class="cl-tok-col"><div class="cl-tv">${{fmtTok(ca.cache_read_tokens)}}</div><div class="cl-tl">Cache 读</div><div class="cl-tsub">$0.30/MTok</div></div>
+      <div class="cl-tok-col"><div class="cl-tv">${{masked ? '***' : fmtTok(ca.output_tokens)}}</div><div class="cl-tl">输出</div><div class="cl-tsub">$15/MTok</div></div>
+      <div class="cl-tok-col"><div class="cl-tv">${{masked ? '***' : fmtTok(ca.input_tokens)}}</div><div class="cl-tl">输入</div><div class="cl-tsub">$3/MTok</div></div>
+      <div class="cl-tok-col"><div class="cl-tv">${{masked ? '***' : fmtTok(ca.cache_creation_tokens)}}</div><div class="cl-tl">Cache 写</div><div class="cl-tsub">$3.75/MTok</div></div>
+      <div class="cl-tok-col"><div class="cl-tv">${{masked ? '***' : fmtTok(ca.cache_read_tokens)}}</div><div class="cl-tl">Cache 读</div><div class="cl-tsub">$0.30/MTok</div></div>
     </div>
     <div class="cl-cost-bar">
       <span style="flex:${{pOut}};background:#818cf8"></span>
@@ -785,10 +993,10 @@ function renderClaude() {{
       <span style="flex:${{Math.max(pCr,1)}};background:#1a2035"></span>
     </div>
     <div class="cl-legend">
-      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#818cf8"></span>输出 ${{outCost.toFixed(2)}}</span>
-      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#4f46e5"></span>Cache写 ${{cwCost.toFixed(2)}}</span>
-      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#2d3555"></span>输入 ${{inCost.toFixed(2)}}</span>
-      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#1a2035"></span>Cache读 ${{crCost.toFixed(2)}}</span>
+      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#818cf8"></span>输出 ${{masked ? '***' : outCost.toFixed(2)}}</span>
+      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#4f46e5"></span>Cache写 ${{masked ? '***' : cwCost.toFixed(2)}}</span>
+      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#2d3555"></span>输入 ${{masked ? '***' : inCost.toFixed(2)}}</span>
+      <span class="cl-leg-item"><span class="cl-leg-dot" style="background:#1a2035"></span>Cache读 ${{masked ? '***' : crCost.toFixed(2)}}</span>
     </div>
 
     <div class="cl-bottom">
@@ -798,9 +1006,9 @@ function renderClaude() {{
         <div class="cl-section-title" style="margin-top:16px">本月小结</div>
         <div class="cl-summary-text">
           7天 <b>${{ca.session_count_7d || 0}}</b> 次会话 &nbsp;·&nbsp; 活跃 <b>${{ca.active_hours || 0}}h</b><br>
-          Cache 命中率 <b>${{ca.cache_read_tokens && ca.cache_creation_tokens
+          Cache 命中率 <b>${{masked ? '***' : (ca.cache_read_tokens && ca.cache_creation_tokens
             ? Math.round(ca.cache_read_tokens / (ca.cache_read_tokens + ca.cache_creation_tokens) * 100)
-            : 0}}%</b>
+            : 0) + '%'}}</b>
         </div>
       </div>
       <div class="cl-col-r">
@@ -820,10 +1028,9 @@ async function renderPrompts() {{
 
   let allPrompts = [];
   try {{
-    const res = await fetch('/api/prompts');
-    const data = await res.json();
-    const proj = (data.projects || []).find(p => p.id === PROJECT_ID);
-    allPrompts = proj ? proj.prompts : [];
+    const res = await fetch(`/api/projects/${{PROJECT_ID}}/prompts`, {{headers: _authHeaders()}});
+    allPrompts = await res.json();
+    if (!Array.isArray(allPrompts)) allPrompts = [];
   }} catch(e) {{
     el.innerHTML = `<div class="prompts-wrap"><div class="prompts-empty">加载失败</div></div>`;
     return;
@@ -835,11 +1042,17 @@ async function renderPrompts() {{
     return;
   }}
 
-  function renderList(q) {{
+  const PAGE_SIZE = 30;
+  let promptPage = 0;
+
+  function renderList(q, page) {{
     const q2 = q.trim().toLowerCase();
     const filtered = q2 ? allPrompts.filter(p => p.text.toLowerCase().includes(q2)) : allPrompts;
-    if (!filtered.length) return `<div class="prompts-empty">没有匹配的 Prompt</div>`;
-    return filtered.map(p => {{
+    if (!filtered.length) return {{ html: `<div class="prompts-empty">没有匹配的 Prompt</div>`, total: 0 }};
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    const p2 = Math.max(0, Math.min(page, totalPages - 1));
+    const slice = filtered.slice(p2 * PAGE_SIZE, (p2 + 1) * PAGE_SIZE);
+    const cards = slice.map(p => {{
       const raw = escHtml(p.text);
       const text = q2 ? raw.replace(new RegExp(escHtml(q2).replace(/[.*+?^${{}}()|[\\]\\\\]/g,'\\\\$&'), 'gi'), m=>`<mark>${{m}}</mark>`) : raw;
       return `<div class="prompt-card">
@@ -847,22 +1060,40 @@ async function renderPrompts() {{
         <div class="prompt-text">${{text}}</div>
       </div>`;
     }}).join('');
+    return {{ html: cards, total: filtered.length, totalPages, page: p2 }};
+  }}
+
+  function renderPager(page, totalPages, total) {{
+    if (totalPages <= 1) return `<div style="font-size:11px;color:var(--muted);margin-bottom:12px">${{total}} 条记录</div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:11px;color:var(--muted)">
+      <button class="refresh-btn" onclick="promptGoPage(${{page-1}})" ${{page===0?'disabled':''}} style="padding:3px 8px">‹</button>
+      <span>${{page+1}} / ${{totalPages}} 页 · ${{total}} 条</span>
+      <button class="refresh-btn" onclick="promptGoPage(${{page+1}})" ${{page===totalPages-1?'disabled':''}} style="padding:3px 8px">›</button>
+    </div>`;
+  }}
+
+  function applyPage() {{
+    const q = document.getElementById('prompts-q')?.value || '';
+    const r = renderList(q, promptPage);
+    promptPage = r.page ?? 0;
+    document.getElementById('prompts-pager').innerHTML = renderPager(promptPage, r.totalPages || 1, r.total || 0);
+    document.getElementById('prompts-list').innerHTML = r.html;
   }}
 
   el.innerHTML = `<div class="prompts-wrap">
     <input class="prompts-search" id="prompts-q" type="text" placeholder="搜索 Prompt…" oninput="updatePrompts()" autocomplete="off">
-    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">${{allPrompts.length}} 条记录</div>
-    <div id="prompts-list">${{renderList('')}}</div>
+    <div id="prompts-pager"></div>
+    <div id="prompts-list"></div>
   </div>`;
 
-  window._renderPromptList = renderList;
+  window._promptGoPage = (p) => {{ promptPage = p; applyPage(); }};
+  window._updatePrompts = () => {{ promptPage = 0; applyPage(); }};
+  applyPage();
   promptsLoaded = true;
 }}
 
-function updatePrompts() {{
-  const q = document.getElementById('prompts-q').value;
-  document.getElementById('prompts-list').innerHTML = window._renderPromptList(q);
-}}
+function promptGoPage(p) {{ window._promptGoPage && window._promptGoPage(p); }}
+function updatePrompts() {{ window._updatePrompts && window._updatePrompts(); }}
 
 async function reload() {{
   summaryLoaded = false; overviewLoaded = false; designLoaded = false; promptsLoaded = false;
@@ -873,12 +1104,164 @@ async function reload() {{
   await init();
 }}
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+let _adminToken = localStorage.getItem('mira-admin-token') || '';
+let _isAdmin = false;
+
+function _authHeaders(extra = {{}}) {{
+  return _adminToken ? {{'X-Admin-Token': _adminToken, ...extra}} : extra;
+}}
+
+async function _initAuth() {{
+  try {{
+    const {{ admin }} = await fetch('/api/auth/check', {{headers: _authHeaders()}}).then(r => r.json());
+    _isAdmin = admin;
+    if (!admin) {{ _adminToken = ''; localStorage.removeItem('mira-admin-token'); }}
+  }} catch(_) {{ _isAdmin = true; }}
+  _updateLogoutBtn();
+}}
+
+function _updateLogoutBtn() {{
+  const btn = document.getElementById('logout-btn');
+  if (btn) btn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
+}}
+
+function logout() {{
+  _adminToken = ''; _isAdmin = false;
+  localStorage.removeItem('mira-admin-token');
+  _updateLogoutBtn();
+  location.reload();
+}}
+
+let _loginCallback = null;
+
+function openLoginModal(cb) {{
+  _loginCallback = cb || null;
+  const ov = document.getElementById('login-overlay');
+  ov.style.display = 'flex';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').style.display = 'none';
+  setTimeout(() => document.getElementById('login-password').focus(), 50);
+}}
+
+function closeLoginModal() {{
+  document.getElementById('login-overlay').style.display = 'none';
+  _loginCallback = null;
+}}
+
+async function doLogin() {{
+  const pw = document.getElementById('login-password').value;
+  try {{
+    const res = await fetch('/api/auth/login', {{
+      method: 'POST', headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{password: pw}}),
+    }});
+    if (!res.ok) throw new Error('wrong');
+    const {{ token }} = await res.json();
+    _adminToken = token; _isAdmin = true;
+    localStorage.setItem('mira-admin-token', token);
+    _updateLogoutBtn();
+    closeLoginModal();
+    if (_loginCallback) {{ const fn = _loginCallback; _loginCallback = null; fn(); }}
+  }} catch(e) {{
+    document.getElementById('login-error').style.display = '';
+  }}
+}}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+async function openSettings() {{
+  if (!_isAdmin) {{ openLoginModal(openSettings); return; }}
+  const data = await fetch('/api/settings', {{headers: _authHeaders()}}).then(r => r.json());
+  document.getElementById('set-openrouter').value = '';
+  document.getElementById('set-deepseek').value = '';
+  document.getElementById('set-kimi').value = '';
+  document.getElementById('set-admin-password').value = '';
+  document.getElementById('set-openrouter').placeholder = data.openrouter_api_key || 'sk-or-...';
+  document.getElementById('set-deepseek').placeholder   = data.deepseek_api_key   || 'sk-...';
+  document.getElementById('set-kimi').placeholder       = data.kimi_api_key        || 'sk-...';
+  document.getElementById('set-admin-password').placeholder = data.admin_password ? '留空则不修改' : '未设置';
+  document.getElementById('settings-overlay').classList.add('open');
+}}
+
+function closeSettings() {{
+  document.getElementById('settings-overlay').classList.remove('open');
+}}
+
+async function saveSettings() {{
+  const body = {{
+    openrouter_api_key: document.getElementById('set-openrouter').value.trim(),
+    deepseek_api_key:   document.getElementById('set-deepseek').value.trim(),
+    kimi_api_key:       document.getElementById('set-kimi').value.trim(),
+    admin_password:     document.getElementById('set-admin-password').value.trim(),
+  }};
+  await fetch('/api/settings', {{ method: 'POST', headers: _authHeaders({{'Content-Type':'application/json'}}), body: JSON.stringify(body) }});
+  if (body.admin_password) {{
+    _adminToken = ''; _isAdmin = false;
+    localStorage.removeItem('mira-admin-token');
+    _updateLogoutBtn();
+  }}
+  closeSettings();
+}}
+
+// ─── Skin ─────────────────────────────────────────────────────────────────────
+const SKINS = [
+  {{ id: 'default',     name: '深空默认', preview: ['#0f1117', '#4f46e5'] }},
+  {{ id: 'neon-pixel',  name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] }},
+  {{ id: 'pixel-cyber', name: '像素赛博', preview: ['#000d1a', '#ff0066'] }},
+];
+
+function applySkin(id) {{
+  const skin = SKINS.find(s => s.id === id) ? id : 'default';
+  document.documentElement.dataset.theme = skin;
+  localStorage.setItem('mira-skin', skin);
+}}
+
+function renderSkinPicker() {{
+  const picker = document.getElementById('skin-picker');
+  const current = document.documentElement.dataset.theme || 'default';
+  picker.innerHTML =
+    `<div class="skin-picker-label">选择皮肤</div>` +
+    `<div class="skin-grid">` +
+    SKINS.map(s =>
+      `<div class="skin-card ${{s.id === current ? 'active' : ''}}"
+            data-skin-id="${{s.id}}"
+            onclick="applySkin(this.dataset.skinId);toggleSkinPicker();">
+        <div class="skin-preview">
+          <div style="background:${{s.preview[0]}}"></div>
+          <div style="background:${{s.preview[1]}}"></div>
+        </div>
+        <div class="skin-name">${{s.name}}</div>
+      </div>`
+    ).join('') +
+    `</div>`;
+}}
+
+function toggleSkinPicker() {{
+  const picker = document.getElementById('skin-picker');
+  const open = picker.classList.toggle('open');
+  if (open) {{
+    renderSkinPicker();
+    const btn = document.getElementById('skin-btn');
+    const rect = btn.getBoundingClientRect();
+    picker.style.top = (rect.bottom + 8) + 'px';
+    picker.style.right = (window.innerWidth - rect.right) + 'px';
+  }}
+}}
+
+document.addEventListener('click', e => {{
+  if (!e.target.closest('.skin-wrap')) {{
+    document.getElementById('skin-picker')?.classList.remove('open');
+  }}
+}});
+
+applySkin(localStorage.getItem('mira-skin') || 'default');
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {{
   try {{
-    const res = await fetch(`/api/projects/${{PROJECT_ID}}`);
+    const res = await fetch(`/api/projects/${{PROJECT_ID}}`, {{headers: _authHeaders()}});
     projectData = await res.json();
     document.getElementById('proj-name').textContent = projectData.name || PROJECT_ID;
-    document.getElementById('proj-path').textContent = projectData.path || '';
   }} catch(e) {{ /* non-fatal */ }}
 
   renderSummary();
@@ -886,8 +1269,52 @@ async function init() {{
   if (activeTab === 'design')   renderDesign();
 }}
 
-init();
+_initAuth().then(() => init());
 
 </script>
+
+<!-- Settings Modal -->
+<div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-modal">
+    <div class="settings-title">⚙ 设置 — API Keys</div>
+    <div class="settings-group">
+      <div class="settings-label">OpenRouter API Key</div>
+      <input class="settings-input" id="set-openrouter" type="password" placeholder="sk-or-..." autocomplete="off">
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">DeepSeek API Key</div>
+      <input class="settings-input" id="set-deepseek" type="password" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">Kimi (Moonshot) API Key</div>
+      <input class="settings-input" id="set-kimi" type="password" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div class="settings-group" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="settings-label">管理员密码</div>
+      <input class="settings-input" id="set-admin-password" type="password" placeholder="留空则不修改" autocomplete="new-password">
+    </div>
+    <div class="settings-footer">
+      <button class="settings-btn-cancel" onclick="closeSettings()">取消</button>
+      <button class="settings-btn-save" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Login Modal -->
+<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);align-items:center;justify-content:center;" onclick="if(event.target===this)closeLoginModal()">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:32px 28px;width:320px;text-align:center">
+    <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px">🔒 管理员登录</div>
+    <div style="font-size:13px;color:var(--sub);margin-bottom:20px">此操作需要管理员权限</div>
+    <input id="login-password" type="password" placeholder="输入密码" autocomplete="current-password"
+      style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;margin-bottom:10px;box-sizing:border-box"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <div id="login-error" style="color:var(--red);font-size:12px;margin-bottom:10px;display:none">密码错误，请重试</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="closeLoginModal()" style="background:none;border:1px solid var(--border);color:var(--sub);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:var(--mono)">取消</button>
+      <button onclick="doLogin()" style="background:var(--accent);border:none;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;font-family:var(--mono)">登录</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>'''

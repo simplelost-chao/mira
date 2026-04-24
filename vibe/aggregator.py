@@ -2,7 +2,7 @@ import re
 import json
 from pathlib import Path
 from typing import Optional
-from vibe.models import ProjectInfo, TechStack, DeployInfo
+from vibe.models import ProjectInfo, TechStack, DeployInfo, ClaudeActivity
 from vibe.collectors.git import collect_git
 from vibe.collectors.plans import collect_plans
 from vibe.collectors.service import collect_service
@@ -12,8 +12,48 @@ from vibe.collectors.features import collect_features
 from vibe.collectors.design_docs import collect_design_docs
 from vibe.collectors.deploy import collect_deploy
 from vibe.collectors.dependencies import collect_dependencies
+from vibe.collectors.claude_sessions import collect_claude_activity
+from vibe.collectors.llm import collect_llm_apis
 
 _ARCH_SECTION_RE = re.compile(r"^#{1,3}\s+(架构|Architecture)", re.IGNORECASE)
+
+
+def extract_description(path: Path) -> Optional[str]:
+    """Extract one-line project description from README.md or vibe.yaml.
+
+    Priority:
+    1. vibe.yaml `description` field
+    2. First non-empty, non-heading paragraph line in README.md after the title
+    """
+    # vibe.yaml description takes priority
+    vibe_yaml = path / "vibe.yaml"
+    if vibe_yaml.exists():
+        try:
+            import yaml as _yaml
+            data = _yaml.safe_load(vibe_yaml.read_text(encoding="utf-8")) or {}
+            desc = (data.get("description") or "").strip()
+            if desc:
+                return desc
+        except Exception:
+            pass
+
+    readme = path / "README.md"
+    if not readme.exists():
+        return None
+
+    skipped_title = False
+    for line in readme.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            skipped_title = True
+            continue
+        if skipped_title and stripped:
+            # Strip markdown formatting for display
+            text = re.sub(r"[*_`\[\]()]", "", stripped)
+            return text[:120] if text else None
+    return None
 
 
 def _safe(fn, *args, default=None):
@@ -53,9 +93,17 @@ def extract_arch_summary(path: Path) -> Optional[str]:
     return text if text else None
 
 
-def extract_tech_stack(path: Path) -> list[TechStack]:
-    """Extract tech stack from pyproject.toml and package.json."""
+def extract_tech_stack(path: Path, vibe_cfg: Optional[dict] = None) -> list[TechStack]:
+    """Extract tech stack from pyproject.toml, package.json, and vibe.yaml."""
     stack = []
+
+    # vibe.yaml manual overrides
+    if vibe_cfg:
+        for item in vibe_cfg.get("tech_stack", []):
+            if isinstance(item, str):
+                stack.append(TechStack(name=item))
+            elif isinstance(item, dict) and "name" in item:
+                stack.append(TechStack(name=item["name"]))
 
     # pyproject.toml
     pyproject = path / "pyproject.toml"
@@ -131,7 +179,8 @@ def collect_project(path: Path, name: str, vibe_cfg: Optional[dict]) -> ProjectI
         name=name,
         path=str(path),
         status=status,
-        tech_stack=_safe(extract_tech_stack, path, default=[]),
+        description=_safe(extract_description, path),
+        tech_stack=_safe(extract_tech_stack, path, vibe_cfg, default=[]),
         git=_safe(collect_git, path),
         plans=_safe(collect_plans, path),
         service=_safe(collect_service, path, vibe_cfg),
@@ -142,4 +191,13 @@ def collect_project(path: Path, name: str, vibe_cfg: Optional[dict]) -> ProjectI
         deploy=_safe(collect_deploy, path, vibe_cfg),
         arch_summary=_safe(extract_arch_summary, path),
         external_deps=_safe(collect_dependencies, path, default=[]),
+        llm_apis=_safe(collect_llm_apis, path, default=[]),
+        claude_activity=_safe(_collect_claude, str(path), (vibe_cfg or {}).get("aliases", [])),
     )
+
+
+def _collect_claude(project_path: str, aliases: list = []) -> Optional[ClaudeActivity]:
+    data = collect_claude_activity(project_path, aliases=aliases)
+    if not data:
+        return None
+    return ClaudeActivity(**data)
