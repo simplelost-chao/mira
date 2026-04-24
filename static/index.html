@@ -1376,69 +1376,79 @@ body {
 
 /* ── RESPONSIVE ────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  /* ── Dev mode: mobile ── */
+  /* ── Dev mode: mobile master-detail ── */
   #panel-dev { height: calc(100vh - 48px); }
   .dev-layout { flex-direction: column; }
 
   /* Topbar: compact tab buttons to avoid overflow */
   .tab-btn { padding: 4px 10px; }
 
-  /* Sidebar → horizontal pill tab bar */
+  /* LIST VIEW (default on mobile) */
   .dev-sidebar {
     width: 100%;
-    height: auto;
-    flex-direction: row;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-  .dev-sidebar-header { display: none; }
-  .dev-pane-list {
-    display: flex;
-    flex-direction: row;
-    padding: 6px 8px;
-    gap: 6px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
     flex: 1;
+    border-right: none;
+    border-bottom: none;
   }
-  .dev-pane-list::-webkit-scrollbar { display: none; }
-  .dev-pane-empty {
-    padding: 10px 14px;
-    white-space: nowrap;
+  .dev-sidebar-header {
+    display: flex;
+    padding: 14px 16px 10px;
     font-size: 11px;
-    align-self: center;
+  }
+  .dev-pane-list { padding: 0; overflow-y: auto; }
+  .dev-pane-empty {
+    padding: 40px 24px;
+    font-size: 13px;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.9;
   }
   .dev-pane-item {
-    flex-shrink: 0;
-    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
     border-left: none;
-    border-bottom: none;
-    border-radius: 20px;
-    white-space: nowrap;
-    background: rgba(255,255,255,0.05);
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    white-space: normal;
   }
-  .dev-pane-item:hover {
-    border-left-color: transparent;
-    border-bottom-color: transparent;
-    background: rgba(255,255,255,0.08);
+  .dev-pane-item::after {
+    content: '›';
+    margin-left: auto;
+    padding-left: 12px;
+    color: var(--text-muted);
+    font-size: 20px;
+    flex-shrink: 0;
+    line-height: 1;
   }
-  .dev-pane-item.active {
-    border-left-color: transparent;
-    border-bottom-color: transparent;
-    background: rgba(var(--accent-rgb), 0.2);
-    color: var(--accent);
-  }
-  .dev-pane-label { font-size: 12px; overflow: visible; text-overflow: clip; }
-  .dev-pane-target { display: none; }
-  .dev-pane-waiting { display: inline; margin-top: 0; margin-left: 4px; }
+  .dev-pane-item:hover { background: rgba(255,255,255,0.04); border-left-color: transparent; }
+  .dev-pane-item.active { background: rgba(var(--accent-rgb), 0.08); border-left-color: transparent; }
+  .dev-pane-label { font-size: 14px; }
+  .dev-pane-target { display: block; font-size: 11px; margin-top: 2px; }
+  .dev-pane-waiting { margin-top: 2px; margin-left: 0; }
 
-  /* Terminal fills remaining space */
-  .dev-terminal { flex: 1; min-height: 0; }
-  .dev-terminal-header { padding: 6px 12px; }
+  /* DETAIL VIEW: hidden until pane selected */
+  .dev-terminal { display: none; }
+  .dev-layout.dev-pane-open .dev-sidebar { display: none; }
+  .dev-layout.dev-pane-open .dev-terminal {
+    display: flex;
+    flex: 1;
+  }
+
+  /* Back button (mobile only) */
+  .dev-back-btn {
+    display: inline-flex;
+    align-items: center;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 15px;
+    padding: 0 10px 0 0;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  /* Terminal detail adjustments */
   .dev-terminal-output { font-size: 11px; padding: 8px 12px; }
   .dev-input-row { padding: 8px 10px; }
   .dev-input { font-size: 14px; padding: 8px 10px; }
@@ -2009,6 +2019,7 @@ body {
 }
 .dev-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .dev-send-btn:not(:disabled):hover { opacity: 0.85; }
+.dev-back-btn { display: none; }
 
 </style>
 </head>
@@ -3530,8 +3541,10 @@ function showMainTab(tab) {
   document.getElementById('tab-dev').classList.toggle('active', !isProjects);
 
   if (!isProjects) {
+    // Reset to list view on mobile; desktop unaffected (class only matters via CSS)
+    document.querySelector('.dev-layout')?.classList.remove('dev-pane-open');
+    _devActivePane = null;
     loadDevPanes();
-    if (_devActivePane) _startDevPoll();
   } else {
     _stopDevPoll();
   }
@@ -3571,9 +3584,11 @@ function selectDevPane(target) {
     el.classList.toggle('active', el.querySelector('.dev-pane-target')?.textContent === target);
   });
 
-  // Update terminal header
+  // Update terminal header (back button shown on mobile via CSS)
   const header = document.getElementById('dev-terminal-header');
-  if (header) header.innerHTML = `<span>终端</span><span class="dev-terminal-target">${escHtml(target)}</span>`;
+  if (header) header.innerHTML =
+    `<button class="dev-back-btn" onclick="devGoBack()">‹ 返回</button>` +
+    `<span>终端</span><span class="dev-terminal-target">${escHtml(target)}</span>`;
 
   // Enable input bar
   const input = document.getElementById('dev-input');
@@ -3585,8 +3600,18 @@ function selectDevPane(target) {
   const outputEl = document.getElementById('dev-terminal-output');
   if (outputEl) outputEl.textContent = '';
 
+  // Mobile: switch to detail view
+  document.querySelector('.dev-layout')?.classList.add('dev-pane-open');
+
   _stopDevPoll();
   _startDevPoll();
+}
+
+function devGoBack() {
+  _stopDevPoll();
+  _devActivePane = null;
+  document.querySelector('.dev-layout')?.classList.remove('dev-pane-open');
+  loadDevPanes();
 }
 
 function _startDevPoll() {
