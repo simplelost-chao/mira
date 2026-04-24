@@ -243,8 +243,14 @@ def get_stats(range_days: int = 30) -> dict:
                 """,
                 (cutoff,),
             ).fetchall()
-    except Exception:
-        day_rows, proj_rows = [], []
+
+            total_sessions_row = conn.execute(
+                "SELECT COUNT(DISTINCT session_id) FROM daily_stats WHERE date >= ?",
+                (cutoff,),
+            ).fetchone()
+            total_sessions = total_sessions_row[0] if total_sessions_row else 0
+    except sqlite3.OperationalError:
+        day_rows, proj_rows, total_sessions = [], [], 0
 
     # Build zero-padded days list
     day_map = {r["date"]: dict(r) for r in day_rows}
@@ -282,6 +288,6 @@ def get_stats(range_days: int = 30) -> dict:
             "input_tokens":       total_input,
             "output_tokens":      total_output,
             "estimated_cost_usd": round(total_input * _PRICE_INPUT + total_output * _PRICE_OUTPUT, 2),
-            "sessions":           sum(d["sessions"] for d in days),
+            "sessions":           total_sessions,
         },
     }
