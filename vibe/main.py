@@ -788,6 +788,73 @@ def history_sessions(request: Request, project_id: str = ""):
     return get_sessions(project_id)
 
 
+# ── Terminal Bridge ────────────────────────────────────────────────────────────
+
+@api.get("/api/terminals")
+def terminals_list(request: Request):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.terminal_monitor import get_panes
+    return get_panes()
+
+
+@api.get("/api/terminals/alerts")
+def terminals_alerts(request: Request):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.terminal_monitor import get_terminal_alerts
+    return get_terminal_alerts()
+
+
+@api.post("/api/terminals/register")
+def terminals_register(request: Request, body: dict):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    target = (body.get("target") or "").strip()
+    label = (body.get("label") or target).strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="target required")
+    from vibe.terminal_monitor import register_pane
+    register_pane(target, label)
+    return {"ok": True}
+
+
+@api.delete("/api/terminals/{target:path}")
+def terminals_unregister(request: Request, target: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.terminal_monitor import unregister_pane
+    unregister_pane(target)
+    return {"ok": True}
+
+
+@api.get("/api/terminals/{target:path}/output")
+def terminals_output(request: Request, target: str, lines: int = 200):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import capture_pane
+    try:
+        text = capture_pane(target, lines=lines)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"target": target, "output": text}
+
+
+@api.post("/api/terminals/{target:path}/send")
+def terminals_send(request: Request, target: str, body: dict):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    keys = body.get("keys", "")
+    if not keys:
+        raise HTTPException(status_code=400, detail="keys required")
+    from vibe.tmux_bridge import send_keys
+    try:
+        send_keys(target, keys)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
 @api.get("/api/alerts")
 def get_alerts():
     with _alerts_lock:
