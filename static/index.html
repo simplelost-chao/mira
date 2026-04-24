@@ -1951,10 +1951,10 @@ async function _initAuth() {
     _isAdmin = admin;
     if (!admin) { _adminToken = ''; localStorage.removeItem('mira-admin-token'); }
   } catch(_) { _isAdmin = true; }
-  _updateLogoutBtn();
+  _updateAdminUI();
 }
 
-function _updateLogoutBtn() {
+function _updateAdminUI() {
   const sBtn = document.getElementById('search-btn');
   if (sBtn) sBtn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
   const statsBtn = document.getElementById('stats-nav-btn');
@@ -1964,7 +1964,7 @@ function _updateLogoutBtn() {
 function logout() {
   _adminToken = ''; _isAdmin = false;
   localStorage.removeItem('mira-admin-token');
-  _updateLogoutBtn();
+  _updateAdminUI();
   loadProjects();
   loadBalance();
 }
@@ -1997,7 +1997,7 @@ async function doLogin() {
     _adminToken = token;
     _isAdmin = true;
     localStorage.setItem('mira-admin-token', token);
-    _updateLogoutBtn();
+    _updateAdminUI();
     closeLoginModal();
     loadProjects();
     loadBalance();
