@@ -1901,10 +1901,8 @@ body {
   word-break: break-all;
 }
 .dev-terminal-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
+  display: block;
+  padding: 24px 0;
   color: var(--text-muted);
   font-size: 13px;
 }
@@ -2011,7 +2009,7 @@ body {
       <div class="dev-terminal-header" id="dev-terminal-header">
         <span>选择左侧终端以查看输出</span>
       </div>
-      <pre class="dev-terminal-output" id="dev-terminal-output"><div class="dev-terminal-placeholder">← 从左侧选择一个终端</div></pre>
+      <pre class="dev-terminal-output" id="dev-terminal-output"><span class="dev-terminal-placeholder">← 从左侧选择一个终端</span></pre>
       <div class="dev-input-row">
         <input class="dev-input" id="dev-input" placeholder="发送按键…" disabled
                onkeydown="if(event.key==='Enter')sendDevKeys()">
