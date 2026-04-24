@@ -165,6 +165,12 @@ def test_stats_no_auth():
     assert resp.status_code == 401
 
 
+def test_stats_invalid_range():
+    with patch('vibe.main._is_admin', return_value=True):
+        resp = client.get('/api/stats?range=abc', headers={'X-Admin-Token': 'any'})
+    assert resp.status_code == 400
+
+
 def test_stats_admin_returns_shape():
     from unittest.mock import patch
     mock_data = {

@@ -848,9 +848,10 @@ def stats_view(request: Request, range: str = "30d"):  # noqa: A002
     _is_weekly = range_str.endswith("w")
     try:
         n = int(range_str.rstrip("dw"))
+        if n <= 0:
+            raise ValueError("non-positive")
     except ValueError:
-        n = 30
-        _is_weekly = False
+        raise HTTPException(status_code=400, detail="无效的 range 格式，请使用如 '30d' 或 '4w'")
     if _is_weekly:
         n = max(1, min(n, 52))   # 52 weeks = 364 days, always full 7-day buckets
         range_days = n * 7
@@ -868,6 +869,8 @@ def stats_view(request: Request, range: str = "30d"):  # noqa: A002
         while i < len(chunk_days):
             chunk = chunk_days[i:i + 7]
             i += 7
+            if not chunk:
+                break
             weeks.append({
                 "date":          chunk[-1]["date"],
                 "sessions":      sum(d["sessions"]      for d in chunk),
