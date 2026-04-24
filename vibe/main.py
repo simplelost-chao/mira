@@ -932,6 +932,31 @@ def terminals_list(request: Request):
     return get_panes()
 
 
+@api.get("/api/dev/panes")
+def dev_panes_list(request: Request):
+    """Return ALL tmux panes for the Dev mode panel (not filtered by command)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import list_panes
+    from vibe.terminal_monitor import get_panes
+    monitored = {p["target"]: p for p in get_panes()}
+    all_panes = list_panes()
+    result = []
+    for p in all_panes:
+        target = p["target"]
+        mon = monitored.get(target, {})
+        label = mon.get("label") or f"{p['command']}/{Path(p['cwd']).name}"
+        result.append({
+            "target": target,
+            "label": label,
+            "command": p["command"],
+            "cwd": p["cwd"],
+            "waiting": mon.get("waiting", False),
+            "project_id": mon.get("project_id") or Path(p["cwd"]).name,
+        })
+    return result
+
+
 @api.get("/api/terminals/alerts")
 def terminals_alerts(request: Request):
     if not _is_admin(request):
