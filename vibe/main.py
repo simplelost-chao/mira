@@ -403,6 +403,12 @@ def stats_page_route():
     return HTMLResponse(render_stats_page())
 
 
+@api.get("/dev", response_class=HTMLResponse)
+def dev_page_route():
+    from vibe.dev_page import render_dev_page
+    return HTMLResponse(render_dev_page())
+
+
 @api.get("/projects/{project_id}", response_class=HTMLResponse)
 def project_detail_page(project_id: str):
     from vibe.detail_page import render_detail_page

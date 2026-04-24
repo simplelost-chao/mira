@@ -1375,77 +1375,7 @@ body {
 .infra-port { color: var(--text-muted); }
 
 /* ── RESPONSIVE ────────────────────────────────────────────────── */
-
-/* Dev panel: master-detail on anything narrower than 900px (phones + small tablets) */
-@media (max-width: 900px) {
-  #panel-dev { height: calc(100vh - 52px); }
-  .dev-layout { flex-direction: column; }
-
-  /* LIST VIEW (default) */
-  .dev-sidebar { width: 100%; flex: 1; border-right: none; border-bottom: none; }
-  .dev-sidebar-header { display: flex; padding: 14px 16px 10px; font-size: 11px; }
-  .dev-pane-list { padding: 0; overflow-y: auto; }
-  .dev-pane-empty {
-    padding: 40px 24px;
-    font-size: 13px;
-    text-align: center;
-    white-space: normal;
-    line-height: 1.9;
-  }
-  .dev-pane-item {
-    position: relative;
-    padding: 14px 48px 14px 16px;
-    border-left: none;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    white-space: normal;
-    cursor: pointer;
-  }
-  .dev-pane-item::after {
-    content: '›';
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-muted);
-    font-size: 22px;
-    line-height: 1;
-  }
-  .dev-pane-item:hover { background: rgba(255,255,255,0.04); border-left-color: transparent; }
-  .dev-pane-item.active { background: rgba(var(--accent-rgb), 0.08); border-left-color: transparent; }
-  .dev-pane-label { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
-  .dev-pane-target { display: block; font-size: 11px; margin-top: 3px; }
-  .dev-pane-waiting { display: inline-block; margin-top: 4px; margin-left: 0; }
-
-  /* DETAIL VIEW: hidden until pane selected */
-  .dev-terminal { display: none; }
-  .dev-layout.dev-pane-open .dev-sidebar { display: none; }
-  .dev-layout.dev-pane-open .dev-terminal { display: flex; flex: 1; }
-
-  /* Back button */
-  .dev-back-btn {
-    display: inline-flex;
-    align-items: center;
-    background: none;
-    border: none;
-    color: var(--accent);
-    font-size: 15px;
-    padding: 0 10px 0 0;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  /* Terminal adjustments */
-  .dev-terminal-output { font-size: 12px; padding: 10px 14px; }
-  .dev-input-row { padding: 8px 10px; }
-  .dev-input { font-size: 14px; padding: 8px 10px; }
-  .dev-send-btn { padding: 8px 16px; font-size: 13px; }
-}
-
 @media (max-width: 640px) {
-  /* topbar adjustments on narrow phones */
-  #panel-dev { height: calc(100vh - 48px); }
-
   /* Topbar: compact for mobile */
   .topbar { padding: 0 12px; gap: 4px; height: 48px; overflow: hidden; }
   .topbar-title { letter-spacing: 1px; margin-right: 4px; }
@@ -1863,155 +1793,6 @@ body {
 .skin-preview div { height: 100%; }
 .skin-name { font-size: 11px; color: var(--text-sec); text-align: center; }
 
-/* ── DEV MODE PANEL ──────────────────────────────────────────── */
-#panel-dev {
-  display: none;
-  height: calc(100vh - 52px);
-  overflow: hidden;
-}
-.dev-layout {
-  display: flex;
-  height: 100%;
-}
-.dev-sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  background: var(--card);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.dev-sidebar-header {
-  padding: 12px 16px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--text-sec);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.dev-pane-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 0;
-}
-.dev-pane-item {
-  padding: 10px 16px;
-  cursor: pointer;
-  border-left: 3px solid transparent;
-  transition: all 0.12s;
-}
-.dev-pane-item:hover {
-  background: rgba(255,255,255,0.04);
-  border-left-color: rgba(var(--accent-rgb), 0.4);
-}
-.dev-pane-item.active {
-  background: rgba(var(--accent-rgb), 0.1);
-  border-left-color: var(--accent);
-}
-.dev-pane-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.dev-pane-target {
-  font-size: 11px;
-  color: var(--text-sec);
-  margin-top: 2px;
-}
-.dev-pane-waiting {
-  display: inline-block;
-  font-size: 10px;
-  background: var(--orange);
-  color: #000;
-  border-radius: 4px;
-  padding: 0 5px;
-  margin-top: 3px;
-  font-weight: 700;
-}
-.dev-pane-empty {
-  padding: 24px 16px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.7;
-}
-.dev-terminal {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: #0a0c10;
-  overflow: hidden;
-}
-.dev-terminal-header {
-  padding: 8px 16px;
-  font-size: 11px;
-  color: var(--text-sec);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.dev-terminal-target {
-  font-weight: 700;
-  color: var(--accent);
-}
-.dev-terminal-output {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  color: #c8d3e0;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.dev-terminal-placeholder {
-  display: block;
-  padding: 24px 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-.dev-input-row {
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid rgba(255,255,255,0.06);
-  flex-shrink: 0;
-}
-.dev-input {
-  flex: 1;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 6px 10px;
-  outline: none;
-}
-.dev-input:focus { border-color: var(--accent); }
-.dev-input:disabled { opacity: 0.4; cursor: not-allowed; }
-.dev-send-btn {
-  background: var(--accent);
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 12px;
-  padding: 6px 14px;
-  cursor: pointer;
-  transition: opacity 0.12s;
-}
-.dev-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.dev-send-btn:not(:disabled):hover { opacity: 0.85; }
-.dev-back-btn { display: none; }
 
 </style>
 </head>
@@ -2021,8 +1802,8 @@ body {
 <div class="topbar">
   <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
-  <button class="tab-btn" id="tab-projects" onclick="showMainTab('projects')" style="font-size:12px">Projects</button>
-  <button class="tab-btn" id="tab-dev" onclick="showMainTab('dev')" style="font-size:12px">Dev</button>
+  <button class="tab-btn active" id="tab-projects" style="font-size:12px">Projects</button>
+  <a class="tab-btn" href="/dev" style="font-size:12px;text-decoration:none">Dev</a>
   <a href="/stats" class="stats-nav-btn" id="stats-nav-btn" title="开发统计">📊 统计</a>
   <button class="search-btn" id="search-btn" onclick="toggleSearch()" title="搜索历史">⌕</button>
   <button class="chat-fab" id="chat-fab" onclick="toggleChat()" aria-label="打开 Mira 对话" style="position:relative">⌘<span id="anomaly-badge"></span></button>
@@ -2066,29 +1847,6 @@ body {
       <button id="settings-logout-btn" onclick="logout();closeSettings()" style="display:none;background:none;border:1px solid var(--border);color:var(--text-muted);padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px;margin-right:auto" title="退出登录">退出登录</button>
       <button class="settings-btn-cancel" onclick="closeSettings()">取消</button>
       <button class="settings-btn-save" onclick="saveSettings()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- DEV MODE PANEL -->
-<div id="panel-dev">
-  <div class="dev-layout">
-    <div class="dev-sidebar">
-      <div class="dev-sidebar-header">终端</div>
-      <div class="dev-pane-list" id="dev-pane-list">
-        <div class="dev-pane-empty">暂无活跃终端<br>使用 <code>mira term &lt;project&gt;</code> 启动</div>
-      </div>
-    </div>
-    <div class="dev-terminal" id="dev-terminal">
-      <div class="dev-terminal-header" id="dev-terminal-header">
-        <span>选择左侧终端以查看输出</span>
-      </div>
-      <pre class="dev-terminal-output" id="dev-terminal-output"><span class="dev-terminal-placeholder">← 从左侧选择一个终端</span></pre>
-      <div class="dev-input-row">
-        <input class="dev-input" id="dev-input" placeholder="发送按键…" disabled
-               onkeydown="if(event.key==='Enter')sendDevKeys()">
-        <button class="dev-send-btn" id="dev-send-btn" onclick="sendDevKeys()" disabled>发送</button>
-      </div>
     </div>
   </div>
 </div>
@@ -3510,159 +3268,8 @@ let chatOpen = false;
 let chatAlertsLoaded = false;
 
 // ── Dev Mode state ──────────────────────────────────────────────
-let _devActivePane = null;      // currently selected tmux target string
-let _devPollTimer = null;       // setInterval handle for output polling
-let _devAutoScroll = true;      // whether to auto-scroll terminal output
-let _devPollGeneration = 0;     // incremented on pane switch to discard stale responses
-
 let terminalsOpen = false;
 let _terminalsPollTimer = null;
-
-function showMainTab(tab) {
-  if (tab !== 'projects' && tab !== 'dev') return;
-  const isProjects = tab === 'projects';
-
-  if (!isProjects && !_isAdmin) {
-    openLoginModal(() => showMainTab('dev'));
-    return;
-  }
-
-  document.getElementById('panel-overview').style.display = isProjects ? '' : 'none';
-  document.getElementById('panel-dev').style.display = isProjects ? 'none' : 'block';
-  document.getElementById('tab-projects').classList.toggle('active', isProjects);
-  document.getElementById('tab-dev').classList.toggle('active', !isProjects);
-
-  if (!isProjects) {
-    // Reset to list view on mobile; desktop unaffected (class only matters via CSS)
-    document.querySelector('.dev-layout')?.classList.remove('dev-pane-open');
-    _devActivePane = null;
-    loadDevPanes();
-  } else {
-    _stopDevPoll();
-  }
-}
-
-async function loadDevPanes() {
-  try {
-    const res = await fetch('/api/dev/panes', { headers: _authHeaders() });
-    if (res.status === 401) { openLoginModal(() => loadDevPanes()); return; }
-    if (!res.ok) return;
-    const panes = await res.json();
-    const listEl = document.getElementById('dev-pane-list');
-    if (!listEl) return;
-
-    if (!panes.length) {
-      listEl.innerHTML = '<div class="dev-pane-empty">暂无活跃终端<br>使用 <code>mira term &lt;project&gt;</code> 启动</div>';
-      return;
-    }
-
-    listEl.innerHTML = panes.map(p => `
-      <div class="dev-pane-item${_devActivePane === p.target ? ' active' : ''}"
-           onclick="selectDevPane(${escHtml(JSON.stringify(p.target))})">
-        <div class="dev-pane-label">${escHtml(p.label)}</div>
-        <div class="dev-pane-target">${escHtml(p.target)}</div>
-        ${p.waiting ? '<span class="dev-pane-waiting">⚠ 等待确认</span>' : ''}
-      </div>`).join('');
-  } catch(e) { console.warn('dev panes:', e); }
-}
-
-function selectDevPane(target) {
-  _devPollGeneration++;
-  _devActivePane = target;
-  _devAutoScroll = true;
-
-  // Update sidebar selection highlight
-  document.querySelectorAll('.dev-pane-item').forEach(el => {
-    el.classList.toggle('active', el.querySelector('.dev-pane-target')?.textContent === target);
-  });
-
-  // Update terminal header (back button shown on mobile via CSS)
-  const header = document.getElementById('dev-terminal-header');
-  if (header) header.innerHTML =
-    `<button class="dev-back-btn" onclick="devGoBack()">‹ 返回</button>` +
-    `<span>终端</span><span class="dev-terminal-target">${escHtml(target)}</span>`;
-
-  // Enable input bar
-  const input = document.getElementById('dev-input');
-  const btn = document.getElementById('dev-send-btn');
-  if (input) input.disabled = false;
-  if (btn) btn.disabled = false;
-
-  // Clear output and start fresh poll
-  const outputEl = document.getElementById('dev-terminal-output');
-  if (outputEl) outputEl.textContent = '';
-
-  // Mobile: switch to detail view
-  document.querySelector('.dev-layout')?.classList.add('dev-pane-open');
-
-  _stopDevPoll();
-  _startDevPoll();
-}
-
-function devGoBack() {
-  _stopDevPoll();
-  _devActivePane = null;
-  document.querySelector('.dev-layout')?.classList.remove('dev-pane-open');
-  loadDevPanes();
-}
-
-function _startDevPoll() {
-  if (_devPollTimer) return;
-  _devPollTimer = setTimeout(_runDevPoll, 0); // immediate first run
-}
-
-function _stopDevPoll() {
-  if (_devPollTimer) { clearTimeout(_devPollTimer); _devPollTimer = null; }
-  _devPollGeneration++;
-}
-
-async function _runDevPoll() {
-  if (!_devPollTimer) return;
-  await _pollDevOutput();
-  if (_devPollTimer) _devPollTimer = setTimeout(_runDevPoll, 500);
-}
-
-async function _pollDevOutput() {
-  if (!_devActivePane) return;
-  const gen = _devPollGeneration;
-  try {
-    const res = await fetch(
-      `/api/terminals/${encodeURIComponent(_devActivePane)}/output?lines=200`,
-      { headers: _authHeaders() }
-    );
-    if (_devPollGeneration !== gen) return; // stale response — discard
-    if (!res.ok) return;
-    const data = await res.json();
-    const outputEl = document.getElementById('dev-terminal-output');
-    if (!outputEl) return;
-
-    outputEl.textContent = data.output || '';
-
-    // Auto-scroll if user hasn't scrolled up
-    if (_devAutoScroll) {
-      outputEl.scrollTop = outputEl.scrollHeight;
-    }
-  } catch(e) { /* silently ignore poll errors */ }
-}
-
-async function sendDevKeys() {
-  const input = document.getElementById('dev-input');
-  const keys = input ? input.value.trim() : '';
-  if (!keys || !_devActivePane) return;
-  try {
-    const res = await fetch(
-      `/api/terminals/${encodeURIComponent(_devActivePane)}/send`,
-      { method: 'POST',
-        headers: _authHeaders({'Content-Type': 'application/json'}),
-        body: JSON.stringify({ keys: keys + '\n' }) }
-    );
-    if (!res.ok) { showToast('发送失败：HTTP ' + res.status); return; }
-    if (input) input.value = '';
-    _devAutoScroll = true;
-  } catch(e) {
-    showToast('发送失败：' + e.message);
-  }
-}
 
 function toggleTerminalsSection() {
   terminalsOpen = !terminalsOpen;
@@ -4245,15 +3852,6 @@ document.addEventListener('click', e => {
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize tab state: Projects is active by default
   document.getElementById('tab-projects')?.classList.add('active');
-
-  // Dev terminal auto-scroll detection
-  const devOut = document.getElementById('dev-terminal-output');
-  if (devOut) {
-    devOut.addEventListener('scroll', () => {
-      const atBottom = devOut.scrollHeight - devOut.scrollTop - devOut.clientHeight < 40;
-      _devAutoScroll = atBottom;
-    });
-  }
 
   const input = document.getElementById('search-input');
   if (!input) return;
