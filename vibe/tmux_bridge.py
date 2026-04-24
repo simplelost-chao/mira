@@ -1,4 +1,7 @@
+import re
 import subprocess
+
+_TARGET_RE = re.compile(r'^[\w.-]+:\d+\.\d+$')
 
 
 def list_panes() -> list[dict]:
@@ -49,6 +52,8 @@ def capture_pane(target: str, lines: int = 200) -> str:
 
 def send_keys(target: str, keys: str) -> None:
     """Send keystrokes to a tmux pane."""
+    if not _TARGET_RE.match(target):
+        raise RuntimeError(f"Invalid tmux target format: {target!r}")
     proc = subprocess.run(
         ["tmux", "send-keys", "-t", target, keys],
         capture_output=True, text=True,

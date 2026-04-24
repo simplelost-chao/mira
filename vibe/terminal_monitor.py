@@ -107,6 +107,11 @@ def _poll_once() -> None:
                     "waiting": False,
                     "registered_at": time.time(),
                 }
+        # Evict auto-discovered panes that are no longer in list_panes
+        current_targets = set(p["target"] for p in all_panes)
+        stale = [t for t, v in _monitored.items() if v["auto"] and t not in current_targets]
+        for t in stale:
+            del _monitored[t]
         targets = list(_monitored.keys())
 
     for target in targets:

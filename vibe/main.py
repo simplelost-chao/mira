@@ -897,6 +897,8 @@ def terminals_send(request: Request, target: str, body: dict):
     keys = body.get("keys", "")
     if not keys:
         raise HTTPException(status_code=400, detail="keys required")
+    if len(keys) > 4096:
+        raise HTTPException(status_code=400, detail="keys too long (max 4096 chars)")
     from vibe.tmux_bridge import send_keys
     try:
         send_keys(target, keys)
@@ -1003,6 +1005,8 @@ async def chat_endpoint(request: Request, body: dict):
                     args = fn.get("arguments", {})
                     t_target = args.get("target", "")
                     t_keys = args.get("keys", "")
+                    if len(t_keys) > 4096:
+                        t_keys = t_keys[:4096]  # silently truncate for agent calls
                     if not t_target or not t_keys:
                         output = "[错误] target 和 keys 均为必填项"
                         yield f"data: {_json.dumps({'type': 'tool_exec', 'command': 'send_to_terminal', 'output': output})}\n\n"

@@ -147,3 +147,14 @@ def test_terminals_alerts():
         resp = client.get('/api/terminals/alerts', headers={'X-Admin-Token': 'x'})
     assert resp.status_code == 200
     assert resp.json()[0]['target'] == 'work:0.0'
+
+
+def test_terminals_send_empty_keys():
+    with patch('vibe.main._is_admin', return_value=True), \
+         patch('vibe.terminal_monitor.get_panes', return_value=[{'target': 'work:0.0', 'label': 'test', 'command': 'ccc', 'cwd': '/tmp', 'auto': True, 'waiting': False}]):
+        resp = client.post(
+            '/api/terminals/work%3A0.0/send',
+            json={'keys': ''},
+            headers={'X-Admin-Token': 'x'},
+        )
+    assert resp.status_code == 400

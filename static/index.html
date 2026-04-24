@@ -3339,7 +3339,7 @@ async function quickSend(target, keys, alertEl) {
 
 async function customSend(target, alertEl) {
   const keys = prompt(`发送到 ${target}：`);
-  if (keys === null) return;
+  if (keys === null || keys.trim() === '') return;
   await quickSend(target, keys + '\n', alertEl);
 }
 
