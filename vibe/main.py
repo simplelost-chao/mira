@@ -1136,6 +1136,77 @@ def summarize_cmd(
     typer.echo("\nDone.")
 
 
+@cli.command("term")
+def term_cmd(
+    project: str = typer.Argument(..., help="项目名（目录名），如 kohl"),
+    cmd: str = typer.Option("ccc", "--cmd", "-c", help="在终端里运行的命令，默认 ccc"),
+    host: str = typer.Option("http://127.0.0.1:8888", "--host", help="mira 地址"),
+    password: str = typer.Option("", "--password", "-p", help="mira admin 密码（可省略，从 vibe.yaml 读取）"),
+):
+    """在 tmux 里为指定项目启动终端会话，并注册到 mira。
+
+    示例：vibe term kohl
+          vibe term kohl --cmd "npm run dev"
+    """
+    import hashlib, subprocess, time, urllib.request, urllib.error, json as _json
+
+    from vibe.config import load_global_config
+    from vibe.scanner import discover_projects
+
+    cfg = load_global_config()
+    pw = password or (cfg.get("admin_password") or "")
+    if not pw:
+        typer.echo("错误：需要 admin 密码（--password 或 vibe.yaml admin_password）", err=True)
+        raise typer.Exit(1)
+    token = hashlib.sha256(pw.encode()).hexdigest()
+
+    # Resolve project path
+    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"],
+                                   cfg.get("extra_projects"), cfg.get("excluded_paths"))
+    item = next((i for i in discovered if Path(i["path"]).name == project), None)
+    if not item:
+        typer.echo(f"错误：找不到项目 '{project}'", err=True)
+        raise typer.Exit(1)
+    project_path = item["path"]
+
+    # Create or reuse tmux session
+    session = project
+    existing = subprocess.run(["tmux", "has-session", "-t", session],
+                               capture_output=True).returncode == 0
+    if existing:
+        typer.echo(f"tmux session '{session}' 已存在，复用")
+    else:
+        subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", project_path], check=True)
+        typer.echo(f"已创建 tmux session '{session}'")
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", cmd, "Enter"])
+        typer.echo(f"已启动：{cmd}")
+        time.sleep(1)
+
+    # Detect pane target
+    target = f"{session}:0.0"
+
+    # Register with mira
+    payload = _json.dumps({"target": target, "label": f"{project} · {cmd}", "project_id": project}).encode()
+    req = urllib.request.Request(
+        f"{host}/api/terminals/register",
+        data=payload,
+        headers={"Content-Type": "application/json", "X-Admin-Token": token},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = _json.loads(resp.read())
+        if result.get("ok"):
+            typer.echo(f"已注册到 mira：{target} → 项目 {project}")
+        else:
+            typer.echo(f"注册失败：{result}", err=True)
+    except urllib.error.URLError as e:
+        typer.echo(f"无法连接到 mira ({host})：{e}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"\n✓ 完成。在 mira 的 {project} 项目详情 → 终端 tab 查看。")
+
+
 @cli.command("serve")
 def serve(
     port: int = typer.Option(None, help="Port to listen on (default: from vibe.yaml or 8888)"),
