@@ -112,7 +112,6 @@ _SEND_TERMINAL_TOOL = {
 
 def _build_system_prompt(projects: list[dict]) -> str:
     from datetime import datetime
-    from vibe.terminal_monitor import get_panes
     lines = []
     for p in projects:
         svc = p.get("service") or {}
@@ -131,6 +130,7 @@ def _build_system_prompt(projects: list[dict]) -> str:
 
     # Terminal panes summary
     try:
+        from vibe.terminal_monitor import get_panes
         panes = get_panes()
         if panes:
             pane_lines = []
@@ -145,8 +145,10 @@ def _build_system_prompt(projects: list[dict]) -> str:
 
     return (
         f"你是 Mira，一个本地项目管理 agent。今天是 {date}。\n"
-        f"用中文回答。需要查看实际情况时使用 run_shell 工具。"
-        f"需要读取 terminal 输出时使用 read_terminal，需要发送指令时使用 send_to_terminal。\n\n"
+        f"运行在 macOS。\n"
+        f"用中文回答。需要查看实际情况时使用 run_shell 工具。\n"
+        f"需要读取 terminal 输出时使用 read_terminal，需要发送指令时使用 send_to_terminal。\n"
+        f"如果工具执行后仍然找不到所需信息，或问题超出你的能力范围，直接告诉用户你不知道，不要反复重试。\n\n"
         f"当前项目状态（共 {len(projects)} 个项目）：\n{summary}"
         f"{terminal_section}"
     )
@@ -986,10 +988,13 @@ async def chat_endpoint(request: Request, body: dict):
                 elif fn.get("name") == "read_terminal":
                     args = fn.get("arguments", {})
                     t_target = args.get("target", "")
-                    t_lines = int(args.get("lines", 50))
+                    try:
+                        t_lines = max(1, int(args.get("lines", 50)))
+                    except (ValueError, TypeError):
+                        t_lines = 50
                     try:
                         from vibe.tmux_bridge import capture_pane
-                        output = capture_pane(t_target, lines=t_lines)
+                        output = await _asyncio.to_thread(capture_pane, t_target, t_lines)
                     except RuntimeError as e:
                         output = f"[错误] {e}"
                     yield f"data: {_json.dumps({'type': 'tool_exec', 'command': f'read_terminal {t_target}', 'output': output})}\n\n"
@@ -998,14 +1003,19 @@ async def chat_endpoint(request: Request, body: dict):
                     args = fn.get("arguments", {})
                     t_target = args.get("target", "")
                     t_keys = args.get("keys", "")
-                    try:
-                        from vibe.tmux_bridge import send_keys
-                        send_keys(t_target, t_keys)
-                        output = f"[已发送] {repr(t_keys)} → {t_target}"
-                    except RuntimeError as e:
-                        output = f"[错误] {e}"
-                    yield f"data: {_json.dumps({'type': 'tool_exec', 'command': f'send_to_terminal {t_target}', 'output': output})}\n\n"
-                    messages.append({"role": "tool", "content": output, "tool_call_id": tc.get("id", "")})
+                    if not t_target or not t_keys:
+                        output = "[错误] target 和 keys 均为必填项"
+                        yield f"data: {_json.dumps({'type': 'tool_exec', 'command': 'send_to_terminal', 'output': output})}\n\n"
+                        messages.append({"role": "tool", "content": output, "tool_call_id": tc.get("id", "")})
+                    else:
+                        try:
+                            from vibe.tmux_bridge import send_keys
+                            await _asyncio.to_thread(send_keys, t_target, t_keys)
+                            output = f"[已发送] {repr(t_keys)} → {t_target}"
+                        except RuntimeError as e:
+                            output = f"[错误] {e}"
+                        yield f"data: {_json.dumps({'type': 'tool_exec', 'command': f'send_to_terminal {t_target}', 'output': output})}\n\n"
+                        messages.append({"role": "tool", "content": output, "tool_call_id": tc.get("id", "")})
                 else:
                     messages.append({"role": "tool", "content": f"[未知工具：{fn.get('name')}]", "tool_call_id": tc.get("id", "")})
 
