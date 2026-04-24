@@ -138,7 +138,7 @@ def collect_claude_activity(project_path: str, aliases: list[str] | None = None)
             mtime = f.stat().st_mtime
         except OSError:
             continue
-        key = (str(f), mtime)
+        key = (str(f), mtime, project_path)
         if key not in _file_cache:
             _file_cache[key] = _session_touches_project(f, project_path, aliases=aliases)
         if _file_cache[key]:
