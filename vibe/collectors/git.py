@@ -1,6 +1,7 @@
 # vibe/collectors/git.py
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime, timedelta
 from vibe.models import GitInfo
@@ -30,40 +31,41 @@ def collect_git(path: Path) -> GitInfo:
     if not (path / ".git").exists():
         return GitInfo(branch="unknown", commit_hash="", dirty_files=[], monthly_commits=0, recent_commits=[])
 
-    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], path) or "unknown"
-    commit_hash = _run(["git", "rev-parse", "--short", "HEAD"], path) or ""
+    today = datetime.now().date()
+    since_30d = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    heatmap_since = (today - timedelta(days=83)).strftime("%Y-%m-%d")
 
-    dirty_raw = _run(["git", "status", "--porcelain"], path)
+    # Run all git commands in parallel
+    cmds = {
+        "branch":   ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        "hash":     ["git", "rev-parse", "--short", "HEAD"],
+        "status":   ["git", "status", "--porcelain"],
+        "monthly":  ["git", "log", "--oneline", f"--since={since_30d}"],
+        "recent":   ["git", "log", "--oneline", "-5"],
+        "remote":   ["git", "remote", "get-url", "origin"],
+        "heatmap":  ["git", "log", "--format=%ad", "--date=short", f"--since={heatmap_since}"],
+    }
+    results: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=len(cmds)) as pool:
+        futs = {pool.submit(_run, cmd, path): name for name, cmd in cmds.items()}
+        for fut in as_completed(futs):
+            results[futs[fut]] = fut.result()
+
+    dirty_raw = results["status"]
+    dirty_files = []
     if dirty_raw:
-        dirty_files = []
         for line in dirty_raw.splitlines():
             if line.strip():
-                # Format is "XY filename" where XY is 2 status chars + space
-                # Handle renames: "R  old -> new" — take the dest path
                 parts = line[3:].strip()
                 if " -> " in parts:
                     parts = parts.split(" -> ")[-1]
                 dirty_files.append(parts)
-    else:
-        dirty_files = []
 
-    since = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-    monthly_log = _run(["git", "log", "--oneline", f"--since={since}"], path)
+    monthly_log = results["monthly"]
     monthly_commits = len(monthly_log.splitlines()) if monthly_log else 0
 
-    recent_log = _run(["git", "log", "--oneline", "-5"], path)
-    recent_commits = recent_log.splitlines() if recent_log else []
-
-    remote = _run(["git", "remote", "get-url", "origin"], path)
-    github_url = _parse_github_url(remote)
-
-    # 84-day commit heatmap: index 0 = 83 days ago, index 83 = today
-    today = datetime.now().date()
-    heatmap_since = (today - timedelta(days=83)).strftime("%Y-%m-%d")
-    heatmap_log = _run(["git", "log", "--format=%ad", "--date=short",
-                         f"--since={heatmap_since}"], path)
     date_counts: dict[str, int] = {}
-    for line in (heatmap_log.splitlines() if heatmap_log else []):
+    for line in (results["heatmap"].splitlines() if results["heatmap"] else []):
         line = line.strip()
         if line:
             date_counts[line] = date_counts.get(line, 0) + 1
@@ -73,11 +75,11 @@ def collect_git(path: Path) -> GitInfo:
     ]
 
     return GitInfo(
-        branch=branch,
-        commit_hash=commit_hash,
+        branch=results["branch"] or "unknown",
+        commit_hash=results["hash"] or "",
         dirty_files=dirty_files,
         monthly_commits=monthly_commits,
-        recent_commits=recent_commits,
-        github_url=github_url,
+        recent_commits=results["recent"].splitlines() if results["recent"] else [],
+        github_url=_parse_github_url(results["remote"]),
         commit_heatmap=commit_heatmap,
     )

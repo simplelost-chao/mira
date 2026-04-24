@@ -410,24 +410,21 @@ def project_detail_page(project_id: str):
 
 @api.get("/projects/{project_id}/overview", response_class=HTMLResponse)
 def project_overview_page(project_id: str):
-    from vibe.config import load_global_config
-    from vibe.scanner import discover_projects
-    from vibe.aggregator import collect_project
     from vibe.overview_page import render_overview_page
+    from vibe.models import ProjectInfo
 
-    cfg = load_global_config()
-    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"],
-                                   cfg.get("extra_projects"), cfg.get("excluded_paths"))
-    item = next((i for i in discovered if Path(i["path"]).name == project_id), None)
+    # Check for hand-crafted page first (no cache needed)
+    projects = get_all_projects()
+    item = next((p for p in projects if p.get("id") == project_id), None)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
     path = Path(item["path"])
-    # If a hand-crafted overview page exists, serve it directly
     hand_crafted = path / "design-preview" / "system-overview.html"
     if hand_crafted.exists():
         return HTMLResponse(hand_crafted.read_text(encoding="utf-8"))
 
-    info = collect_project(path, name=item["name"], vibe_cfg=item["vibe_config"])
+    # Reuse cached collect_project data — no re-collection needed
+    info = ProjectInfo(**item)
     return HTMLResponse(render_overview_page(info))
 
 @api.post("/api/refresh")

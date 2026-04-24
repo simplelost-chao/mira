@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 
 CLAUDE_DIR = Path.home() / ".claude" / "projects"
 
-# In-process cache: project_path → activity dict, invalidated when dir mtime changes
-_cache: dict[str, dict] = {}
-_cache_dir_mtime: float = 0.0
+# Per-project cache: project_path → (frozenset of (file, mtime) pairs, result dict)
+# Invalidated only when the set of matching files or their mtimes change.
+_cache: dict[str, tuple[frozenset, dict]] = {}
+# Per-file membership cache: (file_path_str, mtime) → bool (does it touch the project?)
+_file_cache: dict[tuple[str, float], bool] = {}
 
 
 def _session_touches_project(jsonl_path: Path, project_path: str, scan_lines: int = 300, aliases: list[str] | None = None) -> bool:
@@ -123,28 +125,36 @@ def _sum_tokens(jsonl_path: Path) -> dict:
 
 
 def collect_claude_activity(project_path: str, aliases: list[str] | None = None) -> dict:
-    global _cache, _cache_dir_mtime
+    global _cache, _file_cache
 
-    # Invalidate cache if projects dir changed
-    try:
-        cur_mtime = os.path.getmtime(CLAUDE_DIR)
-    except OSError:
+    if not CLAUDE_DIR.exists():
         return {}
-    if cur_mtime != _cache_dir_mtime:
-        _cache.clear()
-        _cache_dir_mtime = cur_mtime
 
-    if project_path in _cache:
-        return _cache[project_path]
+    # Build matching list using per-file mtime cache
+    all_files = _all_jsonl_files()
+    matching = []
+    for f in all_files:
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue
+        key = (str(f), mtime)
+        if key not in _file_cache:
+            _file_cache[key] = _session_touches_project(f, project_path, aliases=aliases)
+        if _file_cache[key]:
+            matching.append(f)
 
-    matching = [
-        f for f in _all_jsonl_files()
-        if _session_touches_project(f, project_path, aliases=aliases)
-    ]
     matching.sort(key=lambda f: f.stat().st_mtime)
 
+    # Check if cached result is still valid (same files + same mtimes)
+    fingerprint = frozenset((str(f), f.stat().st_mtime) for f in matching)
+    if project_path in _cache:
+        cached_fp, cached_result = _cache[project_path]
+        if cached_fp == fingerprint:
+            return cached_result
+
     if not matching:
-        _cache[project_path] = {}
+        _cache[project_path] = (fingerprint, {})
         return {}
 
     now = datetime.now()
@@ -231,5 +241,5 @@ def collect_claude_activity(project_path: str, aliases: list[str] | None = None)
         "active_hours": round(active_secs / 3600, 1),
         "session_spark_15d": spark_15d,
     }
-    _cache[project_path] = result
+    _cache[project_path] = (fingerprint, result)
     return result
