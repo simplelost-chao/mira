@@ -3439,6 +3439,7 @@ let chatAlertsLoaded = false;
 let _devActivePane = null;      // currently selected tmux target string
 let _devPollTimer = null;       // setInterval handle for output polling
 let _devAutoScroll = true;      // whether to auto-scroll terminal output
+let _devPollGeneration = 0;     // incremented on pane switch to discard stale responses
 
 let terminalsOpen = false;
 let _terminalsPollTimer = null;
@@ -3489,6 +3490,7 @@ async function loadDevPanes() {
 }
 
 function selectDevPane(target) {
+  _devPollGeneration++;
   _devActivePane = target;
   _devAutoScroll = true;
 
@@ -3517,21 +3519,29 @@ function selectDevPane(target) {
 
 function _startDevPoll() {
   if (_devPollTimer) return;
-  _devPollTimer = setInterval(_pollDevOutput, 500);
-  _pollDevOutput(); // immediate first fetch
+  _devPollTimer = setTimeout(_runDevPoll, 0); // immediate first run
 }
 
 function _stopDevPoll() {
-  if (_devPollTimer) { clearInterval(_devPollTimer); _devPollTimer = null; }
+  if (_devPollTimer) { clearTimeout(_devPollTimer); _devPollTimer = null; }
+  _devPollGeneration++;
+}
+
+async function _runDevPoll() {
+  if (!_devPollTimer) return;
+  await _pollDevOutput();
+  if (_devPollTimer) _devPollTimer = setTimeout(_runDevPoll, 500);
 }
 
 async function _pollDevOutput() {
   if (!_devActivePane) return;
+  const gen = _devPollGeneration;
   try {
     const res = await fetch(
       `/api/terminals/${encodeURIComponent(_devActivePane)}/output?lines=200`,
       { headers: _authHeaders() }
     );
+    if (_devPollGeneration !== gen) return; // stale response — discard
     if (!res.ok) return;
     const data = await res.json();
     const outputEl = document.getElementById('dev-terminal-output');
@@ -3548,7 +3558,7 @@ async function _pollDevOutput() {
 
 async function sendDevKeys() {
   const input = document.getElementById('dev-input');
-  const keys = input ? input.value : '';
+  const keys = input ? input.value.trim() : '';
   if (!keys || !_devActivePane) return;
   try {
     const res = await fetch(
