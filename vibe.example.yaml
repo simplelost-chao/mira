@@ -1,0 +1,55 @@
+# Mira Configuration — copy this to vibe.yaml and fill in your values
+# vibe.yaml is gitignored; never commit your real config.
+
+name: Mira
+description: 本地项目管理面板
+
+# Directories to scan for projects
+scan_dirs:
+  - ~/projects
+  - ~/Documents/Projects
+
+# Paths to exclude from scanning
+excluded_paths:
+  - ~/Documents/Projects/some-private-repo
+
+# File/folder patterns to exclude inside each project
+exclude:
+  - node_modules
+  - .venv
+  - __pycache__
+
+# Port to listen on
+port: 8888
+
+# Admin password — protects write operations and sensitive data views.
+# Leave empty to disable auth (not recommended for public-facing deployments).
+admin_password: "change-me"
+
+# LLM API keys (optional — used for AI-powered project summaries)
+openrouter_api_key: "sk-or-..."
+deepseek_api_key:   "sk-..."
+kimi_api_key:       "sk-..."
+
+# Base services shared across projects (shown in the services panel)
+base_services:
+  - name: PostgreSQL
+    port: 5432
+    type: db
+    desc: 关系型数据库
+    used_by: []
+  - name: Redis
+    port: 6379
+    type: cache
+    desc: 缓存 / 队列
+    used_by: []
+
+# Per-project vibe.yaml overrides (optional, place in each project root):
+#
+#   name: my-project
+#   description: What this project does
+#   domain: my-project.example.com
+#   service:
+#     port: 3000
+#     health_path: /healthz
+#     health_token: my-ok

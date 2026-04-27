@@ -1,0 +1,13 @@
+services:
+  mira:
+    build: .
+    ports:
+      - "8888:8888"
+    volumes:
+      # Mount your config
+      - ./vibe.yaml:/app/vibe.yaml:ro
+      # Mount project directories so Mira can scan them
+      # Add as many as you need:
+      - ~/projects:/home/user/projects:ro
+      - ~/Documents/Projects:/home/user/Documents/Projects:ro
+    restart: unless-stopped
