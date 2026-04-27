@@ -893,7 +893,7 @@ document.getElementById('btn-enter').addEventListener('click', () => sendRaw('\n
 let _attachments = [];
 let _attachSeq = 0;
 
-async function _addAttachment(file) {
+async function _addAttachment(file, autoSend) {
   if (!file || !file.type.startsWith('image/')) return;
   const id = ++_attachSeq;
   const url = URL.createObjectURL(file);
@@ -915,10 +915,10 @@ async function _addAttachment(file) {
     att.path = data.path;
     att.uploading = false;
     _renderAttachments();
-    _showAttachTip('图片已上传 ✓ 可以发送了');
-    // auto-send if user already clicked 发送 while uploading
-    if (_pendingSend && !_attachments.some(function(a) { return a.uploading; })) {
+    if (autoSend || (_pendingSend && !_attachments.some(function(a) { return a.uploading; }))) {
       sendKeys();
+    } else {
+      _showAttachTip('图片已上传 ✓ 可以发送了');
     }
   } catch(e) {
     console.warn('image upload failed:', e);
@@ -971,7 +971,7 @@ document.addEventListener('paste', function(e) {
   for (let i = 0; i < items.length; i++) {
     if (items[i].type.startsWith('image/')) {
       e.preventDefault();
-      _addAttachment(items[i].getAsFile());
+      _addAttachment(items[i].getAsFile(), true);
       return;
     }
   }
