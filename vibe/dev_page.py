@@ -143,6 +143,16 @@ def render_dev_page() -> str:
     line-height: 1.65;
   }
 
+  /* ── Compact status / timing lines ── */
+  .out-status {
+    margin: 0 14px 6px;
+    padding: 3px 12px;
+    font-size: .82em;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
   /* ── Syntax-highlighted blocks (hljs) ── */
   .out-block-syntax { display: flex; align-items: stretch; }
   .out-lang-gutter {
@@ -483,17 +493,29 @@ function _stripAnsi(s) {
 }
 
 // Try hljs syntax highlighting on a chunk (strips ANSI first).
-// Returns hljs result or null if unrecognised.
+// Returns hljs result or null if unrecognised / low confidence.
 function _hljsChunk(lines) {
   if (!window.hljs) return null;
   const plain = _stripAnsi(lines.join('\n'));
   if (!plain.trim()) return null;
   try {
     const r = window.hljs.highlightAuto(plain);
-    // Accept if hljs named a language, even with low confidence
     if (!r.language) return null;
+    // Require higher relevance for short chunks — plain text / prompts score 1-2
+    const minRel = lines.length <= 2 ? 8 : 5;
+    if ((r.relevance || 0) < minRel) return null;
     return r;
   } catch(e) { return null; }
+}
+
+// Detect single-line status/timing output (e.g. "* Brewed for 2m 26s").
+// Returns true when the line should be rendered as a compact status pill.
+function _isStatusLine(line) {
+  const s = _stripAnsi(line).trim();
+  return /^[✓✗✔●\*⠿⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s+\S/.test(s) ||   // spinner / bullet status
+         /^(Done|Finished|Complete|Failed|Error|Warning)[:\s]/i.test(s) ||
+         /\b\d+m\s*\d+s\b/.test(s) ||                    // timing "2m 26s"
+         /\bfor\s+\d/.test(s);                             // "Brewed for 3s"
 }
 
 // Render full output text as code-editor blocks grouped by blank lines.
@@ -520,7 +542,13 @@ function _renderOutput(text) {
   const pad = String(lines.length).length;
 
   return chunks.map(function(chunk) {
-    // Always try hljs (strips ANSI internally); use it when a language is detected
+    // Single-line status/timing: render as compact inline pill, no block chrome
+    if (chunk.length === 1 && _isStatusLine(chunk[0])) {
+      globalLine++;
+      return '<div class="out-status">' + _ansiLine(chunk[0]) + '</div>';
+    }
+
+    // Try hljs syntax highlighting (requires sufficient relevance score)
     const hl = _hljsChunk(chunk);
     if (hl) {
       globalLine += chunk.length;
