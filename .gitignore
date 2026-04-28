@@ -8,3 +8,4 @@ dist/
 vibe.yaml
 
 docs/
+.gstack/

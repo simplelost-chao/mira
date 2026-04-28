@@ -1,9 +1,11 @@
 import asyncio
 import hashlib
+import shutil
+import subprocess
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -14,6 +16,38 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 cli = typer.Typer()
 
 from contextlib import asynccontextmanager
+
+# ── ttyd subprocess management ─────────────────────────────────────────────────
+_TTYD_PORT = 7681
+_ttyd_proc: subprocess.Popen | None = None
+
+def _ttyd_bin() -> str:
+    return shutil.which("ttyd") or "/opt/homebrew/bin/ttyd"
+
+def _tmux_bin() -> str:
+    return shutil.which("tmux") or "/opt/homebrew/bin/tmux"
+
+def _start_ttyd() -> None:
+    global _ttyd_proc
+    ttyd = _ttyd_bin()
+    tmux = _tmux_bin()
+    if not Path(ttyd).exists():
+        return
+    cmd = [
+        ttyd, "-p", str(_TTYD_PORT),
+        "--writable",
+        "--base-path", "/terminal",
+        tmux, "new-session", "-A", "-s", "mira", "-c", str(Path.home()),
+    ]
+    _ttyd_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def _watch_ttyd() -> None:
+    """Restart ttyd if it dies."""
+    while True:
+        time.sleep(5)
+        if _ttyd_proc and _ttyd_proc.poll() is not None:
+            _start_ttyd()
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -30,7 +64,11 @@ async def _lifespan(app: FastAPI):
     threading.Thread(target=run_indexer, daemon=True).start()
     from vibe.terminal_monitor import run_monitor
     threading.Thread(target=run_monitor, daemon=True).start()
+    _start_ttyd()
+    threading.Thread(target=_watch_ttyd, daemon=True).start()
     yield
+    if _ttyd_proc:
+        _ttyd_proc.terminate()
 
 api = FastAPI(title="Vibe Manager", lifespan=_lifespan)
 
@@ -1152,6 +1190,116 @@ async def ws_service_status(websocket: WebSocket):
         pass
     except Exception:
         pass
+
+
+# ── ttyd HTTP proxy ─────────────────────────────────────────────────────────────
+
+@api.api_route("/terminal/{path:path}", methods=["GET", "POST", "HEAD"])
+async def ttyd_http_proxy(path: str, request: Request):
+    """Proxy HTTP requests (HTML/JS/CSS assets) to the ttyd process.
+
+    No admin check here — ttyd is bound to 127.0.0.1 and unreachable
+    from outside. The security boundary is Mira's login page.
+    """
+    import httpx
+    url = f"http://127.0.0.1:{_TTYD_PORT}/terminal/{path}"
+    params = str(request.url.query)
+    if params:
+        url += "?" + params
+    async with httpx.AsyncClient(trust_env=False) as client:
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers={k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")},
+                content=await request.body(),
+                timeout=10,
+            )
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="ttyd 未运行")
+    # Strip hop-by-hop and encoding headers (httpx decompresses; don't re-claim gzip)
+    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
+    headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
+    return Response(content=resp.content, status_code=resp.status_code, headers=headers)
+
+
+@api.websocket("/terminal/ws")
+async def ttyd_ws_proxy(websocket: WebSocket):
+    """Proxy WebSocket connection to ttyd.
+
+    No token check — ttyd is localhost-only, security boundary is Mira login.
+    """
+    import websockets as _ws
+    await websocket.accept(subprotocol="tty")
+    ttyd_url = f"ws://127.0.0.1:{_TTYD_PORT}/terminal/ws"
+    try:
+        async with _ws.connect(ttyd_url, subprotocols=["tty"]) as ttyd_ws:
+            async def browser_to_ttyd():
+                try:
+                    async for msg in websocket.iter_bytes():
+                        await ttyd_ws.send(msg)
+                except Exception:
+                    pass
+
+            async def ttyd_to_browser():
+                try:
+                    async for msg in ttyd_ws:
+                        if isinstance(msg, bytes):
+                            await websocket.send_bytes(msg)
+                        else:
+                            await websocket.send_text(msg)
+                except Exception:
+                    pass
+
+            await asyncio.gather(browser_to_ttyd(), ttyd_to_browser())
+    except Exception:
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# ── Terminal focus / new-window API ────────────────────────────────────────────
+
+@api.post("/api/terminal/focus")
+async def terminal_focus(request: Request, body: dict):
+    """Switch tmux client view to a specific pane (used by sidebar click)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    target = (body.get("target") or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="target required")
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    import re
+    # target format: session:window.pane  e.g. "mira:0.1"
+    m = re.match(r'^(.+):(\d+)\.(\d+)$', target)
+    if not m:
+        raise HTTPException(status_code=400, detail="invalid target format")
+    session, window, _pane = m.group(1), m.group(2), m.group(3)
+    # Switch the tmux session's active window, then select the pane
+    subprocess.run([_TMUX_BIN, "switch-client", "-t", f"{session}:{window}"],
+                   env=_TMUX_ENV, capture_output=True)
+    subprocess.run([_TMUX_BIN, "select-pane", "-t", target],
+                   env=_TMUX_ENV, capture_output=True)
+    return {"ok": True}
+
+
+@api.post("/api/terminal/new-window")
+async def terminal_new_window(request: Request, body: dict):
+    """Create a new tmux window, optionally in a project directory."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    cwd = (body.get("cwd") or "").strip() or None
+    cmd = [_TMUX_BIN, "new-window", "-t", "mira"]
+    if cwd:
+        cmd += ["-c", cwd]
+    result = subprocess.run(cmd, env=_TMUX_ENV, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr.strip())
+    return {"ok": True}
 
 
 @cli.callback()

@@ -769,7 +769,10 @@ async function loadOverview() {{
         <div class="proj-path">${{escHtml(p.path || '')}}</div>
         <div class="badge-row">${{svcBadge}}${{domainBadge}}${{deployBadge}}${{statusBadge}}</div>
       </div>
-      ${{caLastStr ? `<div class="claude-last">Claude ${{caLastStr}}</div>` : ''}}
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        ${{caLastStr ? `<div class="claude-last">Claude ${{caLastStr}}</div>` : ''}}
+        ${{p.path ? `<button class="term-qbtn" onclick="openTerminal(this)" data-path="${{escHtml(p.path)}}" title="在 Dev 页面打开该项目的终端">⬛ 打开终端</button>` : ''}}
+      </div>
     </div>`;
 
     // ── Stats bar ──
@@ -1357,6 +1360,19 @@ async function reload() {{
 }}
 
 {_tb_js}
+
+// ─── 打开终端 ──────────────────────────────────────────────────────────────────
+async function openTerminal(btn) {{
+  const path = btn.dataset.path;
+  try {{
+    await fetch('/api/terminal/new-window', {{
+      method: 'POST',
+      headers: _authHeaders({{'Content-Type': 'application/json'}}),
+      body: JSON.stringify({{ cwd: path }})
+    }});
+  }} catch(e) {{}}
+  window.location.href = '/dev';
+}}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {{
