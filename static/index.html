@@ -459,6 +459,15 @@ body {
   text-decoration: none; transition: all .15s;
 }
 .card-port-badge:hover { color: var(--accent); border-color: var(--accent); background: rgba(var(--accent-rgb),.1); }
+.card-dev-btn {
+  margin-left: auto;
+  font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
+  background: rgba(100,116,139,.12); border: 1px solid rgba(100,116,139,.2);
+  border-radius: 4px; padding: 1px 8px; white-space: nowrap; flex-shrink: 0;
+  text-decoration: none; transition: all .15s; letter-spacing: .3px;
+  font-weight: 600;
+}
+.card-dev-btn:hover { color: var(--accent); border-color: var(--accent); background: rgba(var(--accent-rgb),.1); }
 
 .card-stat-grid {
   display: flex; margin: 8px 14px 0;
@@ -2474,10 +2483,9 @@ function renderCard(p) {
           : `<span style="width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0"></span>`}
       <span class="card-name">${escHtml(p.name)}</span>
       ${statusDropdown(p.id, p.status || 'active')}
-      <a href="/projects/${escHtml(p.id)}#terminals" target="_blank"
+      <a class="card-dev-btn" href="/projects/${escHtml(p.id)}#terminals" target="_blank"
          onclick="event.stopPropagation()"
-         title="进入项目终端" style="margin-left:auto;font-size:14px;color:var(--text-muted);text-decoration:none;transition:color .15s"
-         onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">⬛</a>
+         title="进入项目终端">Dev</a>
     </div>
     ${p.description ? `<div class="card-desc">${escHtml(p.description)}</div>` : ''}
     ${domainBlock}
