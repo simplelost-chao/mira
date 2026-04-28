@@ -2269,6 +2269,14 @@ function renderCards() {
     filtered = allProjects.filter(p => (p.status || 'active') === currentFilter);
   }
 
+  // Sort by most recent claude session (descending). Projects never touched
+  // by claude land at the bottom (empty string sorts after any ISO timestamp).
+  filtered.sort((a, b) => {
+    const ta = (a.claude_activity && a.claude_activity.last_session) || '';
+    const tb = (b.claude_activity && b.claude_activity.last_session) || '';
+    return tb.localeCompare(ta);
+  });
+
   const grid = document.getElementById('project-grid');
   if (filtered.length === 0) {
     grid.innerHTML = '<div class="empty-state">暂无项目</div>';
@@ -3225,7 +3233,8 @@ function renderAnomalies() {
 let wsStatusPrev = {};  // {project_id: is_running}
 
 function connectStatusWs() {
-  const ws = new WebSocket(`ws://${location.host}/ws/status`);
+  const _wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${_wsProto}//${location.host}/ws/status`);
 
   ws.onmessage = (e) => {
     const { snapshot, changes } = JSON.parse(e.data);
