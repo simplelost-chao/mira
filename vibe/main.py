@@ -1239,13 +1239,27 @@ async def ttyd_http_proxy(path: str, request: Request):
 async def ttyd_ws_proxy(websocket: WebSocket):
     """Proxy WebSocket connection to ttyd.
 
-    No token check — ttyd is localhost-only, security boundary is Mira login.
+    Forwards admin:<admin_password> as basic auth to ttyd (which requires it
+    when --credential is set). Security boundary remains Mira login + ttyd auth.
     """
     import websockets as _ws
+    import base64
+    from vibe.config import load_global_config
+
     await websocket.accept(subprotocol="tty")
     ttyd_url = f"ws://127.0.0.1:{_TTYD_PORT}/terminal/ws"
+
+    pwd = (load_global_config().get("admin_password") or "").strip()
+    extra_headers = []
+    if pwd:
+        token = base64.b64encode(f"admin:{pwd}".encode()).decode()
+        extra_headers = [("Authorization", f"Basic {token}")]
+
     try:
-        async with _ws.connect(ttyd_url, subprotocols=["tty"]) as ttyd_ws:
+        async with _ws.connect(
+            ttyd_url, subprotocols=["tty"],
+            additional_headers=extra_headers,
+        ) as ttyd_ws:
             async def browser_to_ttyd():
                 try:
                     async for msg in websocket.iter_bytes():
