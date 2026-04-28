@@ -5,6 +5,9 @@ def render_dev_page() -> str:
     from vibe.topbar import theme_vars_css, topbar_css, topbar_html, settings_overlay_html, topbar_js
 
     page_css = r"""
+  /* ── Page reset (lock body to viewport, terminal handles its own scroll) ── */
+  html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+
   /* ── Main layout ── */
   .dev-page {
     height: calc(100vh - 52px);
