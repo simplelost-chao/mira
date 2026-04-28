@@ -18,7 +18,8 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 {_theme_css}
-  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; }}
+  html, body {{ height: 100vh; overflow: hidden; margin: 0; }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); }}
 
 {_tb_css}
 
@@ -703,7 +704,7 @@ function simpleMarkdown(md) {{
 async function loadOverview() {{
   const el = document.getElementById('panel-overview');
   try {{
-    const res = await fetch(`/projects/${{PROJECT_ID}}/overview`);
+    const res = await fetch(`/projects/${{PROJECT_ID}}/overview?embed=1`);
     const html = await res.text();
     // Inject the overview page content into an iframe
     const iframe = document.createElement('iframe');

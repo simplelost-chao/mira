@@ -481,7 +481,7 @@ def project_detail_page(request: Request, project_id: str):
     return HTMLResponse(render_detail_page(project_id, name, inline_data), headers=_NC)
 
 @api.get("/projects/{project_id}/overview", response_class=HTMLResponse)
-def project_overview_page(project_id: str):
+def project_overview_page(project_id: str, embed: bool = False):
     from vibe.overview_page import render_overview_page
     from vibe.models import ProjectInfo
 
@@ -497,7 +497,7 @@ def project_overview_page(project_id: str):
 
     # Reuse cached collect_project data — no re-collection needed
     info = ProjectInfo(**item)
-    return HTMLResponse(render_overview_page(info), headers=_NC)
+    return HTMLResponse(render_overview_page(info, embed=embed), headers=_NC)
 
 @api.post("/api/refresh")
 def refresh_all(request: Request):
