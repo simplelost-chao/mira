@@ -172,6 +172,18 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     color: var(--text-muted); font-size: 13px; text-align: center; gap: 8px;
   }}
 
+  /* ── ttyd iframe in terminal tab ── */
+  #ttyd-detail-frame {
+    flex: 1; width: 100%; border: none; display: none;
+    background: #0d1117;
+  }
+  #ttyd-detail-frame.visible { display: block; }
+  .term-empty-sidebar {
+    padding: 24px 16px; text-align: center;
+    color: var(--muted); font-size: 12px; line-height: 1.7;
+  }
+  .term-empty-sidebar code { color: var(--sub); font-size: 11px; }
+
   /* ── overview iframe ── */
   .overview-frame {{
     width: 100%; border: none; min-height: calc(100vh - 92px);
@@ -480,7 +492,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 
 {_tb_html}
 <div class="subnav">
-  <a class="subnav-back" href="/">← 返回列表</a>
+  
   <div class="subnav-sep"></div>
   <span class="subnav-proj" id="proj-name">{project_name}</span>
   <div class="subnav-spacer"></div>
@@ -513,20 +525,14 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
         <div class="term-sidebar-footer">每 3 秒刷新</div>
       </div>
       <div class="term-main">
-        <div class="term-titlebar" id="term-titlebar" style="display:none">
-          <span id="term-title"></span>
-          <div class="term-quickbtns">
-            <button class="term-qbtn" id="btn-term-ctrlc">Ctrl+C</button>
-            <button class="term-qbtn" id="btn-term-enter">↵ Enter</button>
+        <div id="term-placeholder" class="term-empty">
+          <div style="font-size:24px;opacity:.3">⬛</div>
+          <div>从左侧选择一个终端</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">
+            <code>mira term &lt;project&gt;</code> 启动新会话
           </div>
         </div>
-        <div class="term-output" id="term-output">
-          <div class="term-empty"><div>⬛</div><div>正在加载终端...</div></div>
-        </div>
-        <div class="term-inputbar" id="term-inputbar" style="display:none">
-          <input class="term-input" id="term-input" placeholder="输入命令后按 Enter 发送...">
-          <button class="term-send-btn" id="term-send-btn">发送</button>
-        </div>
+        <iframe id="ttyd-detail-frame" allow="clipboard-read; clipboard-write"></iframe>
       </div>
     </div>
   </div>
@@ -536,7 +542,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 const PROJECT_ID = {repr(project_id)};
 window._INLINE_PROJECT = {inline_data};
 let projectData = null;
-let activeTab = 'overview';
+let activeTab = (location.hash === '#terminals' ? 'terminals' : 'overview');
 let summaryLoaded = false;
 let overviewLoaded = false;
 let designLoaded = false;
@@ -565,10 +571,8 @@ function showTab(name) {{
   if (name === 'terminals') {{
     clearInterval(_termPollTimer);
     _loadTerminalsTab();
-    _termPollTimer = setInterval(() => {{
-      _loadTerminalsTab();
-      if (_termCurrentTarget) _fetchTermOutput();
-    }}, 3000);
+    // ttyd iframe handles its own state — only refresh pane list periodically
+    _termPollTimer = setInterval(_loadTerminalsTab, 5000);
   }}
 }}
 
@@ -1261,30 +1265,32 @@ async function renderPrompts() {{
 function promptGoPage(p) {{ window._promptGoPage && window._promptGoPage(p); }}
 function updatePrompts() {{ window._updatePrompts && window._updatePrompts(); }}
 
-// ─── Terminal Tab ──────────────────────────────────────────────────────────────
+// ─── Terminal Tab (ttyd iframe, filtered to this project) ─────────────────────
 function _loadTerminalsTab() {{
   if (!_isAdmin) return;
-  fetch('/api/terminals', {{headers: _authHeaders()}})
+  fetch('/api/dev/panes', {{headers: _authHeaders()}})
     .then(r => r.ok ? r.json() : [])
     .then(panes => {{
       const mine = panes.filter(p => p.project_id === PROJECT_ID);
       const list = document.getElementById('term-pane-list');
+      const placeholder = document.getElementById('term-placeholder');
+      const frame = document.getElementById('ttyd-detail-frame');
+
       if (!mine.length) {{
-        list.innerHTML = '';
-        document.getElementById('term-output').innerHTML =
-          '<div class="term-empty"><div>⬛</div><div>暂无与本项目关联的活跃终端</div></div>';
-        document.getElementById('term-titlebar').style.display = 'none';
-        document.getElementById('term-inputbar').style.display = 'none';
+        list.innerHTML = '<div class="term-empty-sidebar">本项目暂无活跃终端<br><br><code>mira term ' + PROJECT_ID + '</code><br>启动新会话</div>';
+        placeholder.style.display = '';
+        frame.classList.remove('visible');
         _termCurrentTarget = null;
         return;
       }}
+
       list.innerHTML = mine.map(p => `
         <div class="term-pane-row${{p.target === _termCurrentTarget ? ' active' : ''}}"
              data-target="${{escHtml(p.target)}}"
              data-cmd="${{escHtml(p.command || '')}}">
           <div class="term-pane-dot ${{p.waiting ? 'waiting' : 'running'}}"></div>
-          <div>
-            <div class="term-pane-name">${{escHtml(p.target)}}</div>
+          <div style="min-width:0;flex:1">
+            <div class="term-pane-name">${{escHtml(p.label || p.target)}}</div>
             <div class="term-pane-cmd">${{escHtml(p.command || '')}}</div>
           </div>
         </div>`).join('');
@@ -1292,9 +1298,11 @@ function _loadTerminalsTab() {{
         row.addEventListener('click', () =>
           _selectTermPane(row.dataset.target, row.dataset.cmd));
       }});
-      const _activeTargets = new Set(mine.map(p => p.target));
-      if (_termCurrentTarget && !_activeTargets.has(_termCurrentTarget)) {{
+      const targets = new Set(mine.map(p => p.target));
+      if (_termCurrentTarget && !targets.has(_termCurrentTarget)) {{
         _termCurrentTarget = null;
+        placeholder.style.display = '';
+        frame.classList.remove('visible');
       }}
       if (!_termCurrentTarget && mine.length) {{
         _selectTermPane(mine[0].target, mine[0].command || '');
@@ -1303,53 +1311,25 @@ function _loadTerminalsTab() {{
     .catch(() => {{}});
 }}
 
-function _selectTermPane(target, cmd) {{
+async function _selectTermPane(target, cmd) {{
   _termCurrentTarget = target;
-  document.getElementById('term-title').textContent = target + (cmd ? '  ·  ' + cmd : '');
-  document.getElementById('term-titlebar').style.display = '';
-  document.getElementById('term-inputbar').style.display = '';
   document.querySelectorAll('.term-pane-row').forEach(r =>
     r.classList.toggle('active', r.dataset.target === target));
-  _fetchTermOutput();
+
+  // Tell tmux to switch the active pane in the shared session
+  try {{
+    await fetch('/api/terminal/focus', {{
+      method: 'POST',
+      headers: _authHeaders({{'Content-Type': 'application/json'}}),
+      body: JSON.stringify({{ target }}),
+    }});
+  }} catch(_) {{}}
+
+  const frame = document.getElementById('ttyd-detail-frame');
+  if (!frame.src) frame.src = '/terminal/';
+  document.getElementById('term-placeholder').style.display = 'none';
+  frame.classList.add('visible');
 }}
-
-function _fetchTermOutput() {{
-  if (!_termCurrentTarget) return;
-  fetch(`/api/terminals/${{encodeURIComponent(_termCurrentTarget)}}/output?lines=200`,
-    {{headers: _authHeaders()}})
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {{
-      if (!data) return;
-      const el = document.getElementById('term-output');
-      const html = _renderOutput(data.output || '');
-      el.innerHTML = html || '<div style="padding:40px 16px;text-align:center;color:var(--muted);font-size:12px">等待输出…</div>';
-      el.scrollTop = el.scrollHeight;
-    }})
-    .catch(() => {{}});
-}}
-
-function _termSend(keys) {{
-  if (!_termCurrentTarget) return;
-  fetch(`/api/terminals/${{encodeURIComponent(_termCurrentTarget)}}/send`, {{
-    method: 'POST',
-    headers: _authHeaders({{'Content-Type': 'application/json'}}),
-    body: JSON.stringify({{keys}})
-  }}).catch(() => {{}});
-}}
-
-document.getElementById('btn-term-ctrlc').addEventListener('click', () => _termSend('C-c'));
-document.getElementById('btn-term-enter').addEventListener('click', () => _termSend('\\n'));
-
-(function() {{
-  const inp = document.getElementById('term-input');
-  const sendFn = () => {{
-    const v = inp.value.trim();
-    if (!v) return;
-    _termSend(v + '\\n');
-    inp.value = '';
-  }};
-  document.getElementById('term-send-btn').addEventListener('click', sendFn);
-}})();
 
 async function reload() {{
   summaryLoaded = false; overviewLoaded = false; designLoaded = false; promptsLoaded = false;
@@ -1388,8 +1368,8 @@ async function init() {{
   }} catch(e) {{ /* non-fatal */ }}
 
   renderSummary();
-  if (activeTab === 'overview') loadOverview();
-  if (activeTab === 'design')   renderDesign();
+  // Switch to whichever tab activeTab points to (default 'overview', or 'terminals' if URL has #terminals)
+  showTab(activeTab);
 }}
 
 _initAuth().then(() => init());
