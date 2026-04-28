@@ -1019,10 +1019,17 @@ def update_project_name(project_id: str, request: Request, body: dict):
     cfg["name"] = new_name
     with open(yaml_path, "w") as f:
         yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
-    # Force-rebuild cache synchronously so the next request sees the new name.
-    # (Just zeroing _cache_ts isn't enough — get_all_projects returns stale
-    # cache and only triggers a background refresh.)
-    get_all_projects(force=True)
+    # In-place patch the cache so the next request sees the new name
+    # immediately (rebuild would take 10-30s and block the API). Kick off
+    # a background full rebuild for any other fields that might depend
+    # on vibe.yaml.
+    with _cache_lock:
+        if _cache:
+            for cp in _cache:
+                if cp.get("id") == project_id:
+                    cp["name"] = new_name
+                    break
+    threading.Thread(target=_rebuild_and_persist, daemon=True).start()
     return {"ok": True, "name": new_name}
 
 
