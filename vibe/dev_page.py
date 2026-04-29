@@ -38,7 +38,7 @@ def render_dev_page() -> str:
     padding: 0; transition: color .12s, border-color .12s;
   }
   .term-new-btn:hover { color: var(--accent); border-color: var(--accent); }
-  #term-pane-list { flex: 1; overflow-y: auto; }
+  #term-pane-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .term-pane-row {
     padding: 10px 14px; display: flex; align-items: flex-start; gap: 8px;
     cursor: pointer; border-left: 2px solid transparent; transition: background .12s, border-color .12s;
@@ -229,11 +229,22 @@ def render_dev_page() -> str:
 // ── Visual viewport tracking (mobile keyboard adaptation) ─────────────────────
 (function() {
   function u() {
-    var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    document.documentElement.style.setProperty('--app-h', h + 'px');
+    if (window.visualViewport) {
+      // visualViewport.height = visible area (shrinks when keyboard opens)
+      // visualViewport.offsetTop = how far the viewport has scrolled up
+      var h = window.visualViewport.height;
+      document.documentElement.style.setProperty('--app-h', h + 'px');
+      // Prevent iOS from scrolling the body behind the app
+      window.scrollTo(0, 0);
+    } else {
+      document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+    }
   }
   u();
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', u);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', u);
+    window.visualViewport.addEventListener('scroll', u);
+  }
   window.addEventListener('resize', u);
 })();
 
@@ -299,7 +310,11 @@ document.addEventListener('click', function() {
 // ── Background polling (sidebar dots only) ────────────────────────────────────
 let _bgPollTimer = null;
 async function _bgPoll() {
-  const rows = document.querySelectorAll('.term-pane-row');
+  // Only poll the currently active pane when in detail view (reduces jank for voice input)
+  var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
+  var rows = inDetail && _currentTarget
+    ? document.querySelectorAll('.term-pane-row[data-target="' + CSS.escape(_currentTarget) + '"]')
+    : document.querySelectorAll('.term-pane-row');
   for (const row of rows) {
     const target = row.dataset.target;
     try {
@@ -311,7 +326,7 @@ async function _bgPoll() {
       _onStateChange(target, _detectState(data.output || ''));
     } catch(e) {}
   }
-  _bgPollTimer = setTimeout(_bgPoll, 10000);
+  _bgPollTimer = setTimeout(_bgPoll, inDetail ? 15000 : 10000);
 }
 
 // ── Pane list (grouped by project) ────────────────────────────────────────────
@@ -373,7 +388,22 @@ async function loadPanes() {
       }
       html += '</div>';
     }
-    list.innerHTML = html;
+    // Skip DOM rebuild if user is in detail view (mobile terminal active)
+    // to avoid interrupting IME/voice input in the iframe
+    var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
+    if (inDetail) {
+      // Only update status dots without touching DOM structure
+      for (const p of panes) {
+        const row = document.querySelector('.term-pane-row[data-target="' + CSS.escape(p.target) + '"]');
+        if (row) {
+          var dot = row.querySelector('.term-pane-dot');
+          var st = _paneState[p.target] || 'inactive';
+          if (dot) dot.className = 'term-pane-dot ' + st;
+        }
+      }
+    } else {
+      list.innerHTML = html;
+    }
 
     // If current pane disappeared, clear
     const targets = new Set(panes.map(p => p.target));
@@ -669,7 +699,6 @@ init();
       <span class="term-detail-title" id="term-detail-title">终端</span>
     </div>
     <div id="term-placeholder" class="term-placeholder">
-      <div style="font-size:28px;opacity:.3">⬛</div>
       <div>从左侧选择一个项目，或者：</div>
       <button class="term-placeholder-btn" onclick="openNewTermDialog()">+ 新建终端窗口</button>
     </div>
