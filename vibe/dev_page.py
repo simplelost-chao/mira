@@ -279,6 +279,7 @@ function _onStateChange(target, newState) {
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 function _maybeNotify(target, state) {
+  if (state === 'confirm') playNotificationSound();
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const label = { confirm: '需要你确认操作', done: '任务完成了', error: '遇到了错误' }[state];
   if (!label) return;

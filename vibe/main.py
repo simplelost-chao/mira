@@ -846,6 +846,7 @@ def get_settings(request: Request):
             result[k] = "****" if v else ""
     # admin_password: always fully masked regardless of admin status
     result["admin_password"] = "****" if cfg.get("admin_password") else ""
+    result["notification_sound"] = cfg.get("notification_sound", "Pop")
     return result
 
 @api.post("/api/settings")
@@ -863,18 +864,51 @@ def save_settings(request: Request, body: dict):
             v = (body[k] or "").strip()
             if v and not v.endswith("****"):   # real value → save
                 data[k] = v
-            # empty → skip (keep existing key unchanged)
+            elif v == "":   # empty → delete key
+                data.pop(k, None)
     # admin_password: save if provided and not placeholder
     if "admin_password" in body:
         v = (body["admin_password"] or "").strip()
         if v and v != "****":
             data["admin_password"] = v
+    # notification_sound
+    if "notification_sound" in body:
+        v = (body["notification_sound"] or "").strip()
+        if v:
+            data["notification_sound"] = v
     cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
     # invalidate balance cache with fresh config
     from .balance import fetch_all_balances
     from .config import load_global_config
     fetch_all_balances(load_global_config(), force=True)
     return {"ok": True}
+
+@api.get("/api/sounds")
+def list_sounds():
+    """返回可用的系统提示音列表。"""
+    sounds_dir = Path("/System/Library/Sounds")
+    names = sorted(f.stem for f in sounds_dir.glob("*.aiff")) if sounds_dir.exists() else []
+    if not names:
+        names = ["Pop", "Glass", "Ping", "Purr", "Tink", "Hero", "Submarine"]
+    return {"sounds": names}
+
+@api.get("/api/sounds/{name}")
+def get_sound(name: str):
+    """提供系统音效文件。"""
+    sound_file = Path(f"/System/Library/Sounds/{name}.aiff")
+    if not sound_file.exists():
+        raise HTTPException(status_code=404, detail="Sound not found")
+    return FileResponse(sound_file, media_type="audio/aiff")
+
+@api.get("/api/llm-providers")
+def get_llm_providers():
+    """聚合所有项目检测到的 LLM provider 列表（去重）。"""
+    projects = get_all_projects()
+    providers: set[str] = set()
+    for p in projects:
+        for api_name in p.get("llm_apis", []):
+            providers.add(api_name)
+    return {"providers": sorted(providers)}
 
 
 # ── History / Session Warehouse ────────────────────────────────────────────────

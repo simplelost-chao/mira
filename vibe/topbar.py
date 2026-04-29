@@ -141,12 +141,35 @@ def settings_overlay_html() -> str:
     <div style="font-size:15px;font-weight:700;margin-bottom:18px">设置</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">外观</div>
     <div class="skin-grid" id="settings-skin-grid"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">项目使用的 API</div>
+    <div id="settings-providers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:16px">检测自你的所有项目</div>
+    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">API 余额监控（选填）</div>
+    <div style="font-size:10px;color:var(--sub);margin-bottom:12px">填入 API Key 后，首页将显示余额信息</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px">OpenRouter API Key</div>
-    <input id="set-openrouter" type="password" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box;font-family:var(--mono)">
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <input id="set-openrouter" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
+      <button onclick="clearKeyInput('set-openrouter')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+    </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px">DeepSeek API Key</div>
-    <input id="set-deepseek" type="password" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box;font-family:var(--mono)">
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <input id="set-deepseek" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
+      <button onclick="clearKeyInput('set-deepseek')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+    </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Kimi API Key <span style="color:var(--sub);font-size:10px">(moonshot.cn)</span></div>
-    <input id="set-kimi" type="password" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;margin-bottom:12px;box-sizing:border-box;font-family:var(--mono)">
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <input id="set-kimi" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
+      <button onclick="clearKeyInput('set-kimi')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+    </div>
+    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">提示音效</div>
+    <div style="display:flex;gap:6px;margin-bottom:16px;align-items:center">
+      <select id="set-notification-sound" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono);appearance:auto">
+      </select>
+      <button onclick="previewSound()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:4px 10px;font-size:12px;font-family:var(--mono)" title="试听">&#9654;</button>
+    </div>
+    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px">管理员密码</div>
     <input id="set-admin-password" type="password" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;margin-bottom:18px;box-sizing:border-box;font-family:var(--mono)">
     <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -249,24 +272,75 @@ function _renderSettingsSkins() {
     </div>`
   ).join('');
 }
+// Track which keys user explicitly cleared (to send empty string for deletion)
+const _clearedKeys = new Set();
+function clearKeyInput(inputId) {
+  const el = document.getElementById(inputId);
+  if (el) { el.value = ''; el.placeholder = '已清除，保存后生效'; }
+  // Map input id → settings key
+  const keyMap = {'set-openrouter':'openrouter_api_key','set-deepseek':'deepseek_api_key','set-kimi':'kimi_api_key'};
+  if (keyMap[inputId]) _clearedKeys.add(keyMap[inputId]);
+}
+// ── Notification sound ────────────────────────────────────────────────────────
+let _notificationSound = localStorage.getItem('mira-notification-sound') || 'Pop';
+function previewSound() {
+  const sel = document.getElementById('set-notification-sound');
+  if (sel) _playSound(sel.value);
+}
+function _playSound(name) {
+  if (!name || name === 'off') return;
+  const a = new Audio('/api/sounds/' + encodeURIComponent(name));
+  a.play().catch(() => {});
+}
+function playNotificationSound() { _playSound(_notificationSound); }
+
 async function openSettings() {
   if (!_isAdmin) { openLoginModal(openSettings); return; }
-  const data = await fetch('/api/settings', {headers: _authHeaders()}).then(r => r.json());
+  _clearedKeys.clear();
+  const [data, provData, soundData] = await Promise.all([
+    fetch('/api/settings', {headers: _authHeaders()}).then(r => r.json()),
+    fetch('/api/llm-providers').then(r => r.json()).catch(() => ({providers:[]})),
+    fetch('/api/sounds').then(r => r.json()).catch(() => ({sounds:[]})),
+  ]);
   document.getElementById('set-openrouter').placeholder = data.openrouter_api_key || 'sk-or-...';
   document.getElementById('set-deepseek').placeholder   = data.deepseek_api_key   || 'sk-...';
   document.getElementById('set-kimi').placeholder       = data.kimi_api_key        || 'sk-...';
   document.getElementById('set-admin-password').placeholder = data.admin_password ? '留空则不修改' : '未设置';
+  // Render detected provider tags
+  const box = document.getElementById('settings-providers');
+  if (box) {
+    const providers = provData.providers || [];
+    box.innerHTML = providers.length
+      ? providers.map(p => `<span style="display:inline-block;padding:3px 10px;background:rgba(var(--accent-rgb),.12);color:var(--accent);border-radius:12px;font-size:11px;font-weight:600">${p}</span>`).join('')
+      : '<span style="font-size:11px;color:var(--sub)">未检测到 API 使用</span>';
+  }
+  // Populate sound selector
+  const sel = document.getElementById('set-notification-sound');
+  if (sel) {
+    const current = data.notification_sound || 'Pop';
+    sel.innerHTML = '<option value="off">关闭</option>' +
+      (soundData.sounds || []).map(s => `<option value="${s}"${s === current ? ' selected' : ''}>${s}</option>`).join('');
+  }
   _renderSettingsSkins();
   document.getElementById('settings-overlay').style.display = 'flex';
 }
 function closeSettings() { document.getElementById('settings-overlay').style.display = 'none'; }
 async function saveSettings() {
-  const body = {
-    openrouter_api_key: document.getElementById('set-openrouter').value.trim(),
-    deepseek_api_key:   document.getElementById('set-deepseek').value.trim(),
-    kimi_api_key:       document.getElementById('set-kimi').value.trim(),
-    admin_password:     document.getElementById('set-admin-password').value.trim(),
-  };
+  const body = {};
+  const keys = {openrouter_api_key:'set-openrouter', deepseek_api_key:'set-deepseek', kimi_api_key:'set-kimi'};
+  for (const [k, id] of Object.entries(keys)) {
+    const v = document.getElementById(id).value.trim();
+    if (v) body[k] = v;                          // user typed a new key
+    else if (_clearedKeys.has(k)) body[k] = '';   // user explicitly cleared → delete
+    // else: untouched → omit (backend keeps existing)
+  }
+  body.admin_password = document.getElementById('set-admin-password').value.trim();
+  const soundSel = document.getElementById('set-notification-sound');
+  if (soundSel) {
+    body.notification_sound = soundSel.value;
+    _notificationSound = soundSel.value;
+    localStorage.setItem('mira-notification-sound', soundSel.value);
+  }
   await fetch('/api/settings', {method:'POST', headers: _authHeaders({'Content-Type':'application/json'}), body: JSON.stringify(body)});
   if (body.admin_password) { _adminToken = ''; _isAdmin = false; localStorage.removeItem('mira-admin-token'); }
   closeSettings();
