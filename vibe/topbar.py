@@ -80,7 +80,7 @@ def topbar_css() -> str:
         "    font-family: 'Silkscreen', monospace;\n"
         "    letter-spacing: 2px; line-height: 1; text-transform: uppercase; flex-shrink: 0;\n"
         "  }\n"
-        "  .topbar-logo .logo-m { font-size: 16px; font-weight: 400; color: var(--accent); text-shadow: 0 0 10px var(--accent); }\n"
+        "  .topbar-logo .logo-m { font-size: 22px; font-weight: 700; color: var(--accent); text-shadow: 0 0 10px var(--accent); }\n"
         "  .topbar-logo .logo-ira { font-size: 16px; font-weight: 400; color: var(--text); opacity: .75; }\n"
         "  .topbar-logo .logo-cursor { font-size: 16px; font-weight: 400; color: var(--accent); opacity: .9; animation: topbar-blink 1.1s step-end infinite; }\n"
         "  @keyframes topbar-blink { 0%,100%{opacity:.9}50%{opacity:0} }\n"
