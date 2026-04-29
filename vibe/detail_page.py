@@ -314,9 +314,9 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   @media (max-width: 640px) {{
     /* topbar */
     .topbar {{ padding: 0 12px; gap: 8px; }}
-    .topbar-title .logo-m {{ font-size: 20px; }}
-    .topbar-title .logo-ira {{ font-size: 15px; }}
-    .topbar-title .logo-cursor {{ font-size: 17px; }}
+    .topbar-logo .logo-m {{ font-size: 18px; }}
+    .topbar-logo .logo-ira {{ font-size: 18px; }}
+    .topbar-logo .logo-cursor {{ font-size: 18px; }}
     .settings-btn {{ font-size: 0 !important; }}
     .settings-btn::before {{ content: '⚙\FE0E'; font-size: 15px; line-height: 1; }}
 

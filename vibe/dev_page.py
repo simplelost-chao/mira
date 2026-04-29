@@ -6,11 +6,12 @@ def render_dev_page() -> str:
 
     page_css = r"""
   /* ── Page reset (lock body to viewport, terminal handles its own scroll) ── */
+  :root { --app-h: 100vh; }
   html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
 
   /* ── Main layout ── */
   .dev-page {
-    height: calc(100vh - 52px);
+    height: calc(var(--app-h) - 52px);
     display: flex;
     overflow: hidden;
     background: var(--bg);
@@ -181,15 +182,9 @@ def render_dev_page() -> str:
 
   /* ── Mobile ── */
   @media (max-width: 900px) {
-    /* When a pane is open on mobile, hide MIRA topbar entirely
-       and surface a project-specific header inside .term-main */
-    .dev-page.detail-open ~ .topbar,
-    body:has(.dev-page.detail-open) .topbar { display: none !important; }
-    .dev-page.detail-open { height: 100dvh; }
-
     .term-detail-header {
       display: flex; align-items: center; gap: 10px;
-      height: 48px; padding: 0 12px; flex-shrink: 0;
+      height: 36px; padding: 0 12px; flex-shrink: 0;
       background: var(--panel); border-bottom: 1px solid var(--border);
     }
     .term-detail-back {
@@ -207,7 +202,7 @@ def render_dev_page() -> str:
     /* Hide desktop term-detail-header by default; it only shows on mobile */
     .dev-page:not(.detail-open) .term-detail-header { display: none; }
 
-    .dev-page { height: calc(100dvh - 48px); }
+    .dev-page { height: calc(var(--app-h) - 52px); }
     .term-sidebar { width: 100%; flex: 1; border-right: none; }
     .term-sidebar-header { padding: 14px 16px 10px; font-size: 11px; letter-spacing: .5px; text-transform: none; font-weight: 700; }
     #term-pane-list { padding: 0; }
@@ -231,6 +226,17 @@ def render_dev_page() -> str:
 """
 
     page_js = r"""
+// ── Visual viewport tracking (mobile keyboard adaptation) ─────────────────────
+(function() {
+  function u() {
+    var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-h', h + 'px');
+  }
+  u();
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', u);
+  window.addEventListener('resize', u);
+})();
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -368,9 +374,6 @@ async function loadPanes() {
       html += '</div>';
     }
     list.innerHTML = html;
-    list.querySelectorAll('.term-pane-row').forEach(row => {
-      row.addEventListener('click', () => selectPane(row.dataset.target, row.dataset.cmd));
-    });
 
     // If current pane disappeared, clear
     const targets = new Set(panes.map(p => p.target));
@@ -614,6 +617,14 @@ function pickNewTerm(cwd) {
 async function init() {
   await _initAuth();
   if (!_isAdmin) { openLoginModal(init); return; }
+  // Event delegation: bind click once on the container, survives innerHTML rebuilds
+  document.getElementById('term-pane-list').addEventListener('click', function(e) {
+    var row = e.target.closest('.term-pane-row');
+    if (!row) return;
+    // Ignore clicks on pencil/kill/input elements (they have their own handlers)
+    if (e.target.closest('.term-pane-pencil, .term-pane-kill, .term-pane-name-input')) return;
+    selectPane(row.dataset.target, row.dataset.cmd);
+  });
   // ttyd iframe is loaded lazily on first pane click (avoids basic-auth dialog on page load)
   await loadPanes();
   setInterval(loadPanes, 5000);
@@ -627,7 +638,7 @@ init();
         '<html lang="zh">\n'
         "<head>\n"
         '<meta charset="utf-8">\n'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-visual">\n'
         "<title>Dev · Mira</title>\n"
         "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>\n"
         '<link rel="stylesheet" href="/static/fonts/fonts.css">\n'
