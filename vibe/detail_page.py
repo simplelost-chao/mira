@@ -172,6 +172,20 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     color: var(--text-muted); font-size: 13px; text-align: center; gap: 8px;
   }}
 
+  /* ── New session button (terminal tab empty state) ── */
+  .term-new-session-btn {{
+    margin-top: 14px;
+    background: var(--accent); color: #fff; border: none;
+    padding: 8px 18px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-weight: 600; font-family: var(--mono);
+    transition: opacity .15s;
+  }}
+  .term-new-session-btn:hover {{ opacity: 0.85; }}
+  .term-empty-sidebar code {{
+    background: var(--bg); padding: 2px 6px; border-radius: 3px;
+    color: var(--text); font-family: var(--mono);
+  }}
+
   /* ── ttyd iframe in terminal tab ── */
   #ttyd-detail-frame {{
     flex: 1; width: 100%; border: none; display: none;
@@ -1277,7 +1291,14 @@ function _loadTerminalsTab() {{
       const frame = document.getElementById('ttyd-detail-frame');
 
       if (!mine.length) {{
-        list.innerHTML = '<div class="term-empty-sidebar">本项目暂无活跃终端<br><br><code>mira term ' + PROJECT_ID + '</code><br>启动新会话</div>';
+        list.innerHTML = `
+        <div class="term-empty-sidebar">
+          <div>本项目暂无活跃终端</div>
+          <button class="term-new-session-btn" onclick="newProjectSession()">＋ 新建会话</button>
+          <div style="margin-top:14px;color:var(--muted);font-size:10px">
+            或终端跑 <code>mira term ${PROJECT_ID}</code>
+          </div>
+        </div>`;
         placeholder.style.display = '';
         frame.classList.remove('visible');
         _termCurrentTarget = null;
@@ -1309,6 +1330,26 @@ function _loadTerminalsTab() {{
       }}
     }})
     .catch(() => {{}});
+}}
+
+async function newProjectSession() {{
+  const cwd = (projectData && projectData.path) || null;
+  if (!cwd) {{ alert('找不到项目路径'); return; }}
+  try {{
+    const res = await fetch('/api/terminal/new-window', {{
+      method: 'POST',
+      headers: _authHeaders({{'Content-Type': 'application/json'}}),
+      body: JSON.stringify({{ cwd }}),
+    }});
+    if (!res.ok) {{
+      const detail = await res.text().catch(() => '');
+      throw new Error(`HTTP ${{res.status}} ${{detail}}`);
+    }}
+    // Give tmux a moment to register the new window, then refresh
+    setTimeout(_loadTerminalsTab, 600);
+  }} catch(e) {{
+    alert('新建失败: ' + e.message);
+  }}
 }}
 
 async function _selectTermPane(target, cmd) {{
