@@ -1362,14 +1362,8 @@ async def ttyd_ws_proxy(websocket: WebSocket):
     import base64
     from vibe.config import load_global_config
 
-    # 鉴权：WebSocket 无法用自定义 header，通过 query param 传 token
-    token = _admin_token()
-    if token is not None:
-        client_token = websocket.query_params.get("token", "")
-        if client_token != token:
-            await websocket.close(code=4001, reason="Unauthorized")
-            return
-
+    # ttyd 自身的 basic auth (--credential) 已经是安全边界，
+    # 这里不再做 Mira token 验证——ttyd 前端 JS 无法注入 query param。
     await websocket.accept(subprotocol="tty")
     ttyd_url = f"ws://127.0.0.1:{_TTYD_PORT}/terminal/ws"
 
