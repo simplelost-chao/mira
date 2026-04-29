@@ -546,7 +546,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
             <code>mira term &lt;project&gt;</code> 启动新会话
           </div>
         </div>
-        <iframe id="ttyd-detail-frame" allow="clipboard-read; clipboard-write"></iframe>
+        <iframe id="ttyd-detail-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" allow="clipboard-read; clipboard-write"></iframe>
       </div>
     </div>
   </div>

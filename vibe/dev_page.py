@@ -452,7 +452,7 @@ init();
       <div>从左侧选择一个终端</div>
       <div><code>mira term &lt;project&gt;</code> 启动新会话</div>
     </div>
-    <iframe id="ttyd-frame" allow="clipboard-read; clipboard-write"></iframe>
+    <iframe id="ttyd-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" allow="clipboard-read; clipboard-write"></iframe>
   </div>
 </div>
 
