@@ -1402,6 +1402,21 @@ async def terminal_new_window(request: Request, body: dict):
     return {"ok": True}
 
 
+@api.get("/api/terminal/buffer")
+async def terminal_buffer(request: Request):
+    """Return tmux paste buffer (last copied text from copy-mode)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    result = subprocess.run(
+        [_TMUX_BIN, "show-buffer"],
+        env=_TMUX_ENV, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return {"text": ""}
+    return {"text": result.stdout}
+
+
 @cli.callback()
 def main():
     """Vibe Manager — project dashboard CLI."""

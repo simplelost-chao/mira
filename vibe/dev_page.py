@@ -504,6 +504,26 @@ async function selectPane(target, cmd) {
   showTerminal();
 }
 
+async function _copyTmuxBuffer() {
+  try {
+    const res = await fetch('/api/terminal/buffer', { headers: _authHeaders() });
+    if (!res.ok) return;
+    const { text } = await res.json();
+    if (!text) return;
+    // Try modern clipboard API first, fall back to execCommand
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); return; } catch(e) {}
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  } catch(e) { console.warn('copy buffer:', e); }
+}
+
 function showTerminal() {
   const frame = document.getElementById('ttyd-frame');
   if (!frame.src) {
@@ -511,10 +531,18 @@ function showTerminal() {
     // Suppress beforeunload dialog from ttyd iframe
     frame.addEventListener('load', () => {
       try {
+        // Suppress beforeunload dialog from ttyd iframe
         frame.contentWindow.addEventListener('beforeunload', e => {
           e.stopImmediatePropagation();
         }, true);
-      } catch(e) {}  // same-origin so this should work
+        // Cmd+C clipboard bridge: read tmux paste buffer → system clipboard
+        // (navigator.clipboard is unavailable on HTTP, so we use execCommand)
+        frame.contentWindow.document.addEventListener('keydown', e => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
+            _copyTmuxBuffer();
+          }
+        }, true);
+      } catch(e) {}
     });
   }
   document.getElementById('term-placeholder').style.display = 'none';
