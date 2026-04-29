@@ -292,7 +292,6 @@ async function _bgPoll() {
   const rows = document.querySelectorAll('.term-pane-row');
   for (const row of rows) {
     const target = row.dataset.target;
-    if (_paneState[target] !== 'running') continue;
     try {
       const res = await fetch(
         '/api/terminals/' + encodeURIComponent(target) + '/output?lines=30',
