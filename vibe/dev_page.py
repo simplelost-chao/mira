@@ -245,7 +245,10 @@ const _filterProject = new URLSearchParams(location.search).get('project') || nu
 // ── State detection (for sidebar dots) ────────────────────────────────────────
 function _detectState(text) {
   if (!text || !text.trim()) return 'idle';
-  const lines = text.trimEnd().split('\n').filter(l => l.trim());
+  // Filter out status-bar lines (e.g. Claude Code ⏵⏵, tmux status)
+  const lines = text.trimEnd().split('\n')
+    .filter(l => l.trim())
+    .filter(l => !/[⏵⏴]\s*\S/.test(l) && !/^─+$/.test(l.trim()));
   if (!lines.length) return 'idle';
   const last = lines[lines.length - 1];
   const tail = lines.slice(-6).join('\n');
@@ -288,20 +291,30 @@ document.addEventListener('click', function() {
 
 // ── Background polling (sidebar dots only) ────────────────────────────────────
 let _bgPollTimer = null;
+async function _detectPaneState(target) {
+  try {
+    const res = await fetch(
+      '/api/terminals/' + encodeURIComponent(target) + '/output?lines=30',
+      { headers: _authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    _onStateChange(target, _detectState(data.output || ''));
+  } catch(e) {}
+}
+// Initial detection: check all panes once to get out of 'inactive'
+async function _initialDetect() {
+  const rows = document.querySelectorAll('.term-pane-row');
+  for (const row of rows) await _detectPaneState(row.dataset.target);
+}
+// Ongoing poll: only re-check 'running' panes (others are stable)
 async function _bgPoll() {
   const rows = document.querySelectorAll('.term-pane-row');
   for (const row of rows) {
-    const target = row.dataset.target;
-    try {
-      const res = await fetch(
-        '/api/terminals/' + encodeURIComponent(target) + '/output?lines=30',
-        { headers: _authHeaders() });
-      if (!res.ok) continue;
-      const data = await res.json();
-      _onStateChange(target, _detectState(data.output || ''));
-    } catch(e) {}
+    const st = _paneState[row.dataset.target];
+    if (st && st !== 'running') continue;
+    await _detectPaneState(row.dataset.target);
   }
-  _bgPollTimer = setTimeout(_bgPoll, 5000);
+  _bgPollTimer = setTimeout(_bgPoll, 15000);
 }
 
 // ── Pane list (grouped by project) ────────────────────────────────────────────
@@ -612,8 +625,9 @@ async function init() {
   if (!_isAdmin) { openLoginModal(init); return; }
   // ttyd iframe is loaded lazily on first pane click (avoids basic-auth dialog on page load)
   await loadPanes();
+  await _initialDetect();   // one-time: detect state for all panes
   setInterval(loadPanes, 5000);
-  _bgPoll();
+  _bgPoll();                // ongoing: only re-check 'running' panes every 15s
 }
 init();
 """
