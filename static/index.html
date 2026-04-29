@@ -3376,7 +3376,14 @@ async function loadTerminalAlerts() {
     if (!container) return;
 
     container.innerHTML = '';
-    if (!alerts.length) return;
+    const badge = document.getElementById('anomaly-badge');
+    if (!alerts.length) {
+      // Clear badge when no terminal alerts (preserve anomaly count if any)
+      if (badge && !anomalies.length) {
+        badge.className = '';
+      }
+      return;
+    }
 
     playNotificationSound();
     alerts.forEach(a => {
@@ -3396,9 +3403,8 @@ async function loadTerminalAlerts() {
       container.appendChild(el);
     });
 
-    const badge = document.getElementById('anomaly-badge');
     if (badge) {
-      badge.textContent = alerts.length;
+      badge.textContent = alerts.length + anomalies.length;
       badge.classList.add('visible');
     }
   } catch(e) { console.warn('terminals alerts:', e); }

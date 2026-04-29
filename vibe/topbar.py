@@ -135,7 +135,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
     if not hide_dev:
         parts.append('  <a class="topbar-btn" href="/dev" title="进入开发模式" style="text-decoration:none">Dev</a>')
     parts += [
-        '  <button class="topbar-btn" onclick="window.location.href=\'/\'" title="MIRA 对话">⌘</button>',
+        '  <a class="topbar-btn" href="/" title="MIRA 对话" style="text-decoration:none">⌘</a>',
         '  <button class="topbar-btn" onclick="openSettings()" title="设置">',
         '    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">',
         '      <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',

@@ -122,6 +122,9 @@ def render_dev_page() -> str:
   .term-placeholder code { color: var(--sub); font-size: 11px; }
   #ttyd-frame {
     flex: 1; border: none; display: none; background: #0d1117;
+    width: 100%; min-height: 0;
+    -webkit-overflow-scrolling: touch;
+    overflow: auto;
   }
   #ttyd-frame.visible { display: block; }
 
@@ -219,9 +222,10 @@ def render_dev_page() -> str:
     .term-pane-proj { font-size: 12px; margin-top: 3px; }
     .term-group-header { padding: 12px 16px; }
     .term-group-body .term-pane-row { padding-left: 28px; }
-    .term-main { display: none; flex: 1; }
+    .term-main { display: none; flex: 1; overflow: visible; }
     .dev-page.detail-open .term-sidebar { display: none; }
     .dev-page.detail-open .term-main { display: flex; }
+    #ttyd-frame.visible { display: block; height: 100%; }
   }
 """
 
