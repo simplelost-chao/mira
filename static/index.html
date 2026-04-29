@@ -160,6 +160,31 @@
   box-shadow: 2px 2px 0 var(--border), inset 0 0 0 1px rgba(0,212,255,0.08);
 }
 
+[data-theme="claude-light"] {
+  --bg: #f5f3ef;
+  --card: #ffffff;
+  --card-deep: #ebe8e3;
+  --border: rgba(0,0,0,0.08);
+  --border-subtle-rgb: 180,175,165;
+  --accent: #da7756;
+  --accent-dim: #c4654a;
+  --accent-rgb: 218,119,86;
+  --accent-light: #e8956f;
+  --accent-light-rgb: 232,149,111;
+  --text: #1a1a1a;
+  --text-sec: #6b6b6b;
+  --text-muted: #a0a0a0;
+  --text-deep: #d0d0d0;
+  --green: #16a34a;
+  --green-dim: #22c55e;
+  --orange: #d97706;
+  --red: #dc2626;
+  --purple: #9333ea;
+  --yellow: #ca8a04;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', Consolas, monospace;
+}
+
 html { overflow-x: hidden; }
 
 body {
@@ -1735,7 +1760,17 @@ body {
   border-radius: 12px; width: 100%; max-width: 480px;
   padding: 24px;
 }
-.settings-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 20px; }
+.settings-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+.settings-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+.settings-tab {
+  padding: 8px 16px; font-size: 12px; color: var(--text-muted); cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all .15s; background: none; border-top: none; border-left: none; border-right: none;
+  font-family: var(--font-mono); letter-spacing: .5px;
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.settings-tab-panel { display: none; }
+.settings-tab-panel.active { display: block; }
 .settings-group { margin-bottom: 16px; }
 .settings-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: .5px; }
 .settings-input {
@@ -1865,49 +1900,69 @@ body {
 <!-- Settings Modal -->
 <div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings()">
   <div class="settings-modal">
-    <div class="settings-title">⚙ 设置</div>
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">外观</div>
-    <div class="skin-grid" id="settings-skin-grid" style="margin-bottom:18px"></div>
-    <div class="settings-group">
-      <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">项目使用的 API</div>
-      <div id="settings-providers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
-      <div style="font-size:10px;color:var(--text-muted)">检测自你的所有项目</div>
+    <div class="settings-title">设置</div>
+    <div class="settings-tabs">
+      <button class="settings-tab active" onclick="switchSettingsTab('appearance',this)">外观</button>
+      <button class="settings-tab" onclick="switchSettingsTab('api',this)">API</button>
+      <button class="settings-tab" onclick="switchSettingsTab('security',this)">安全</button>
     </div>
-    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">API 余额监控（选填）</div>
-    <div style="font-size:10px;color:var(--text-sec);margin-bottom:12px">填入 API Key 后，首页将显示余额信息</div>
-    <div class="settings-group">
-      <div class="settings-label">OpenRouter API Key</div>
-      <div style="display:flex;gap:6px">
-        <input class="settings-input" id="set-openrouter" type="password" placeholder="sk-or-..." autocomplete="off" style="flex:1">
-        <button onclick="clearKeyInput('set-openrouter')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+
+    <!-- 外观 tab -->
+    <div class="settings-tab-panel active" id="settings-panel-appearance">
+      <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">皮肤</div>
+        <div class="skin-grid" id="settings-skin-grid"></div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">提示音效</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select class="settings-input" id="set-notification-sound" style="flex:1;appearance:auto"></select>
+          <button onclick="previewSound()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 10px;font-size:12px" title="试听">&#9654;</button>
+        </div>
       </div>
     </div>
-    <div class="settings-group">
-      <div class="settings-label">DeepSeek API Key</div>
-      <div style="display:flex;gap:6px">
-        <input class="settings-input" id="set-deepseek" type="password" placeholder="sk-..." autocomplete="off" style="flex:1">
-        <button onclick="clearKeyInput('set-deepseek')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+
+    <!-- API tab -->
+    <div class="settings-tab-panel" id="settings-panel-api">
+      <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">项目使用的 API</div>
+        <div id="settings-providers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
+        <div style="font-size:10px;color:var(--text-muted)">检测自你的所有项目</div>
+      </div>
+      <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">余额监控（选填）</div>
+      <div style="font-size:10px;color:var(--text-sec);margin-bottom:12px">填入 API Key 后，首页将显示余额信息</div>
+      <div class="settings-group">
+        <div class="settings-label">OpenRouter API Key</div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-openrouter" type="password" placeholder="sk-or-..." autocomplete="off" style="flex:1">
+          <button onclick="clearKeyInput('set-openrouter')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">DeepSeek API Key</div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-deepseek" type="password" placeholder="sk-..." autocomplete="off" style="flex:1">
+          <button onclick="clearKeyInput('set-deepseek')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">Kimi (Moonshot) API Key</div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-kimi" type="password" placeholder="sk-..." autocomplete="off" style="flex:1">
+          <button onclick="clearKeyInput('set-kimi')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+        </div>
       </div>
     </div>
-    <div class="settings-group">
-      <div class="settings-label">Kimi (Moonshot) API Key</div>
-      <div style="display:flex;gap:6px">
-        <input class="settings-input" id="set-kimi" type="password" placeholder="sk-..." autocomplete="off" style="flex:1">
-        <button onclick="clearKeyInput('set-kimi')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+
+    <!-- 安全 tab -->
+    <div class="settings-tab-panel" id="settings-panel-security">
+      <div class="settings-group">
+        <div class="settings-label">修改管理员密码</div>
+        <input class="settings-input" id="set-admin-password" type="password" placeholder="留空则不修改" autocomplete="new-password">
       </div>
     </div>
-    <div class="settings-group" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
-      <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">提示音效</div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <select class="settings-input" id="set-notification-sound" style="flex:1;appearance:auto"></select>
-        <button onclick="previewSound()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);cursor:pointer;padding:4px 10px;font-size:12px" title="试听">&#9654;</button>
-      </div>
-    </div>
-    <div class="settings-group" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
-      <div class="settings-label">管理员密码</div>
-      <input class="settings-input" id="set-admin-password" type="password" placeholder="留空则不修改" autocomplete="new-password">
-    </div>
+
     <div class="settings-footer">
       <button id="settings-logout-btn" onclick="logout();closeSettings()" style="display:none;background:none;border:1px solid var(--border);color:var(--text-muted);padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px;margin-right:auto" title="退出登录">退出登录</button>
       <button class="settings-btn-cancel" onclick="closeSettings()">取消</button>
@@ -3605,6 +3660,7 @@ async function sendChat() {
 // ─── Skin System ──────────────────────────────────────────────────────────────
 const SKINS = [
   { id: 'default', name: '深空默认', preview: ['#0f1117', '#4f46e5'] },
+  { id: 'claude-light', name: '素白', preview: ['#f5f3ef', '#da7756'] },
   { id: 'neon-pixel', name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] },
   { id: 'pixel-cyber', name: '像素赛博', preview: ['#000d1a', '#ff0066'] },
 ];
@@ -3619,6 +3675,13 @@ function applySkin(id) {
 applySkin(localStorage.getItem('mira-skin') || 'default');
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
+function switchSettingsTab(name, btn) {
+  document.querySelectorAll('.settings-tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('settings-panel-' + name);
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+}
 const _clearedKeys = new Set();
 function clearKeyInput(inputId) {
   const el = document.getElementById(inputId);

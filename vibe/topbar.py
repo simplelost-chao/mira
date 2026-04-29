@@ -47,6 +47,13 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "                      linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);\n"
         "    background-size: 8px 8px;\n"
         "  }\n"
+        "  [data-theme=\"claude-light\"] {\n"
+        "    --bg: #f5f3ef; --panel: rgba(255,255,255,.97); --border: rgba(0,0,0,.08);\n"
+        "    --text: #1a1a1a; --sub: #6b6b6b; --muted: #b0b0b0;\n"
+        "    --accent: #da7756; --accent-rgb: 218,119,86;\n"
+        "    --green: #16a34a; --orange: #d97706; --red: #dc2626; --yellow: #ca8a04;\n"
+        "    --radius: 12px; --radius-sm: 8px;\n"
+        "  }\n"
         "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; }\n"
     )
 
@@ -54,6 +61,17 @@ def theme_vars_css(extra_vars: str = "") -> str:
 def topbar_css() -> str:
     """CSS for the topbar and shared skin/settings components."""
     return (
+        "  /* ── Settings tabs ── */\n"
+        "  .settings-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 18px; }\n"
+        "  .settings-tab {\n"
+        "    padding: 8px 16px; font-size: 12px; color: var(--sub); cursor: pointer;\n"
+        "    border: none; border-bottom: 2px solid transparent; background: none;\n"
+        "    font-family: var(--mono); letter-spacing: .5px; transition: all .15s;\n"
+        "  }\n"
+        "  .settings-tab:hover { color: var(--text); }\n"
+        "  .settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }\n"
+        "  .settings-tab-panel { display: none; }\n"
+        "  .settings-tab-panel.active { display: block; }\n"
         "  /* ── Topbar ── */\n"
         "  .topbar {\n"
         "    position: sticky; top: 0; z-index: 100;\n"
@@ -138,41 +156,56 @@ def settings_overlay_html() -> str:
 <div id="settings-overlay" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.6);align-items:center;justify-content:center;"
      onclick="if(event.target===this)closeSettings()">
   <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px;width:380px;max-width:94vw;max-height:90vh;overflow-y:auto">
-    <div style="font-size:15px;font-weight:700;margin-bottom:18px">设置</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">外观</div>
-    <div class="skin-grid" id="settings-skin-grid"></div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">项目使用的 API</div>
-    <div id="settings-providers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:16px">检测自你的所有项目</div>
-    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">API 余额监控（选填）</div>
-    <div style="font-size:10px;color:var(--sub);margin-bottom:12px">填入 API Key 后，首页将显示余额信息</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">OpenRouter API Key</div>
-    <div style="display:flex;gap:6px;margin-bottom:12px">
-      <input id="set-openrouter" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
-      <button onclick="clearKeyInput('set-openrouter')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+    <div style="font-size:15px;font-weight:700;margin-bottom:16px">设置</div>
+    <div class="settings-tabs">
+      <button class="settings-tab active" onclick="switchSettingsTab('appearance',this)">外观</button>
+      <button class="settings-tab" onclick="switchSettingsTab('api',this)">API</button>
+      <button class="settings-tab" onclick="switchSettingsTab('security',this)">安全</button>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">DeepSeek API Key</div>
-    <div style="display:flex;gap:6px;margin-bottom:12px">
-      <input id="set-deepseek" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
-      <button onclick="clearKeyInput('set-deepseek')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+
+    <!-- 外观 tab -->
+    <div class="settings-tab-panel active" id="settings-panel-appearance">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">皮肤</div>
+      <div class="skin-grid" id="settings-skin-grid" style="margin-bottom:18px"></div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">提示音效</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="set-notification-sound" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono);appearance:auto"></select>
+        <button onclick="previewSound()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:4px 10px;font-size:12px;font-family:var(--mono)" title="试听">&#9654;</button>
+      </div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Kimi API Key <span style="color:var(--sub);font-size:10px">(moonshot.cn)</span></div>
-    <div style="display:flex;gap:6px;margin-bottom:12px">
-      <input id="set-kimi" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
-      <button onclick="clearKeyInput('set-kimi')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+
+    <!-- API tab -->
+    <div class="settings-tab-panel" id="settings-panel-api">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">项目使用的 API</div>
+      <div id="settings-providers" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:16px">检测自你的所有项目</div>
+      <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">余额监控（选填）</div>
+      <div style="font-size:10px;color:var(--sub);margin-bottom:12px">填入 API Key 后，首页将显示余额信息</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">OpenRouter API Key</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <input id="set-openrouter" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
+        <button onclick="clearKeyInput('set-openrouter')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">DeepSeek API Key</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <input id="set-deepseek" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
+        <button onclick="clearKeyInput('set-deepseek')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Kimi API Key <span style="color:var(--sub);font-size:10px">(moonshot.cn)</span></div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <input id="set-kimi" type="password" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
+        <button onclick="clearKeyInput('set-kimi')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:0 8px;font-size:14px;line-height:1" title="清除">✕</button>
+      </div>
     </div>
-    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">提示音效</div>
-    <div style="display:flex;gap:6px;margin-bottom:16px;align-items:center">
-      <select id="set-notification-sound" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;font-family:var(--mono);appearance:auto">
-      </select>
-      <button onclick="previewSound()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--sub);cursor:pointer;padding:4px 10px;font-size:12px;font-family:var(--mono)" title="试听">&#9654;</button>
+
+    <!-- 安全 tab -->
+    <div class="settings-tab-panel" id="settings-panel-security">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">修改管理员密码</div>
+      <input id="set-admin-password" type="password" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;box-sizing:border-box;font-family:var(--mono)">
     </div>
-    <div style="height:1px;background:var(--border);margin-bottom:16px"></div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">管理员密码</div>
-    <input id="set-admin-password" type="password" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;outline:none;margin-bottom:18px;box-sizing:border-box;font-family:var(--mono)">
-    <div style="display:flex;gap:8px;justify-content:flex-end">
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
       <button onclick="closeSettings()" style="background:none;border:1px solid var(--border);color:var(--sub);padding:7px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:var(--mono)">取消</button>
       <button onclick="saveSettings()" style="background:var(--accent);border:none;color:#fff;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:var(--mono)">保存</button>
     </div>
@@ -250,6 +283,7 @@ async function doLogin() {
 // ── Skin ──────────────────────────────────────────────────────────────────────
 const SKINS = [
   { id: 'default',     name: '深空默认', preview: ['#0f1117', '#4f46e5'] },
+  { id: 'claude-light', name: '素白', preview: ['#f5f3ef', '#da7756'] },
   { id: 'neon-pixel',  name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] },
   { id: 'pixel-cyber', name: '像素赛博', preview: ['#000d1a', '#ff0066'] },
 ];
@@ -261,6 +295,13 @@ function applySkin(id) {
 applySkin(localStorage.getItem('mira-skin') || 'default');
 
 // ── Settings ──────────────────────────────────────────────────────────────────
+function switchSettingsTab(name, btn) {
+  document.querySelectorAll('.settings-tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('settings-panel-' + name);
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+}
 function _renderSettingsSkins() {
   const current = document.documentElement.dataset.theme || 'default';
   const grid = document.getElementById('settings-skin-grid');
