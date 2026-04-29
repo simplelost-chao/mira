@@ -3378,9 +3378,14 @@ async function loadTerminalAlerts() {
     container.innerHTML = '';
     const badge = document.getElementById('anomaly-badge');
     if (!alerts.length) {
-      // Clear badge when no terminal alerts (preserve anomaly count if any)
-      if (badge && !anomalies.length) {
-        badge.className = '';
+      // No terminal alerts — show only anomaly count, or hide badge
+      if (badge) {
+        if (anomalies.length) {
+          badge.textContent = anomalies.length;
+          badge.className = 'visible';
+        } else {
+          badge.className = '';
+        }
       }
       return;
     }
@@ -3921,5 +3926,12 @@ async function _doSearch(q) {
   </div>
 </div>
 </div><!-- /app-wrap -->
+<!-- Version badge -->
+<div id="version-badge" style="position:fixed;bottom:6px;right:10px;z-index:50;font-size:10px;color:var(--text);opacity:0.15;font-family:var(--font-mono);pointer-events:none;user-select:none"></div>
+<script>
+fetch('/api/version').then(r=>r.json()).then(d=>{
+  document.getElementById('version-badge').textContent='v'+d.version;
+}).catch(()=>{});
+</script>
 </body>
 </html>

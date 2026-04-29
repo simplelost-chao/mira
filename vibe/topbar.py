@@ -107,6 +107,12 @@ def topbar_css() -> str:
         "  .skin-preview { height: 28px; border-radius: 4px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 6px; }\n"
         "  .skin-preview div { height: 100%; }\n"
         "  .skin-name { font-size: 11px; color: var(--sub); text-align: center; }\n"
+        "  /* ── Version badge ── */\n"
+        "  .version-badge {\n"
+        "    position: fixed; bottom: 6px; right: 10px; z-index: 50;\n"
+        "    font-size: 10px; color: var(--text); opacity: 0.15;\n"
+        "    font-family: var(--mono); pointer-events: none; user-select: none;\n"
+        "  }\n"
     )
 
 
@@ -166,7 +172,15 @@ def settings_overlay_html() -> str:
       <button onclick="doLogin()" style="background:var(--accent);border:none;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;font-family:var(--mono)">登录</button>
     </div>
   </div>
-</div>"""
+</div>
+
+<!-- Version badge -->
+<div class="version-badge" id="version-badge"></div>
+<script>
+fetch('/api/version').then(r=>r.json()).then(d=>{
+  document.getElementById('version-badge').textContent='v'+d.version;
+}).catch(()=>{});
+</script>"""
 
 
 def topbar_js() -> str:

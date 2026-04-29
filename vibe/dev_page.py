@@ -187,7 +187,7 @@ def render_dev_page() -> str:
   @media (max-width: 900px) {
     .term-detail-header {
       display: flex; align-items: center; gap: 10px;
-      height: 36px; padding: 0 12px; flex-shrink: 0;
+      height: 40px; padding: 0 12px; flex-shrink: 0;
       background: var(--panel); border-bottom: 1px solid var(--border);
     }
     .term-detail-back {
@@ -204,6 +204,10 @@ def render_dev_page() -> str:
     }
     /* Hide desktop term-detail-header by default; it only shows on mobile */
     .dev-page:not(.detail-open) .term-detail-header { display: none; }
+
+    /* When detail is open: hide topbar, use full viewport */
+    body:has(.dev-page.detail-open) .topbar { display: none !important; }
+    .dev-page.detail-open { height: var(--app-h, 100dvh); }
 
     .dev-page { height: calc(var(--app-h) - 52px); }
     .term-sidebar { width: 100%; flex: 1; border-right: none; }
@@ -222,27 +226,39 @@ def render_dev_page() -> str:
     .term-pane-proj { font-size: 12px; margin-top: 3px; }
     .term-group-header { padding: 12px 16px; }
     .term-group-body .term-pane-row { padding-left: 28px; }
-    .term-main { display: none; flex: 1; overflow: visible; }
+    .term-main { display: none; flex-direction: column; }
     .dev-page.detail-open .term-sidebar { display: none; }
-    .dev-page.detail-open .term-main { display: flex; }
-    #ttyd-frame.visible { display: block; height: 100%; }
+    .dev-page.detail-open .term-main {
+      display: flex; position: fixed; inset: 0; top: 0;
+      height: var(--app-h, 100dvh); z-index: 200;
+      background: var(--bg);
+    }
+    #ttyd-frame.visible {
+      display: block; flex: 1; width: 100%; min-height: 0;
+      -webkit-overflow-scrolling: touch;
+    }
   }
 """
 
     page_js = r"""
 // ── Visual viewport tracking (mobile keyboard adaptation) ─────────────────────
 (function() {
+  var _rafPending = false;
   function u() {
-    if (window.visualViewport) {
-      // visualViewport.height = visible area (shrinks when keyboard opens)
-      // visualViewport.offsetTop = how far the viewport has scrolled up
-      var h = window.visualViewport.height;
+    if (_rafPending) return;
+    _rafPending = true;
+    requestAnimationFrame(function() {
+      _rafPending = false;
+      var h;
+      if (window.visualViewport) {
+        h = window.visualViewport.height;
+      } else {
+        h = window.innerHeight;
+      }
       document.documentElement.style.setProperty('--app-h', h + 'px');
       // Prevent iOS from scrolling the body behind the app
       window.scrollTo(0, 0);
-    } else {
-      document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
-    }
+    });
   }
   u();
   if (window.visualViewport) {
@@ -313,9 +329,14 @@ document.addEventListener('click', function() {
 
 // ── Background polling (sidebar dots only) ────────────────────────────────────
 let _bgPollTimer = null;
+var _isMobile = window.matchMedia('(max-width: 900px)').matches;
 async function _bgPoll() {
-  // Only poll the currently active pane when in detail view (reduces jank for voice input)
   var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
+  // On mobile detail view: skip ALL polling to avoid any interference with IME/input
+  if (_isMobile && inDetail) {
+    _bgPollTimer = setTimeout(_bgPoll, 30000);
+    return;
+  }
   var rows = inDetail && _currentTarget
     ? document.querySelectorAll('.term-pane-row[data-target="' + CSS.escape(_currentTarget) + '"]')
     : document.querySelectorAll('.term-pane-row');
@@ -337,6 +358,9 @@ async function _bgPoll() {
 let _firstLoad = true;
 async function loadPanes() {
   if (!_isAdmin) { openLoginModal(init); return; }
+  // On mobile detail view: skip entirely to protect iframe focus/IME
+  var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
+  if (_isMobile && inDetail && !_firstLoad) return;
   try {
     const res = await fetch('/api/dev/panes', { headers: _authHeaders() });
     if (res.status === 401) { openLoginModal(init); return; }

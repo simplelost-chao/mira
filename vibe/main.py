@@ -85,6 +85,20 @@ async def _lifespan(app: FastAPI):
 api = FastAPI(title="Vibe Manager", lifespan=_lifespan)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
+VERSION_FILE = Path(__file__).parent.parent / "version.json"
+
+import json as _json
+
+def _read_version() -> str:
+    try:
+        return _json.loads(VERSION_FILE.read_text()).get("version", "0.0.0")
+    except Exception:
+        return "0.0.0"
+
+
+@api.get("/api/version")
+def get_version():
+    return {"version": _read_version()}
 
 if STATIC_DIR.exists():
     api.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
