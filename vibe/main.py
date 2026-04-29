@@ -506,7 +506,9 @@ def refresh_all(request: Request):
     return get_all_projects(force=True)
 
 @api.get("/api/projects/{project_id}/design-docs")
-def list_design_docs(project_id: str):
+def list_design_docs(request: Request, project_id: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     projects = get_all_projects()
     for p in projects:
         if p["id"] == project_id:
@@ -514,7 +516,9 @@ def list_design_docs(project_id: str):
     raise HTTPException(status_code=404, detail="Project not found")
 
 @api.get("/api/projects/{project_id}/design-docs/{filename}")
-def get_design_doc(project_id: str, filename: str):
+def get_design_doc(request: Request, project_id: str, filename: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     projects = get_all_projects()
     for p in projects:
         if p["id"] == project_id:
@@ -526,15 +530,19 @@ def get_design_doc(project_id: str, filename: str):
 
 
 @api.get("/api/projects/{project_id}/prompts")
-def get_project_prompts(project_id: str):
+def get_project_prompts(request: Request, project_id: str):
     """Return user prompts for a project from the session index DB."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.history_db import get_prompts
     return get_prompts(project_id)
 
 
 @api.get("/api/prompts")
-def get_all_prompts():
+def get_all_prompts(request: Request):
     """Return user prompts grouped by project from the session index DB."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.history_db import get_all_project_prompts
     return {"projects": get_all_project_prompts()}
 
@@ -1353,6 +1361,14 @@ async def ttyd_ws_proxy(websocket: WebSocket):
     import websockets as _ws
     import base64
     from vibe.config import load_global_config
+
+    # 鉴权：WebSocket 无法用自定义 header，通过 query param 传 token
+    token = _admin_token()
+    if token is not None:
+        client_token = websocket.query_params.get("token", "")
+        if client_token != token:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
 
     await websocket.accept(subprotocol="tty")
     ttyd_url = f"ws://127.0.0.1:{_TTYD_PORT}/terminal/ws"
