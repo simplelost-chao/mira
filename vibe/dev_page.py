@@ -75,14 +75,7 @@ def render_dev_page() -> str:
   .term-pane-info { min-width: 0; flex: 1; }
   .term-pane-name { font-size: 12px; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
   .term-pane-name-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .term-pane-pencil {
-    opacity: 0; font-size: 14px; color: var(--sub); cursor: pointer;
-    padding: 2px 6px; transition: opacity .12s, color .12s, background .12s;
-    border-radius: 3px; line-height: 1; flex-shrink: 0;
-  }
-  .term-pane-row:hover .term-pane-pencil { opacity: 1; }
-  .term-pane-pencil:hover { color: var(--accent); background: rgba(var(--accent-rgb,99,179,237), 0.1); }
-  .term-pane-name-input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--accent); border-radius: 3px; color: var(--text); font-family: inherit; font-size: 12px; font-weight: 600; padding: 1px 4px; outline: none; }
+  /* rename UI temporarily disabled */
   .term-pane-sub  { font-size: 10px; color: var(--sub); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .term-empty-sidebar { padding: 32px 16px; font-size: 12px; color: var(--muted); line-height: 1.8; }
   .term-empty-sidebar code { color: var(--sub); }
@@ -491,7 +484,6 @@ async function loadPanes(forceRebuild) {
           <div class="term-pane-info">
             <div class="term-pane-name">
               <span class="term-pane-name-text">${escHtml(p.label || p.target)}</span>
-              <span class="term-pane-pencil" title="重命名" onclick="event.stopPropagation(); startRename(this);">✎</span>
               <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation(); killPane(this);">×</span>
             </div>
             <div class="term-pane-sub">${escHtml(p.command || '')}</div>
@@ -570,59 +562,7 @@ async function killPane(killEl) {
   }
 }
 
-// ── Inline rename ────────────────────────────────────────────────────────────
-async function startRename(pencilEl) {
-  const row = pencilEl.closest('.term-pane-row');
-  const projectId = row.dataset.projectId;
-  if (!projectId) return;
-  const nameEl = row.querySelector('.term-pane-name');
-  const textEl = nameEl.querySelector('.term-pane-name-text');
-  const original = textEl.textContent;
-
-  const input = document.createElement('input');
-  input.className = 'term-pane-name-input';
-  input.value = original;
-  input.maxLength = 64;
-
-  nameEl.innerHTML = '';
-  nameEl.appendChild(input);
-  input.focus();
-  input.select();
-
-  let done = false;
-  async function commit() {
-    if (done) return; done = true;
-    const newName = input.value.trim();
-    if (!newName || newName === original) {
-      await loadPanes();
-      return;
-    }
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/name`, {
-        method: 'POST',
-        headers: _authHeaders({'Content-Type': 'application/json'}),
-        body: JSON.stringify({ name: newName }),
-      });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status} ${detail}`);
-      }
-    } catch(e) {
-      alert('重命名失败: ' + e.message);
-    }
-    await loadPanes();
-  }
-  function cancel() {
-    if (done) return; done = true;
-    loadPanes();
-  }
-
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-  });
-  input.addEventListener('blur', commit);
-}
+// ── Inline rename (temporarily disabled) ─────────────────────────────────────
 
 // ── Pane selection ────────────────────────────────────────────────────────────
 async function selectPane(target, cmd) {
@@ -1086,8 +1026,8 @@ async function init() {
   document.getElementById('term-pane-list').addEventListener('click', function(e) {
     var row = e.target.closest('.term-pane-row');
     if (!row) return;
-    // Ignore clicks on pencil/kill/input elements (they have their own handlers)
-    if (e.target.closest('.term-pane-pencil, .term-pane-kill, .term-pane-name-input')) return;
+    // Ignore clicks on kill button (has its own handler)
+    if (e.target.closest('.term-pane-kill')) return;
     selectPane(row.dataset.target, row.dataset.cmd);
   });
   // Init mobile input bar

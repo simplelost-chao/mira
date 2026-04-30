@@ -352,8 +352,10 @@ body {
 .project-card:hover {
   border-color: var(--accent);
   border-left-color: var(--accent);
-  transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(var(--accent-rgb),0.15);
+}
+@media (hover: hover) {
+  .project-card:hover { transform: translateY(-2px); }
 }
 .project-card.card-running {
   border-left-color: var(--green);
