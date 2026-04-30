@@ -1301,14 +1301,17 @@ async function reload() {{
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {{
   try {{
-    if (window._INLINE_PROJECT) {{
+    if (window._INLINE_PROJECT && !window._INLINE_PROJECT.claude_activity?._masked) {{
       projectData = window._INLINE_PROJECT;
     }} else {{
+      // Inline data is masked or missing — re-fetch with admin token
       const res = await fetch(`/api/projects/${{PROJECT_ID}}`, {{headers: _authHeaders()}});
       projectData = await res.json();
     }}
     document.getElementById('proj-name').textContent = projectData.name || PROJECT_ID;
-  }} catch(e) {{ /* non-fatal */ }}
+  }} catch(e) {{ /* non-fatal; fall back to inline data if API fails */
+    if (!projectData && window._INLINE_PROJECT) projectData = window._INLINE_PROJECT;
+  }}
 
   renderSummary();
   showTab(activeTab);

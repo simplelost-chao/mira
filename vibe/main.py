@@ -1217,15 +1217,13 @@ _UPLOAD_DIR = Path("/tmp/mira-uploads")
 async def upload_image(request: Request, file: UploadFile = File(...)):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    ct = file.content_type or ""
-    if not ct.startswith("image/"):
-        raise HTTPException(status_code=400, detail="只接受图片文件")
     content = await file.read()
-    if len(content) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="图片太大（最大 20MB）")
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="文件太大（最大 50MB）")
     import uuid, mimetypes
     _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "img").suffix or (mimetypes.guess_extension(ct) or ".png")
+    ct = file.content_type or ""
+    ext = Path(file.filename or "file").suffix or (mimetypes.guess_extension(ct) or "")
     dest = _UPLOAD_DIR / f"{uuid.uuid4().hex[:10]}{ext}"
     dest.write_bytes(content)
     return {"path": str(dest)}

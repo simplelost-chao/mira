@@ -48,14 +48,13 @@ def render_dev_page() -> str:
   .term-pane-row:hover { background: rgba(255,255,255,.03); }
   .term-pane-row.active { background: rgba(var(--accent-rgb),.1); border-left-color: var(--accent); }
   .term-pane-kill {
-    opacity: 0; flex-shrink: 0; cursor: pointer;
+    opacity: 0.5; flex-shrink: 0; cursor: pointer;
     width: 18px; height: 18px; border-radius: 4px;
     display: flex; align-items: center; justify-content: center;
     color: var(--muted); font-size: 12px; line-height: 1;
     transition: opacity .12s, color .12s, background .12s;
     margin-left: 4px;
   }
-  .term-pane-row:hover .term-pane-kill { opacity: 0.7; }
   .term-pane-kill:hover {
     opacity: 1 !important;
     color: var(--red, #ef4444);
@@ -863,11 +862,23 @@ var _ANSI16 = [
   'var(--ansi-8)','var(--ansi-9)','var(--ansi-10)','var(--ansi-11)',
   'var(--ansi-12)','var(--ansi-13)','var(--ansi-14)','var(--ansi-15)'
 ];
-function _ansi256(n) {
+var _isLightTheme = function() { return document.documentElement.dataset.theme === 'claude-light'; };
+function _adaptRgb(r, g, b, hasBg) {
+  // Don't adjust foreground when there's an explicit background — the bg provides contrast
+  if (hasBg) return 'rgb('+r+','+g+','+b+')';
+  var lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+  if (_isLightTheme()) {
+    if (lum > 0.82) { var f = 0.25; return 'rgb('+Math.round(r*f)+','+Math.round(g*f)+','+Math.round(b*f)+')'; }
+  } else {
+    if (lum < 0.12) { return 'rgb('+Math.round(r+(255-r)*0.7)+','+Math.round(g+(255-g)*0.7)+','+Math.round(b+(255-b)*0.7)+')'; }
+  }
+  return 'rgb('+r+','+g+','+b+')';
+}
+function _ansi256(n, hasBg) {
   if (n < 16) return _ANSI16[n];
-  if (n >= 232) { var g = (n - 232) * 10 + 8; return 'rgb('+g+','+g+','+g+')'; }
+  if (n >= 232) { var g = (n - 232) * 10 + 8; return _adaptRgb(g, g, g, hasBg); }
   n -= 16;
-  return 'rgb('+(Math.floor(n/36)*51)+','+(Math.floor((n%36)/6)*51)+','+((n%6)*51)+')';
+  return _adaptRgb(Math.floor(n/36)*51, Math.floor((n%36)/6)*51, (n%6)*51, hasBg);
 }
 function _stripAnsi(text) { return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); }
 function _ansiToHtml(raw) {
@@ -907,9 +918,9 @@ function _ansiToHtml(raw) {
         else if (c >= 100 && c <= 107) bg = _ANSI16[c - 92];
         else if (c === 39) fg = '';
         else if (c === 49) bg = '';
-        else if (c === 38 && codes[j+1] === 5) { fg = _ansi256(codes[j+2]||0); j += 2; }
-        else if (c === 48 && codes[j+1] === 5) { bg = _ansi256(codes[j+2]||0); j += 2; }
-        else if (c === 38 && codes[j+1] === 2) { fg = 'rgb('+(codes[j+2]||0)+','+(codes[j+3]||0)+','+(codes[j+4]||0)+')'; j += 4; }
+        else if (c === 38 && codes[j+1] === 5) { fg = _ansi256(codes[j+2]||0, !!bg); j += 2; }
+        else if (c === 48 && codes[j+1] === 5) { bg = _ansi256(codes[j+2]||0, false); j += 2; }
+        else if (c === 38 && codes[j+1] === 2) { fg = _adaptRgb(codes[j+2]||0, codes[j+3]||0, codes[j+4]||0, !!bg); j += 4; }
         else if (c === 48 && codes[j+1] === 2) { bg = 'rgb('+(codes[j+2]||0)+','+(codes[j+3]||0)+','+(codes[j+4]||0)+')'; j += 4; }
       }
     }
@@ -1185,7 +1196,7 @@ function _showToast(msg, duration) {
   _toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration || 3000);
 }
 
-// ── Image upload ─────────────────────────────────────────────────────────────
+// ── File upload ──────────────────────────────────────────────────────────────
 async function _uploadImage(file) {
   if (!file) return;
   _showToast('上传中…', 10000);
@@ -1200,7 +1211,7 @@ async function _uploadImage(file) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     var data = await res.json();
     var path = data.path || data.url || '';
-    _showToast('图片已上传: ' + path, 4000);
+    _showToast('文件已上传: ' + path, 4000);
     if (_isMobile) {
       // Mobile: insert path into textarea
       var input = document.getElementById('mobile-cmd-input');
@@ -1232,7 +1243,7 @@ function _showUploadConfirm(path) {
   var popup = document.createElement('div');
   popup.id = 'upload-confirm-popup';
   popup.className = 'upload-confirm';
-  popup.innerHTML = '<div class="upload-confirm-title">图片已上传</div>'
+  popup.innerHTML = '<div class="upload-confirm-title">文件已上传</div>'
     + '<div class="upload-confirm-path">' + escHtml(path) + '</div>'
     + '<div class="upload-confirm-btns">'
     + '<button onclick="document.getElementById(\'upload-confirm-overlay\').click()">关闭</button>'
@@ -1248,6 +1259,69 @@ function _showUploadConfirm(path) {
     popup.remove();
     _showToast('路径已发送到终端', 2000);
   };
+}
+
+// Clipboard paste: try Clipboard API first (HTTPS), fallback to paste-trap (HTTP)
+var _pasteTrap = null;
+function _pasteFromClipboard() {
+  // Try Clipboard API (only works on HTTPS / secure context)
+  if (navigator.clipboard && navigator.clipboard.read && window.isSecureContext) {
+    navigator.clipboard.read().then(function(items) {
+      for (var i = 0; i < items.length; i++) {
+        var types = items[i].types;
+        for (var j = 0; j < types.length; j++) {
+          if (types[j].startsWith('image/')) {
+            items[i].getType(types[j]).then(function(blob) {
+              var file = new File([blob], 'clipboard.' + blob.type.split('/')[1], {type: blob.type});
+              _uploadImage(file);
+            });
+            return;
+          }
+        }
+      }
+      _showToast('剪贴板中没有图片', 2000);
+    }).catch(function() { _openPasteTrap(); });
+    return;
+  }
+  _openPasteTrap();
+}
+
+function _openPasteTrap() {
+  // HTTP fallback: focus a hidden contenteditable, user presses Cmd+V
+  if (!_pasteTrap) {
+    _pasteTrap = document.createElement('div');
+    _pasteTrap.contentEditable = 'true';
+    _pasteTrap.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:280px;padding:24px;background:var(--panel);border:1px solid var(--accent);border-radius:var(--radius);z-index:600;text-align:center;font-family:var(--mono);font-size:13px;color:var(--text);outline:none;';
+    _pasteTrap.innerHTML = '<div style="margin-bottom:8px;font-size:14px;font-weight:700">📋 粘贴图片</div><div style="color:var(--sub);font-size:12px">按 <kbd style="background:var(--bg);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">⌘V</kbd> 粘贴剪贴板内容</div><div style="margin-top:12px;font-size:11px;color:var(--muted)">点击外部关闭</div>';
+    _pasteTrap.addEventListener('paste', function(e) {
+      e.preventDefault();
+      var items = e.clipboardData && e.clipboardData.items;
+      var found = false;
+      for (var i = 0; items && i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          _uploadImage(items[i].getAsFile());
+          found = true;
+          break;
+        }
+      }
+      if (!found) _showToast('剪贴板中没有图片', 2000);
+      _closePasteTrap();
+    });
+  }
+  // Show overlay + trap
+  var ov = document.createElement('div');
+  ov.id = 'paste-trap-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:599;background:rgba(0,0,0,.5);';
+  ov.onclick = function() { _closePasteTrap(); };
+  document.body.appendChild(ov);
+  document.body.appendChild(_pasteTrap);
+  _pasteTrap.focus();
+}
+
+function _closePasteTrap() {
+  var ov = document.getElementById('paste-trap-overlay');
+  if (ov) ov.remove();
+  if (_pasteTrap && _pasteTrap.parentNode) _pasteTrap.remove();
 }
 
 // File input handlers
@@ -1347,8 +1421,9 @@ init();
     </div>
     <!-- Desktop toolbar (above iframe, visible when pane selected) -->
     <div class="term-toolbar" id="term-toolbar">
-      <label class="term-toolbar-btn" for="desktop-file-input">📎 上传图片</label>
-      <input type="file" id="desktop-file-input" accept="image/*" style="display:none">
+      <label class="term-toolbar-btn" for="desktop-file-input">📎 上传文件</label>
+      <input type="file" id="desktop-file-input" style="display:none">
+      <button class="term-toolbar-btn" onclick="_pasteFromClipboard()" title="从剪贴板粘贴图片">📋 粘贴</button>
     </div>
     <div class="term-iframe-wrap" id="term-iframe-wrap">
       <div class="term-touch-overlay" id="term-touch-overlay"></div>
@@ -1375,8 +1450,8 @@ init();
         <button class="mobile-key-btn" data-scroll="page-down">PgDn</button>
       </div>
       <div class="mobile-input-row">
-        <label class="mobile-attach-btn" for="mobile-file-input" title="上传图片">📎</label>
-        <input type="file" id="mobile-file-input" accept="image/*" style="display:none">
+        <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">📎</label>
+        <input type="file" id="mobile-file-input" style="display:none">
         <textarea class="mobile-cmd-input" id="mobile-cmd-input" rows="1"
           placeholder="输入命令…" autocomplete="off" autocorrect="off"
           autocapitalize="off" spellcheck="false" enterkeyhint="send"></textarea>

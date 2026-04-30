@@ -349,19 +349,21 @@ body {
   cursor: pointer;
   transition: all 0.2s;
 }
-.project-card:hover {
-  border-color: var(--accent);
-  border-left-color: var(--accent);
-  box-shadow: 0 8px 24px rgba(var(--accent-rgb),0.15);
-}
 @media (hover: hover) {
-  .project-card:hover { transform: translateY(-2px); }
+  .project-card:hover {
+    border-color: var(--accent);
+    border-left-color: var(--accent);
+    box-shadow: 0 8px 24px rgba(var(--accent-rgb),0.15);
+    transform: translateY(-2px);
+  }
 }
 .project-card.card-running {
   border-left-color: var(--green);
 }
-.project-card.card-running:hover {
-  border-left-color: var(--green);
+@media (hover: hover) {
+  .project-card.card-running:hover {
+    border-left-color: var(--green);
+  }
 }
 .card-header {
   display: flex;
@@ -489,8 +491,10 @@ body {
 .project-card.card-down {
   animation: border-pulse-red 1.8s ease-in-out infinite;
 }
-.project-card.card-down:hover {
-  animation: border-pulse-red 1.8s ease-in-out infinite;
+@media (hover: hover) {
+  .project-card.card-down:hover {
+    animation: border-pulse-red 1.8s ease-in-out infinite;
+  }
 }
 
 /* ── C1 card layout ─────────────────────────────────────── */
@@ -1458,6 +1462,9 @@ body {
 
 /* ── RESPONSIVE ────────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  .project-card { -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: none; }
+  .project-card:active { opacity: 0.7; }
+  .balance-card:not(.collapsed) { flex: 1 1 100% !important; }
   /* Topbar: compact for mobile */
   .topbar { padding: 0 12px; gap: 4px; height: 48px; overflow: hidden; }
   .topbar-title { letter-spacing: 1px; margin-right: 4px; }
@@ -3579,6 +3586,21 @@ async function sendChat() {
 // ─── Skin & Settings loaded from /static/settings.js ─────────────────────────
 
 // ─── API Balance ──────────────────────────────────────────────────────────────
+function _toggleBalance(card) {
+  card.classList.toggle('collapsed');
+  if (window.innerWidth <= 640) {
+    var c = card.classList.contains('collapsed');
+    card.style.flex = c ? '1 1 calc(50% - 4px)' : '1 1 100%';
+    var header = card.querySelector('.balance-header');
+    if (header) header.style.cssText = c
+      ? 'display:flex;flex-direction:column;gap:4px'
+      : 'display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+    card.querySelectorAll('.balance-divider').forEach(function(d) { d.style.display = c ? 'none' : ''; });
+    var tgl = card.querySelector('.balance-card-toggle');
+    if (tgl) tgl.style.display = c ? 'none' : '';
+  }
+}
+
 async function loadBalance(force = false) {
   const row = document.getElementById('balance-row');
   const qs = force ? '?force=true' : '';
@@ -3608,7 +3630,7 @@ async function loadBalance(force = false) {
         c.style.minWidth = '0';
         c.style.padding = '10px 12px';
         // Collapsed mobile: stack logo + balance vertically
-        var inner = c.querySelector('div');
+        var inner = c.querySelector('.balance-header');
         if (inner) {
           inner.style.cssText = 'display:flex;flex-direction:column;gap:4px';
         }
@@ -3742,8 +3764,8 @@ function renderBalanceCard(p, activity = null) {
       <div style="display:flex;align-items:flex-end;gap:1px;height:34px">${bars}</div>
     </div>`;
 
-  return `<div class="balance-card collapsed" style="flex-direction:column;align-items:stretch" onclick="this.classList.toggle('collapsed'); event.stopPropagation();">
-    <div style="display:flex;align-items:center;gap:12px">
+  return `<div class="balance-card collapsed" style="flex-direction:column;align-items:stretch" onclick="_toggleBalance(this); event.stopPropagation();">
+    <div class="balance-header" style="display:flex;align-items:center;gap:12px">
       <div class="balance-logo">${escHtml(p.name)}</div>
       <div class="balance-divider balance-divider-primary"></div>
       ${stats || `<div class="balance-stat balance-stat-primary"><div class="balance-val">—</div><div class="balance-lbl">暂无数据</div></div>`}
