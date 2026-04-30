@@ -131,8 +131,9 @@ def render_dev_page() -> str:
     overflow: hidden;
   }
   #ttyd-frame.visible { display: block; }
-  /* Touch overlay for mobile scroll gestures (invisible on desktop) */
+  /* Touch overlay + scroll badge: mobile-only (hidden on desktop) */
   .term-touch-overlay { display: none; }
+  .term-scroll-badge { display: none; }
   /* Mobile-only elements hidden on desktop */
   .mobile-term-output { display: none; }
   .mobile-input-bar { display: none; }
@@ -257,10 +258,10 @@ def render_dev_page() -> str:
     .mobile-term-output.visible {
       display: block; flex: 1; min-height: 0;
       background: #0d1117; color: #abb2bf;
-      font-family: var(--mono); font-size: 13px; line-height: 1.35;
+      font-family: var(--mono); font-size: 12px; line-height: 1.4;
       padding: 6px 8px; margin: 0;
       overflow-y: auto; -webkit-overflow-scrolling: touch;
-      white-space: pre; overflow-x: auto;
+      white-space: pre-wrap; word-break: break-all; overflow-wrap: break-word;
       overscroll-behavior: contain;
     }
 
@@ -821,9 +822,13 @@ function _ansi256(n) {
 }
 function _stripAnsi(text) { return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); }
 function _ansiToHtml(raw) {
-  // Strip non-SGR escape sequences (cursor, erase, OSC, etc.)
+  // 1. Strip non-SGR escape sequences FIRST (so they don't interfere with blank-line detection)
   var text = raw.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ''); // OSC
   text = text.replace(/\x1b\[[\?]?[0-9;]*[A-LN-Za-ln-z]/g, '');    // CSI non-SGR
+  // 2. Strip trailing whitespace per line (tmux pads to full terminal width)
+  text = text.split('\n').map(function(l) { return l.replace(/[\s\x1b]+$/, ''); }).join('\n');
+  // 3. Collapse consecutive blank lines and trim trailing blanks
+  text = text.replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n');
   // Split on SGR sequences
   var parts = text.split(/\x1b\[([0-9;]*)m/);
   var html = '', fg = '', bg = '', bold = false;
