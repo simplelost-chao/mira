@@ -11,11 +11,7 @@ def test_no_vibe_config(tmp_path):
 
 def test_port_in_use():
     vibe_cfg = {"service": {"port": 9999, "process": "test-proc"}}
-    mock_proc = MagicMock()
-    mock_conn = MagicMock()
-    mock_conn.laddr.port = 9999
-    mock_proc.info = {"connections": [mock_conn]}
-    with patch("psutil.process_iter", return_value=[mock_proc]):
+    with patch("vibe.collectors.service._port_is_healthy", return_value=True):
         info = collect_service(Path("/tmp"), vibe_cfg)
     assert info.port == 9999
     assert info.is_running == True

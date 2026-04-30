@@ -60,17 +60,35 @@ def get_terminal_alerts() -> list[dict]:
     return alerts
 
 
-def _match_project(cwd: str) -> str | None:
-    """Match a cwd to a known Mira project path."""
+_projects_cache: list[dict] = []
+_projects_cache_ts: float = 0.0
+_PROJECTS_CACHE_TTL: float = 60.0
+
+
+def _get_projects() -> list[dict]:
+    """Return cached project list, refreshing at most once per 60 seconds."""
+    global _projects_cache, _projects_cache_ts
+    now = time.time()
+    if _projects_cache and now - _projects_cache_ts < _PROJECTS_CACHE_TTL:
+        return _projects_cache
     try:
         from vibe.config import load_global_config
         from vibe.scanner import discover_projects
         cfg = load_global_config()
-        projects = discover_projects(
+        _projects_cache = discover_projects(
             cfg["scan_dirs"], cfg["exclude"],
             cfg.get("extra_projects"), cfg.get("excluded_paths"),
         )
-        for p in projects:
+        _projects_cache_ts = now
+    except Exception:
+        pass
+    return _projects_cache
+
+
+def _match_project(cwd: str) -> str | None:
+    """Match a cwd to a known Mira project path."""
+    try:
+        for p in _get_projects():
             if cwd.startswith(p["path"]):
                 return Path(p["path"]).name
     except Exception:
@@ -88,6 +106,10 @@ def _poll_once() -> None:
         logger.warning("list_panes failed: %s", e)
         all_panes = []
 
+    # Snapshot currently tracked targets to avoid calling _match_project for known panes
+    with _monitor_lock:
+        tracked_targets = set(_monitored.keys())
+
     # Auto-discover Claude panes — compute project_id OUTSIDE the lock (I/O)
     new_entries = {}
     for pane in all_panes:
@@ -96,15 +118,22 @@ def _poll_once() -> None:
             frag in title for frag in _AUTO_TITLE_FRAGMENTS
         )
         if is_claude:
-            new_entries[pane["target"]] = (pane, _match_project(pane["cwd"]))
+            # Only match project for panes we haven't seen before
+            project_id = (
+                None if pane["target"] in tracked_targets
+                else _match_project(pane["cwd"])
+            )
+            # Display "claude" instead of "node" when this is a claude pane
+            display_cmd = "claude" if is_claude else pane["command"]
+            new_entries[pane["target"]] = (pane, project_id, display_cmd)
 
     with _monitor_lock:
-        for target, (pane, project_id) in new_entries.items():
+        for target, (pane, project_id, display_cmd) in new_entries.items():
             if target not in _monitored:
                 _monitored[target] = {
                     "target": pane["target"],
-                    "label": f"{pane['command']}/{Path(pane['cwd']).name}",
-                    "command": pane["command"],
+                    "label": f"{display_cmd}/{Path(pane['cwd']).name}",
+                    "command": display_cmd,
                     "cwd": pane["cwd"],
                     "auto": True,
                     "project_id": project_id,

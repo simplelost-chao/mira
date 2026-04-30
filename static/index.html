@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mira</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
 @font-face {
   font-family: 'Ark Pixel Font';
@@ -160,6 +161,58 @@
   box-shadow: 2px 2px 0 var(--border), inset 0 0 0 1px rgba(0,212,255,0.08);
 }
 
+[data-theme="claude-light"] {
+  --bg: #f5f3ef;
+  --card: #ffffff;
+  --card-deep: #ebe8e3;
+  --border: rgba(0,0,0,0.08);
+  --border-subtle-rgb: 180,175,165;
+  --accent: #da7756;
+  --accent-dim: #c4654a;
+  --accent-rgb: 218,119,86;
+  --accent-light: #e8956f;
+  --accent-light-rgb: 232,149,111;
+  --text: #1a1a1a;
+  --text-sec: #6b6b6b;
+  --text-muted: #a0a0a0;
+  --text-deep: #d0d0d0;
+  --green: #16a34a;
+  --green-dim: #22c55e;
+  --orange: #d97706;
+  --red: #dc2626;
+  --purple: #9333ea;
+  --yellow: #ca8a04;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', Consolas, monospace;
+}
+
+[data-theme="claude-dark"] {
+  --bg: #131313;
+  --card: #212121;
+  --card-deep: #0d0d0d;
+  --border: #303030;
+  --border-subtle-rgb: 48,48,48;
+  --accent: #09B83E;
+  --accent-dim: #07a035;
+  --accent-rgb: 9,184,62;
+  --accent-light: #2dd45a;
+  --accent-light-rgb: 45,212,90;
+  --text: #ededed;
+  --text-sec: #8f8f8f;
+  --text-muted: #5d5d5d;
+  --text-deep: #303030;
+  --green: #4caf50;
+  --green-dim: #66bb6a;
+  --orange: #e5a84b;
+  --red: #ef4444;
+  --purple: #a78bfa;
+  --yellow: #d4a84b;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', Consolas, monospace;
+}
+
+html { overflow-x: hidden; }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -167,6 +220,10 @@ body {
   font-size: 14px;
   line-height: 1.5;
   min-height: 100vh;
+  overflow-x: hidden;        /* lock horizontal */
+  overscroll-behavior-x: none; /* kill rubber-band bounce on iOS */
+  touch-action: pan-y;        /* only allow vertical touch panning */
+  max-width: 100vw;
 }
 
 /* TOPBAR */
@@ -185,18 +242,19 @@ body {
 .topbar-title {
   margin-right: 8px;
   display: inline-flex; align-items: baseline; gap: 0;
-  font-family: var(--sans); letter-spacing: 3px; line-height: 1;
+  font-family: 'Silkscreen', monospace;
+  letter-spacing: 2px; line-height: 1;
   text-transform: uppercase;
 }
 .topbar-title .logo-m {
-  font-size: 28px; font-weight: 900; color: var(--accent);
-  text-shadow: 0 0 10px var(--accent), 0 0 22px rgba(var(--accent-rgb), .35);
+  font-size: 22px; font-weight: 400; color: var(--accent);
+  text-shadow: 0 0 4px rgba(var(--accent-rgb, 79,70,229), 0.4);
 }
 .topbar-title .logo-ira {
-  font-size: 22px; font-weight: 700; color: var(--text); opacity: .75;
+  font-size: 16px; font-weight: 400; color: var(--text); opacity: .75;
 }
 .topbar-title .logo-cursor {
-  font-size: 24px; font-weight: 400; color: var(--accent); opacity: .9;
+  font-size: 16px; font-weight: 400; color: var(--accent); opacity: .9;
   animation: logo-blink 1.1s step-end infinite;
 }
 @keyframes logo-blink {
@@ -294,8 +352,10 @@ body {
 .project-card:hover {
   border-color: var(--accent);
   border-left-color: var(--accent);
-  transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(var(--accent-rgb),0.15);
+}
+@media (hover: hover) {
+  .project-card:hover { transform: translateY(-2px); }
 }
 .project-card.card-running {
   border-left-color: var(--green);
@@ -323,6 +383,11 @@ body {
   font-size: 13px;
   font-weight: 700;
   color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .status-badge {
   font-size: 10px;
@@ -338,7 +403,7 @@ body {
 .status-unknown { background: rgba(100,116,139,0.12); color: var(--text-muted); }
 .status-badge-clickable { cursor: pointer; user-select: none; }
 .status-badge-clickable:hover { filter: brightness(1.2); }
-.status-dropdown-wrap { position: relative; }
+.status-dropdown-wrap { position: relative; flex-shrink: 0; }
 .status-menu {
   display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 300;
   background: var(--card-deep); border: 1px solid rgba(255,255,255,.12); border-radius: 6px;
@@ -453,6 +518,15 @@ body {
   text-decoration: none; transition: all .15s;
 }
 .card-port-badge:hover { color: var(--accent); border-color: var(--accent); background: rgba(var(--accent-rgb),.1); }
+.card-dev-btn {
+  margin-left: auto;
+  font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
+  background: rgba(100,116,139,.12); border: 1px solid rgba(100,116,139,.2);
+  border-radius: 4px; padding: 1px 8px; white-space: nowrap; flex-shrink: 0;
+  text-decoration: none; transition: all .15s; letter-spacing: .3px;
+  font-weight: 600;
+}
+.card-dev-btn:hover { color: var(--accent); border-color: var(--accent); background: rgba(var(--accent-rgb),.1); }
 
 .card-stat-grid {
   display: flex; margin: 8px 14px 0;
@@ -1387,9 +1461,9 @@ body {
   /* Topbar: compact for mobile */
   .topbar { padding: 0 12px; gap: 4px; height: 48px; overflow: hidden; }
   .topbar-title { letter-spacing: 1px; margin-right: 4px; }
-  .topbar-title .logo-m { font-size: 22px; }
-  .topbar-title .logo-ira { font-size: 16px; }
-  .topbar-title .logo-cursor { font-size: 18px; }
+  .topbar-title .logo-m { font-size: 18px; font-weight: 400; }
+  .topbar-title .logo-ira { font-size: 14px; }
+  .topbar-title .logo-cursor { font-size: 14px; }
   .refresh-btn { font-size: 12px; padding: 4px 8px; }
   .settings-btn, .skin-btn, .search-btn, .chat-fab {
     display: inline-flex; align-items: center; justify-content: center;
@@ -1509,7 +1583,7 @@ body {
 .sm-todo-dot.completed   { background: var(--green); }
 .sm-todo-dot.in_progress { background: var(--yellow); }
 .sm-todo-dot.pending { background: var(--text-muted); }
-@media (max-width: 640px) { .sm-cols { grid-template-columns: 1fr; } .sm-kpi-row { flex-wrap: wrap; } #balance-row { grid-template-columns: 1fr !important; } }
+@media (max-width: 640px) { .sm-cols { grid-template-columns: 1fr; } .sm-kpi-row { flex-wrap: wrap; } }
 /* ── Chat Agent Panel ───────────────────────────── */
 .chat-fab {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
@@ -1665,6 +1739,22 @@ body {
 }
 
 /* ── API Balance ─────────────────────────────────── */
+.balance-card.collapsed {
+  cursor: pointer;
+}
+.balance-card.collapsed .balance-card-details { display: none; }
+.balance-card.collapsed .balance-card-spark   { display: none; }
+.balance-card.collapsed .balance-divider:not(.balance-divider-primary) { display: none; }
+.balance-card.collapsed .balance-stat:not(.balance-stat-primary) { display: none; }
+.balance-card:not(.collapsed) { cursor: pointer; }
+.balance-card-toggle {
+  font-size: 11px; color: var(--text-muted); margin-left: auto;
+  user-select: none; transition: transform .15s;
+}
+.balance-card:not(.collapsed) .balance-card-toggle { transform: rotate(180deg); }
+.balance-card:not(.collapsed) {
+  grid-column: 1 / -1;   /* expanded card fills the full row so all stats + spark fit */
+}
 .balance-card {
   display: flex; align-items: center; gap: 12px;
   background: var(--card); border: 1px solid var(--border);
@@ -1691,39 +1781,7 @@ body {
 .activity-date-row { display: flex; justify-content: space-between; }
 .activity-date-lbl { font-size: 9px; color: var(--text-muted); }
 
-/* ── Settings Modal ─────────────────────────────── */
-.settings-overlay {
-  display: none; position: fixed; inset: 52px 0 0 0;
-  background: rgba(0,0,0,.6); z-index: 250;
-  align-items: flex-start; justify-content: center;
-  padding: 60px 20px;
-}
-.settings-overlay.open { display: flex; }
-.settings-modal {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 12px; width: 100%; max-width: 480px;
-  padding: 24px;
-}
-.settings-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 20px; }
-.settings-group { margin-bottom: 16px; }
-.settings-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: .5px; }
-.settings-input {
-  width: 100%; box-sizing: border-box;
-  background: var(--card-deep); border: 1px solid var(--border);
-  border-radius: 6px; padding: 8px 10px;
-  color: var(--text); font-size: 13px; font-family: var(--font-mono);
-  outline: none; transition: border-color .15s;
-}
-.settings-input:focus { border-color: var(--accent); }
-.settings-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
-.settings-btn-cancel {
-  padding: 7px 16px; background: var(--card-deep); border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text-sec); cursor: pointer; font-size: 13px;
-}
-.settings-btn-save {
-  padding: 7px 16px; background: var(--accent); border: none;
-  border-radius: 6px; color: #fff; cursor: pointer; font-size: 13px;
-}
+/* Settings styles loaded from /static/settings.js */
 .settings-btn { background: none; border: 1px solid var(--border); color: var(--text-muted);
   font-size: 17px; padding: 5px 10px; border-radius: 6px; cursor: pointer; transition: all .15s; line-height: 1; }
 .settings-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -1769,20 +1827,7 @@ body {
 .search-result-snippet mark { background: color-mix(in srgb, var(--yellow) 30%, transparent); color: var(--text); border-radius: 2px; padding: 0 2px; }
 .search-empty { text-align: center; color: var(--text-muted); padding: 20px; font-size: 13px; }
 
-/* ── Skin Picker (inside settings modal) ──────── */
-.skin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.skin-card {
-  border: 1px solid var(--border); border-radius: 7px;
-  padding: 8px; cursor: pointer; transition: border-color .15s;
-}
-.skin-card:hover { border-color: var(--accent); }
-.skin-card.active { border-color: var(--accent); background: rgba(var(--accent-rgb), .1); }
-.skin-preview {
-  height: 28px; border-radius: 4px; overflow: hidden;
-  display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 6px;
-}
-.skin-preview div { height: 100%; }
-.skin-name { font-size: 11px; color: var(--text-sec); text-align: center; }
+/* Skin picker styles loaded from /static/settings.js */
 
 
 </style>
@@ -1793,7 +1838,7 @@ body {
 <div id="login-gate" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;">
   <div style="text-align:center;margin-bottom:40px">
     <div class="topbar-title" style="font-size:0;letter-spacing:3px">
-      <span class="logo-m" style="font-size:56px">M</span><span class="logo-ira" style="font-size:44px">IRA</span><span class="logo-cursor" style="font-size:48px">_</span>
+      <span class="logo-m" style="font-size:56px;font-weight:400">M</span><span class="logo-ira" style="font-size:38px">IRA</span><span class="logo-cursor" style="font-size:40px">_</span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:10px;letter-spacing:2px;text-transform:uppercase">Project Dashboard</div>
   </div>
@@ -1830,41 +1875,14 @@ body {
   <div class="search-results" id="search-results"></div>
 </div>
 
-
-<!-- Settings Modal -->
-<div class="settings-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings()">
-  <div class="settings-modal">
-    <div class="settings-title">⚙ 设置</div>
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">外观</div>
-    <div class="skin-grid" id="settings-skin-grid" style="margin-bottom:18px"></div>
-    <div class="settings-group">
-      <div class="settings-label">OpenRouter API Key</div>
-      <input class="settings-input" id="set-openrouter" type="password" placeholder="sk-or-..." autocomplete="off">
-    </div>
-    <div class="settings-group">
-      <div class="settings-label">DeepSeek API Key</div>
-      <input class="settings-input" id="set-deepseek" type="password" placeholder="sk-..." autocomplete="off">
-    </div>
-    <div class="settings-group">
-      <div class="settings-label">Kimi (Moonshot) API Key</div>
-      <input class="settings-input" id="set-kimi" type="password" placeholder="sk-..." autocomplete="off">
-    </div>
-    <div class="settings-group" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
-      <div class="settings-label">管理员密码</div>
-      <input class="settings-input" id="set-admin-password" type="password" placeholder="留空则不修改" autocomplete="new-password">
-    </div>
-    <div class="settings-footer">
-      <button id="settings-logout-btn" onclick="logout();closeSettings()" style="display:none;background:none;border:1px solid var(--border);color:var(--text-muted);padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px;margin-right:auto" title="退出登录">退出登录</button>
-      <button class="settings-btn-cancel" onclick="closeSettings()">取消</button>
-      <button class="settings-btn-save" onclick="saveSettings()">保存</button>
-    </div>
-  </div>
-</div>
+<!-- Settings overlay (shared module) -->
+<script src="/static/settings.js"></script>
+<script>initSettings();</script>
 
 <!-- MAIN PAGE -->
 <div id="panel-overview" style="padding: 0 28px 48px" class="main-page">
   <div class="kpi-row" id="kpi-row" style="margin-top:24px"></div>
-  <div id="balance-row" style="display:none;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px"></div>
+  <div id="balance-row" style="display:none;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px"></div>
   <div class="filter-bar">
     <button class="filter-btn" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
     <button class="filter-btn active" id="filter-active" onclick="setFilter('active', this)">Active <span class="filter-count" id="count-active">0</span></button>
@@ -2269,6 +2287,14 @@ function renderCards() {
     filtered = allProjects.filter(p => (p.status || 'active') === currentFilter);
   }
 
+  // Sort by most recent claude session (descending). Projects never touched
+  // by claude land at the bottom (empty string sorts after any ISO timestamp).
+  filtered.sort((a, b) => {
+    const ta = (a.claude_activity && a.claude_activity.last_session) || '';
+    const tb = (b.claude_activity && b.claude_activity.last_session) || '';
+    return tb.localeCompare(ta);
+  });
+
   const grid = document.getElementById('project-grid');
   if (filtered.length === 0) {
     grid.innerHTML = '<div class="empty-state">暂无项目</div>';
@@ -2444,10 +2470,9 @@ function renderCard(p) {
           : `<span style="width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0"></span>`}
       <span class="card-name">${escHtml(p.name)}</span>
       ${statusDropdown(p.id, p.status || 'active')}
-      <a href="/projects/${escHtml(p.id)}" target="_blank"
+      <a class="card-dev-btn" href="/dev?project=${encodeURIComponent(p.id)}" target="_blank"
          onclick="event.stopPropagation()"
-         title="在新标签页打开" style="margin-left:auto;font-size:13px;color:var(--text-muted);text-decoration:none;transition:color .15s"
-         onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">↗</a>
+         title="进入项目终端">Dev</a>
     </div>
     ${p.description ? `<div class="card-desc">${escHtml(p.description)}</div>` : ''}
     ${domainBlock}
@@ -3225,7 +3250,8 @@ function renderAnomalies() {
 let wsStatusPrev = {};  // {project_id: is_running}
 
 function connectStatusWs() {
-  const ws = new WebSocket(`ws://${location.host}/ws/status`);
+  const _wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${_wsProto}//${location.host}/ws/status`);
 
   ws.onmessage = (e) => {
     const { snapshot, changes } = JSON.parse(e.data);
@@ -3357,8 +3383,21 @@ async function loadTerminalAlerts() {
     if (!container) return;
 
     container.innerHTML = '';
-    if (!alerts.length) return;
+    const badge = document.getElementById('anomaly-badge');
+    if (!alerts.length) {
+      // No terminal alerts — show only anomaly count, or hide badge
+      if (badge) {
+        if (anomalies.length) {
+          badge.textContent = anomalies.length;
+          badge.className = 'visible';
+        } else {
+          badge.className = '';
+        }
+      }
+      return;
+    }
 
+    playNotificationSound();
     alerts.forEach(a => {
       const el = document.createElement('div');
       el.className = 'chat-terminal-alert';
@@ -3376,9 +3415,8 @@ async function loadTerminalAlerts() {
       container.appendChild(el);
     });
 
-    const badge = document.getElementById('anomaly-badge');
     if (badge) {
-      badge.textContent = alerts.length;
+      badge.textContent = alerts.length + anomalies.length;
       badge.classList.add('visible');
     }
   } catch(e) { console.warn('terminals alerts:', e); }
@@ -3538,72 +3576,7 @@ async function sendChat() {
   }
 }
 
-// ─── Skin System ──────────────────────────────────────────────────────────────
-const SKINS = [
-  { id: 'default', name: '深空默认', preview: ['#0f1117', '#4f46e5'] },
-  { id: 'neon-pixel', name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] },
-  { id: 'pixel-cyber', name: '像素赛博', preview: ['#000d1a', '#ff0066'] },
-];
-
-function applySkin(id) {
-  const skin = SKINS.find(s => s.id === id) ? id : 'default';
-  document.documentElement.dataset.theme = skin;
-  localStorage.setItem('mira-skin', skin);
-}
-
-// Restore saved skin on load
-applySkin(localStorage.getItem('mira-skin') || 'default');
-
-// ─── Settings ─────────────────────────────────────────────────────────────────
-async function openSettings() {
-  if (!_isAdmin) { openLoginModal(openSettings); return; }
-  const data = await fetch('/api/settings', {headers: _authHeaders()}).then(r => r.json());
-  document.getElementById('set-openrouter').placeholder = data.openrouter_api_key || 'sk-or-...';
-  document.getElementById('set-deepseek').placeholder   = data.deepseek_api_key   || 'sk-...';
-  document.getElementById('set-kimi').placeholder       = data.kimi_api_key        || 'sk-...';
-  document.getElementById('set-openrouter').value      = '';
-  document.getElementById('set-deepseek').value        = '';
-  document.getElementById('set-kimi').value            = '';
-  document.getElementById('set-admin-password').value  = '';
-  document.getElementById('set-admin-password').placeholder = data.admin_password ? '留空则不修改' : '未设置';
-  const logoutBtn = document.getElementById('settings-logout-btn');
-  if (logoutBtn) logoutBtn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
-  _renderSettingsSkins();
-  document.getElementById('settings-overlay').classList.add('open');
-}
-
-function _renderSettingsSkins() {
-  const current = document.documentElement.dataset.theme || 'default';
-  const grid = document.getElementById('settings-skin-grid');
-  if (!grid) return;
-  grid.innerHTML = SKINS.map(s =>
-    `<div class="skin-card ${s.id === current ? 'active' : ''}" onclick="applySkin('${s.id}');_renderSettingsSkins();">
-      <div class="skin-preview"><div style="background:${s.preview[0]}"></div><div style="background:${s.preview[1]}"></div></div>
-      <div class="skin-name">${escHtml(s.name)}</div>
-    </div>`
-  ).join('');
-}
-
-function closeSettings() {
-  document.getElementById('settings-overlay').classList.remove('open');
-}
-
-async function saveSettings() {
-  const body = {
-    openrouter_api_key: document.getElementById('set-openrouter').value.trim(),
-    deepseek_api_key:   document.getElementById('set-deepseek').value.trim(),
-    kimi_api_key:       document.getElementById('set-kimi').value.trim(),
-    admin_password:     document.getElementById('set-admin-password').value.trim(),
-  };
-  await fetch('/api/settings', { method: 'POST', headers: _authHeaders({'Content-Type':'application/json'}), body: JSON.stringify(body) });
-  // If admin password changed, invalidate stored token (need re-login)
-  if (body.admin_password) {
-    _adminToken = ''; _isAdmin = false;
-    localStorage.removeItem('mira-admin-token');
-  }
-  closeSettings();
-  loadBalance(true);
-}
+// ─── Skin & Settings loaded from /static/settings.js ─────────────────────────
 
 // ─── API Balance ──────────────────────────────────────────────────────────────
 async function loadBalance(force = false) {
@@ -3620,10 +3593,34 @@ async function loadBalance(force = false) {
     const actMasked = !!actPayload._masked;
 
     if (!providers.length) { row.style.display = 'none'; return; }
-    row.style.display = 'grid';
+    const isMobile = window.innerWidth <= 640;
+    if (isMobile) {
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px';
+    } else {
+      row.style.display = 'grid';
+    }
     row.innerHTML = providers.map(p =>
       renderBalanceCard(p, p.id === 'openrouter' ? {data: actData, masked: actMasked} : null)
     ).join('');
+    if (isMobile) {
+      row.querySelectorAll('.balance-card.collapsed').forEach(function(c) {
+        c.style.flex = '1 1 calc(50% - 4px)';
+        c.style.minWidth = '0';
+        c.style.padding = '10px 12px';
+        // Collapsed mobile: stack logo + balance vertically
+        var inner = c.querySelector('div');
+        if (inner) {
+          inner.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+        }
+        // Hide dividers in collapsed mobile
+        c.querySelectorAll('.balance-divider').forEach(function(d) {
+          if (c.classList.contains('collapsed')) d.style.display = 'none';
+        });
+        // Hide toggle arrow in collapsed compact mode
+        var toggle = c.querySelector('.balance-card-toggle');
+        if (toggle) toggle.style.display = 'none';
+      });
+    }
   } catch(_) { row.style.display = 'none'; }
 }
 
@@ -3691,7 +3688,7 @@ function renderBalanceCard(p, activity = null) {
   } else {
     if (p.balance != null) {
       const cls = p.balance < 1 ? 'empty' : p.balance < 5 ? 'low' : '';
-      stats += `<div class="balance-stat"><div class="balance-val ${cls}">${fmtMoney(p.balance, u)}</div><div class="balance-lbl">余额</div></div>`;
+      stats += `<div class="balance-stat balance-stat-primary"><div class="balance-val ${cls}">${fmtMoney(p.balance, u)}</div><div class="balance-lbl">余额</div></div>`;
     }
     if (p.topped != null) {
       stats += `<div class="balance-divider"></div>`;
@@ -3737,7 +3734,7 @@ function renderBalanceCard(p, activity = null) {
   }
 
   const sparkHtml = `
-    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+    <div class="balance-card-spark" style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <span style="font-size:9px;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase">30天消耗</span>
         <span style="font-size:11px;font-weight:700;color:var(--text-sec)">${totalStr}</span>
@@ -3745,11 +3742,12 @@ function renderBalanceCard(p, activity = null) {
       <div style="display:flex;align-items:flex-end;gap:1px;height:34px">${bars}</div>
     </div>`;
 
-  return `<div class="balance-card" style="flex-direction:column;align-items:stretch">
+  return `<div class="balance-card collapsed" style="flex-direction:column;align-items:stretch" onclick="this.classList.toggle('collapsed'); event.stopPropagation();">
     <div style="display:flex;align-items:center;gap:12px">
       <div class="balance-logo">${escHtml(p.name)}</div>
-      <div class="balance-divider"></div>
-      ${stats || `<div class="balance-stat"><div class="balance-val">—</div><div class="balance-lbl">暂无数据</div></div>`}
+      <div class="balance-divider balance-divider-primary"></div>
+      ${stats || `<div class="balance-stat balance-stat-primary"><div class="balance-val">—</div><div class="balance-lbl">暂无数据</div></div>`}
+      <span class="balance-card-toggle">▼</span>
     </div>
     ${sparkHtml}
   </div>`;
@@ -3959,5 +3957,12 @@ async function _doSearch(q) {
   </div>
 </div>
 </div><!-- /app-wrap -->
+<!-- Version badge -->
+<div id="version-badge" style="position:fixed;bottom:6px;right:10px;z-index:50;font-size:10px;color:var(--text);opacity:0.15;font-family:var(--font-mono);pointer-events:none;user-select:none"></div>
+<script>
+fetch('/api/version').then(r=>r.json()).then(d=>{
+  document.getElementById('version-badge').textContent='v'+d.version;
+}).catch(()=>{});
+</script>
 </body>
 </html>

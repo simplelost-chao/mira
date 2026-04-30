@@ -18,7 +18,9 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 {_theme_css}
-  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; }}
+  html, body {{ height: 100vh; overflow: hidden; margin: 0; }}
+  .content {{ overflow-y: auto; height: calc(100vh - 92px); }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); }}
 
 {_tb_css}
 
@@ -45,6 +47,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     height: 40px; padding: 0 14px; background: none; border: none;
     font-family: var(--mono); font-size: 12px; color: var(--sub); cursor: pointer;
     border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+    display: inline-flex; align-items: center; text-decoration: none;
   }}
   .tab-btn:hover {{ color: var(--text); }}
   .tab-btn.active {{ color: var(--accent); border-bottom-color: var(--accent); }}
@@ -61,121 +64,14 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   .tab-panel {{ display: none; }}
   .tab-panel.active {{ display: block; }}
 
-  /* ── Terminal Tab ────────────────────────────────────────────────────────── */
-  .term-layout {{
-    display: flex; height: calc(100vh - 100px); min-height: 400px;
-  }}
-  .term-sidebar {{
-    width: 160px; border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; flex-shrink: 0;
-  }}
-  .term-sidebar-header {{
-    padding: 10px 12px; font-size: 11px; color: var(--text-muted);
-    font-weight: 600; letter-spacing: .5px;
-    border-bottom: 1px solid var(--border);
-  }}
-  .term-sidebar-footer {{
-    padding: 8px 12px; font-size: 10px; color: var(--muted);
-    border-top: 1px solid var(--border); margin-top: auto;
-  }}
-  .term-pane-row {{
-    padding: 8px 12px; display: flex; align-items: center; gap: 7px;
-    cursor: pointer; border-left: 2px solid transparent;
-  }}
-  .term-pane-row:hover {{ background: rgba(255,255,255,.03); }}
-  .term-pane-row.active {{
-    background: rgba(79,70,229,.12); border-left-color: var(--accent);
-  }}
-  .term-pane-dot {{
-    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  }}
-  .term-pane-dot.running {{ background: #3fb950; }}
-  .term-pane-dot.waiting {{ background: #d29922; }}
-  .term-pane-name {{ font-size: 11px; color: var(--text); }}
-  .term-pane-cmd  {{ font-size: 9px; color: var(--text-muted); margin-top: 1px; }}
-  .term-main {{
-    flex: 1; display: flex; flex-direction: column; min-width: 0;
-  }}
-  .term-titlebar {{
-    padding: 6px 12px; display: flex; align-items: center;
-    justify-content: space-between; border-bottom: 1px solid var(--border);
-    font-size: 11px; font-family: var(--mono); color: var(--text);
-    flex-shrink: 0;
-  }}
-  .term-quickbtns {{ display: flex; gap: 6px; }}
+  /* ── Terminal quick button (summary panel) ── */
   .term-qbtn {{
     background: var(--panel); border: 1px solid var(--border);
     color: var(--text-muted); font-size: 10px; padding: 2px 8px;
     border-radius: 3px; cursor: pointer; font-family: var(--mono);
+    text-decoration: none;
   }}
   .term-qbtn:hover {{ border-color: var(--accent); color: var(--accent); }}
-  /* ── ANSI 16-color palette ── */
-  :root {{
-    --ansi-k: #3a3f4b;
-    --ansi-r: var(--red);       --ansi-g: var(--green);
-    --ansi-y: var(--yellow);    --ansi-b: #4e9eff;
-    --ansi-m: #c792ea;          --ansi-c: #56b6c2;
-    --ansi-w: var(--text);      --ansi-K: var(--muted);
-    --ansi-R: var(--red);       --ansi-G: var(--green);
-    --ansi-Y: var(--orange);    --ansi-B: #82aaff;
-    --ansi-M: #d9a0f5;          --ansi-C: #89ddff;
-    --ansi-W: #ffffff;
-  }}
-  .term-output {{
-    flex: 1; overflow-y: auto; font-family: var(--mono);
-    font-size: 12px; background: var(--bg); color: var(--text); padding: 12px 0;
-  }}
-  .out-block {{
-    margin: 0 14px 10px; background: var(--panel);
-    border: 1px solid rgba(255,255,255,.04); border-radius: var(--radius); overflow: hidden;
-  }}
-  .out-line {{
-    display: flex; align-items: baseline;
-    min-height: 1.65em; line-height: 1.65; transition: background .08s;
-  }}
-  .out-line:hover {{ background: rgba(255,255,255,.04); }}
-  .out-ln {{
-    flex-shrink: 0; width: 3.4em; padding: 0 .7em 0 .6em;
-    text-align: right; color: var(--muted); font-size: .78em;
-    user-select: none; border-right: 1px solid rgba(255,255,255,.06);
-    line-height: 1.65; white-space: pre; background: rgba(0,0,0,.08);
-  }}
-  .out-code {{
-    flex: 1; min-width: 0; padding: 0 16px;
-    white-space: pre-wrap; word-break: break-all; line-height: 1.65;
-  }}
-  @media (max-width: 600px) {{
-    .term-output {{ font-size: 11px; padding: 8px 0; }}
-    .out-block {{ margin: 0 8px 8px; border-radius: var(--radius-sm); }}
-    .out-ln {{ width: 2.4em; font-size: .75em; padding: 0 .4em 0 .3em; }}
-    .out-code {{ padding: 0 10px; }}
-  }}
-  .term-inputbar {{
-    padding: 8px 12px; border-top: 1px solid var(--border);
-    display: flex; gap: 8px; flex-shrink: 0;
-  }}
-  .term-input {{
-    flex: 1; background: var(--panel); border: 1px solid var(--border);
-    border-radius: 6px; padding: 6px 10px; color: var(--text);
-    font-family: var(--mono); font-size: 12px; outline: none;
-  }}
-  .term-input:focus {{ border-color: var(--accent); }}
-  .term-send-btn {{
-    background: #238636; border: none; color: #fff;
-    padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
-  }}
-  .term-send-btn:hover {{ background: #2ea043; }}
-  .term-empty {{
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    color: var(--text-muted); font-size: 13px; text-align: center; gap: 8px;
-  }}
-
-  /* ── overview iframe ── */
-  .overview-frame {{
-    width: 100%; border: none; min-height: calc(100vh - 92px);
-    background: var(--bg);
-  }}
 
   /* ── design docs ── */
   .docs-layout {{ display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 92px); }}
@@ -277,8 +173,8 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     border-radius: var(--radius); padding: 10px 12px; box-shadow: var(--card-shadow);
     min-width: 0; overflow: hidden;
   }}
-  .stats-val {{ font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 2px; font-variant-numeric: tabular-nums; }}
-  .stats-lbl {{ font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }}
+  .stats-val {{ font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 2px; font-variant-numeric: tabular-nums; }}
+  .stats-lbl {{ font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }}
   .summary-grid {{
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 12px; margin-bottom: 12px;
@@ -292,7 +188,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     background: rgba(var(--accent-rgb, 79,70,229),.04); border-color: rgba(var(--accent-rgb, 79,70,229),.15);
   }}
   .card-section-title {{
-    font-size: 9px; font-weight: 700; letter-spacing: 2px;
+    font-size: 10px; font-weight: 700; letter-spacing: 2px;
     text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
   }}
   .commit-list {{ display: flex; flex-direction: column; gap: 4px; margin-top: 10px; overflow: hidden; }}
@@ -303,13 +199,78 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     background: rgba(255,255,255,.025); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--card-shadow);
   }}
+  /* edit modal */
+  .edit-btn {{
+    display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+    font-size: 11px; color: var(--sub); transition: all .15s;
+    background: none; border: 1px solid var(--border); border-radius: 4px;
+    padding: 3px 8px; font-family: var(--mono);
+  }}
+  .edit-btn:hover {{ color: var(--text); border-color: var(--accent); }}
+  .modal-overlay {{
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+  }}
+  .modal-box {{
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px 24px; width: 420px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.4);
+  }}
+  .modal-title {{ font-size: 14px; font-weight: 700; margin-bottom: 14px; }}
+  .modal-label {{ font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }}
+  .modal-input {{
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text); font-family: var(--mono); padding: 6px 10px; font-size: 13px;
+    margin-bottom: 12px;
+  }}
+  .modal-input:focus {{ outline: none; border-color: var(--accent); }}
+  .modal-textarea {{ resize: vertical; min-height: 50px; }}
+  .modal-actions {{ display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }}
+  .modal-actions button {{
+    font-size: 12px; font-family: var(--mono); padding: 5px 16px; border-radius: 4px;
+    cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }}
+  .modal-actions button.primary {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
+  .modal-actions button:hover {{ opacity: 0.85; }}
+  .proj-desc {{ font-size: 12px; color: var(--sub); margin-bottom: 8px; line-height: 1.5; }}
+  /* arch section */
+  .arch-card {{
+    background: rgba(255,255,255,.025); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px; margin-top: 16px;
+    box-shadow: var(--card-shadow);
+  }}
+  .arch-card p {{ font-size: 12px; color: var(--sub); line-height: 1.6; margin-bottom: 8px; }}
+  .arch-card p:last-child {{ margin-bottom: 0; }}
+  .arch-card h1,.arch-card h2,.arch-card h3 {{ font-size: 13px; font-weight: 700; color: var(--text); margin: 12px 0 6px; }}
+  .arch-card h1:first-child,.arch-card h2:first-child,.arch-card h3:first-child {{ margin-top: 0; }}
+  .arch-card ul,.arch-card ol {{ font-size: 12px; color: var(--sub); padding-left: 18px; margin-bottom: 8px; }}
+  .arch-card li {{ margin-bottom: 3px; }}
+  .arch-card code {{ font-size: 11px; background: rgba(255,255,255,.06); padding: 1px 4px; border-radius: 3px; }}
+  /* ext deps */
+  .dep-flow {{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }}
+  .dep-node {{
+    font-size: 11px; padding: 5px 12px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: rgba(255,255,255,.03);
+  }}
+  .dep-arrow {{ color: var(--muted); font-size: 12px; }}
+  /* code stats */
+  .lang-row {{ display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 4px; }}
+  .lang-name {{ width: 80px; text-align: right; color: var(--sub); flex-shrink: 0; }}
+  .lang-track {{ flex: 1; height: 6px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; }}
+  .lang-fill {{ height: 100%; border-radius: 3px; }}
+  .lang-num {{ width: 40px; color: var(--muted); flex-shrink: 0; }}
+  /* feature list */
+  .feat-item {{ font-size: 11px; padding: 3px 0; }}
+  .feat-item.done {{ color: var(--green); }}
+  .feat-item.planned {{ color: var(--sub); }}
   /* hero */
   .summary-wrap {{ padding: 20px; max-width: 960px; }}
   .hero-row {{ display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }}
+  .hero-left {{ flex: 1; min-width: 0; }}
+  .hero-right {{ display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding-top: 4px; }}
   .proj-title {{ font-size: 22px; font-weight: 700; margin-bottom: 5px; }}
   .proj-path {{ font-size: 11px; color: var(--muted); margin-bottom: 10px; }}
   .badge-row {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-  .claude-last {{ font-size: 11px; color: var(--muted); flex-shrink: 0; padding-top: 4px; }}
+  .claude-last {{ font-size: 11px; color: var(--muted); white-space: nowrap; }}
   /* badges */
   .badge {{ font-size: 11px; padding: 4px 12px; border-radius: var(--radius-pill); border: 1px solid; display: inline-flex; align-items: center; gap: 5px; }}
   .badge-green   {{ border-color: rgba(92,208,138,.25);  background: rgba(92,208,138,.08);  color: var(--green); }}
@@ -328,7 +289,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   .card-stat-val.gold      {{ color: var(--gold); }}
   .card-stat-val.dirty-ok  {{ color: var(--green); }}
   .card-stat-val.dirty-warn {{ color: var(--orange); }}
-  .card-stat-lbl {{ font-size: 9px; color: var(--muted); margin-top: 2px; }}
+  .card-stat-lbl {{ font-size: 10px; color: var(--muted); margin-top: 2px; }}
   /* todos */
   .todo-list {{ margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }}
   .todo-item {{ display: flex; align-items: flex-start; gap: 5px; font-size: 10px; }}
@@ -413,9 +374,9 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   @media (max-width: 640px) {{
     /* topbar */
     .topbar {{ padding: 0 12px; gap: 8px; }}
-    .topbar-title .logo-m {{ font-size: 20px; }}
-    .topbar-title .logo-ira {{ font-size: 15px; }}
-    .topbar-title .logo-cursor {{ font-size: 17px; }}
+    .topbar-logo .logo-m {{ font-size: 18px; }}
+    .topbar-logo .logo-ira {{ font-size: 18px; }}
+    .topbar-logo .logo-cursor {{ font-size: 18px; }}
     .settings-btn {{ font-size: 0 !important; }}
     .settings-btn::before {{ content: '⚙\FE0E'; font-size: 15px; line-height: 1; }}
 
@@ -450,27 +411,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     /* show mobile docs components */
     .docs-mobile-list {{ display: flex; }}
 
-    /* terminal tab — stack vertically on mobile */
-    .term-layout {{ flex-direction: column; height: calc(100vh - 90px); }}
-    .term-sidebar {{
-      width: 100%; border-right: none; border-bottom: 1px solid var(--border);
-      flex-direction: row; flex-shrink: 0; overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }}
-    .term-sidebar-header {{ display: none; }}
-    .term-sidebar-footer {{ display: none; }}
-    #term-pane-list {{ display: flex; flex-direction: row; flex: 1; }}
-    .term-pane-row {{
-      flex-direction: column; align-items: flex-start; gap: 2px;
-      padding: 8px 14px; white-space: nowrap; flex-shrink: 0;
-      border-left: none; border-bottom: 2px solid transparent;
-    }}
-    .term-pane-row.active {{ border-bottom-color: var(--accent); border-left-color: transparent; }}
-    .term-output {{ font-size: 11px; }}
     .term-qbtn {{ padding: 4px 10px; font-size: 11px; }}
-    .term-send-btn {{ padding: 8px 18px; font-size: 13px; }}
-    .term-input {{ font-size: 13px; padding: 8px 10px; }}
-    .term-inputbar {{ padding: 10px 12px; }}
   }}
 
 </style>
@@ -479,95 +420,55 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 
 {_tb_html}
 <div class="subnav">
-  <a class="subnav-back" href="/">← 返回列表</a>
+  
   <div class="subnav-sep"></div>
   <span class="subnav-proj" id="proj-name">{project_name}</span>
   <div class="subnav-spacer"></div>
   <div class="subnav-tabs">
-    <button class="tab-btn" id="tab-summary" onclick="showTab('summary')">概览</button>
-    <button class="tab-btn active" id="tab-overview" onclick="showTab('overview')">系统架构</button>
+    <button class="tab-btn active" id="tab-summary" onclick="showTab('summary')">概览</button>
     <button class="tab-btn" id="tab-design" onclick="showTab('design')">设计文档</button>
     <button class="tab-btn" id="tab-prompts" onclick="showTab('prompts')">Prompts</button>
-    <button class="tab-btn" id="tab-terminals" onclick="showTab('terminals')">⬛ 终端</button>
+    <a class="tab-btn" href="/dev?project={project_id}">Dev ↗</a>
   </div>
   <button class="refresh-btn" onclick="reload()" title="刷新">↻</button>
 </div>
 
 <div class="content">
-  <div class="tab-panel" id="panel-summary">
-    <div class="loading"><div class="spinner"></div>加载中...</div>
-  </div>
-  <div class="tab-panel active" id="panel-overview">
+  <div class="tab-panel active" id="panel-summary">
     <div class="loading"><div class="spinner"></div>加载中...</div>
   </div>
   <div class="tab-panel" id="panel-design">
     <div class="loading"><div class="spinner"></div>加载中...</div>
   </div>
   <div class="tab-panel" id="panel-prompts"></div>
-  <div class="tab-panel" id="panel-terminals">
-    <div class="term-layout">
-      <div class="term-sidebar">
-        <div class="term-sidebar-header">活跃会话</div>
-        <div id="term-pane-list"></div>
-        <div class="term-sidebar-footer">每 3 秒刷新</div>
-      </div>
-      <div class="term-main">
-        <div class="term-titlebar" id="term-titlebar" style="display:none">
-          <span id="term-title"></span>
-          <div class="term-quickbtns">
-            <button class="term-qbtn" id="btn-term-ctrlc">Ctrl+C</button>
-            <button class="term-qbtn" id="btn-term-enter">↵ Enter</button>
-          </div>
-        </div>
-        <div class="term-output" id="term-output">
-          <div class="term-empty"><div>⬛</div><div>正在加载终端...</div></div>
-        </div>
-        <div class="term-inputbar" id="term-inputbar" style="display:none">
-          <input class="term-input" id="term-input" placeholder="输入命令后按 Enter 发送...">
-          <button class="term-send-btn" id="term-send-btn">发送</button>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
 <script>
 const PROJECT_ID = {repr(project_id)};
 window._INLINE_PROJECT = {inline_data};
 let projectData = null;
-let activeTab = 'overview';
+// Redirect #terminals to /dev?project=xxx
+if (location.hash === '#terminals') {{
+  location.replace('/dev?project=' + encodeURIComponent({repr(project_id)}));
+}}
+let activeTab = 'summary';
 let summaryLoaded = false;
-let overviewLoaded = false;
 let designLoaded = false;
 let promptsLoaded = false;
 
-let _termPollTimer = null;
-let _termCurrentTarget = null;
-
 function showTab(name) {{
   activeTab = name;
-  if (name !== 'terminals') {{
-    clearInterval(_termPollTimer);
-    _termPollTimer = null;
-  }}
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  document.getElementById('panel-' + name).classList.add('active');
+  const tabEl = document.getElementById('tab-' + name);
+  if (tabEl) tabEl.classList.add('active');
+  const panelEl = document.getElementById('panel-' + name);
+  if (panelEl) panelEl.classList.add('active');
   if (name === 'summary'  && !summaryLoaded)  renderSummary();
-  if (name === 'overview' && !overviewLoaded) loadOverview();
   if (name === 'design'   && !designLoaded)   renderDesign();
   if (name === 'prompts'  && !promptsLoaded) {{
     if (!_isAdmin) {{ openLoginModal(() => {{ promptsLoaded = false; renderPrompts(); }}); return; }}
     renderPrompts();
-  }}
-  if (name === 'terminals') {{
-    clearInterval(_termPollTimer);
-    _loadTerminalsTab();
-    _termPollTimer = setInterval(() => {{
-      _loadTerminalsTab();
-      if (_termCurrentTarget) _fetchTermOutput();
-    }}, 3000);
   }}
 }}
 
@@ -699,24 +600,6 @@ function simpleMarkdown(md) {{
   return t;
 }}
 
-// ── Overview ──────────────────────────────────────────────────────────────────
-async function loadOverview() {{
-  const el = document.getElementById('panel-overview');
-  try {{
-    const res = await fetch(`/projects/${{PROJECT_ID}}/overview`);
-    const html = await res.text();
-    // Inject the overview page content into an iframe
-    const iframe = document.createElement('iframe');
-    iframe.className = 'overview-frame';
-    iframe.srcdoc = html;
-    el.innerHTML = '';
-    el.appendChild(iframe);
-    overviewLoaded = true;
-  }} catch(e) {{
-    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🌐</div><div>加载失败: ${{e.message}}</div></div>`;
-  }}
-}}
-
 // ── Summary Tab: stats bar + 2-col grid ──────────────────────────────────────
   function renderSummary() {{
     const el = document.getElementById('panel-summary');
@@ -763,13 +646,20 @@ async function loadOverview() {{
     let html = `<div class="summary-wrap">`;
 
     // Hero row
+    const descText = p.description || '';
+    const editBtn = _isAdmin ? `<button class="edit-btn" onclick="openEditModal()" title="编辑">✎ 编辑</button>` : '';
     html += `<div class="hero-row">
-      <div>
+      <div class="hero-left">
         <div class="proj-title">${{escHtml(p.name || '')}}</div>
+        ${{descText ? `<div class="proj-desc">${{escHtml(descText)}}</div>` : ''}}
         <div class="proj-path">${{escHtml(p.path || '')}}</div>
         <div class="badge-row">${{svcBadge}}${{domainBadge}}${{deployBadge}}${{statusBadge}}</div>
       </div>
-      ${{caLastStr ? `<div class="claude-last">Claude ${{caLastStr}}</div>` : ''}}
+      <div class="hero-right">
+        ${{editBtn}}
+        ${{p.path ? `<a class="term-qbtn" href="/dev?project=${{encodeURIComponent(PROJECT_ID)}}" title="在 Dev 页面打开该项目的终端">⬛ Dev</a>` : ''}}
+        ${{caLastStr ? `<span class="claude-last">${{caLastStr}}</span>` : ''}}
+      </div>
     </div>`;
 
     // ── Stats bar ──
@@ -879,10 +769,138 @@ async function loadOverview() {{
       }}
     }}
 
+    // ── Architecture summary ──
+    if (p.arch_summary) {{
+      html += `<div class="arch-card">
+        <div class="card-section-title">架构概述</div>
+        ${{simpleMarkdown(p.arch_summary)}}
+      </div>`;
+    }}
+
+    // ── External dependencies ──
+    const extDeps = p.external_deps || [];
+    if (extDeps.length) {{
+      let depHtml = `<div class="dep-flow"><div class="dep-node" style="border-color:var(--accent);color:var(--accent)">${{escHtml(p.name||'本项目')}}</div>`;
+      extDeps.forEach(d => {{
+        const meta = d.port ? ':'+d.port : (d.url||'');
+        depHtml += `<span class="dep-arrow">→</span><div class="dep-node">${{escHtml(d.name||'')}}${{meta ? ' <span style="color:var(--muted);font-size:10px">'+escHtml(meta)+'</span>' : ''}}</div>`;
+      }});
+      depHtml += `</div>`;
+      html += `<div class="arch-card">
+        <div class="card-section-title">服务依赖</div>
+        ${{depHtml}}
+      </div>`;
+    }}
+
+    // ── Deploy details ──
+    if (deploy.type && deploy.type !== 'none') {{
+      let dRows = '';
+      if (deploy.host) dRows += `<div style="font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">Host:</span> <code>${{escHtml(deploy.host)}}</code></div>`;
+      if (deploy.url)  dRows += `<div style="font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">URL:</span> <a href="${{escHtml(deploy.url)}}" target="_blank" style="color:var(--accent)">${{escHtml(deploy.url)}}</a></div>`;
+      if (deploy.remote_dir) dRows += `<div style="font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">目录:</span> <code>${{escHtml(deploy.remote_dir)}}</code></div>`;
+      if (deploy.cmd)  dRows += `<div style="font-size:11px;margin-bottom:3px"><span style="color:var(--muted)">命令:</span> <code>${{escHtml(deploy.cmd)}}</code></div>`;
+      if (dRows) {{
+        html += `<div class="arch-card">
+          <div class="card-section-title">部署信息</div>
+          ${{dRows}}
+        </div>`;
+      }}
+    }}
+
+    // ── Code stats (languages) ──
+    const langs = (loc.languages || []).slice(0, 8);
+    if (langs.length) {{
+      const LANG_COLORS = ['#61afef','#c678dd','#e5c07b','#52c469','#e06c75','#56b6c2','#be5046','#98c379'];
+      const maxL = Math.max(...langs.map(l => l.code||0), 1);
+      let langHtml = langs.map((l,i) => {{
+        const lines = l.code||0;
+        const pct = Math.round(lines / maxL * 100);
+        const lbl = lines >= 1000 ? (lines/1000).toFixed(1)+'k' : String(lines);
+        return `<div class="lang-row">
+          <span class="lang-name">${{escHtml(l.name||'')}}</span>
+          <div class="lang-track"><div class="lang-fill" style="width:${{pct}}%;background:${{LANG_COLORS[i%8]}}"></div></div>
+          <span class="lang-num">${{lbl}}</span>
+        </div>`;
+      }}).join('');
+      const commentPct = loc.total_lines ? Math.round((loc.comment_lines||0) / loc.total_lines * 100) : 0;
+      html += `<div class="arch-card">
+        <div class="card-section-title">代码分布</div>
+        <div style="display:flex;gap:20px;margin-bottom:10px;font-size:11px;color:var(--muted)">
+          <span>文件 ${{loc.file_count||0}}</span>
+          <span>注释率 ${{commentPct}}%</span>
+        </div>
+        ${{langHtml}}
+      </div>`;
+    }}
+
+    // ── Features ──
+    const doneFeats = features.filter(f => f.implemented);
+    const plannedFeats = features.filter(f => !f.implemented);
+    if (doneFeats.length || plannedFeats.length) {{
+      let fHtml = doneFeats.map(f => `<div class="feat-item done">✓ ${{escHtml(f.text||'')}}</div>`).join('');
+      fHtml += plannedFeats.map(f => `<div class="feat-item planned">○ ${{escHtml(f.text||'')}}</div>`).join('');
+      html += `<div class="arch-card">
+        <div class="card-section-title">功能列表</div>
+        ${{fHtml}}
+      </div>`;
+    }}
+
     html += `</div>`;  // end outer padding div
     el.innerHTML = html;
     summaryLoaded = true;
   }}
+
+// ── Edit modal ───────────────────────────────────────────────────────────────
+function openEditModal() {{
+  const p = projectData || {{}};
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal-box">
+    <div class="modal-title">编辑项目信息</div>
+    <div class="modal-label">项目名称</div>
+    <input class="modal-input" id="edit-modal-name" value="${{escHtml(p.name||'')}}" />
+    <div class="modal-label">一句话简介</div>
+    <textarea class="modal-input modal-textarea" id="edit-modal-desc" rows="3">${{escHtml(p.description||'')}}</textarea>
+    <div class="modal-actions">
+      <button onclick="closeEditModal()">取消</button>
+      <button class="primary" onclick="saveEditModal()">保存</button>
+    </div>
+  </div>`;
+  overlay.addEventListener('click', e => {{ if (e.target === overlay) closeEditModal(); }});
+  document.body.appendChild(overlay);
+  document.getElementById('edit-modal-name').focus();
+}}
+function closeEditModal() {{
+  const m = document.querySelector('.modal-overlay');
+  if (m) m.remove();
+}}
+async function saveEditModal() {{
+  const nameVal = (document.getElementById('edit-modal-name').value || '').trim();
+  const descVal = (document.getElementById('edit-modal-desc').value || '').trim();
+  const p = projectData || {{}};
+  const promises = [];
+  if (nameVal && nameVal !== (p.name||'')) {{
+    promises.push(fetch(`/api/projects/${{PROJECT_ID}}/name`, {{
+      method: 'POST', headers: {{'Content-Type':'application/json', ..._authHeaders()}},
+      body: JSON.stringify({{name: nameVal}})
+    }}).then(() => {{
+      projectData.name = nameVal;
+      document.getElementById('proj-name').textContent = nameVal;
+    }}));
+  }}
+  if (descVal !== (p.description||'')) {{
+    promises.push(fetch(`/api/projects/${{PROJECT_ID}}/description`, {{
+      method: 'POST', headers: {{'Content-Type':'application/json', ..._authHeaders()}},
+      body: JSON.stringify({{description: descVal}})
+    }}).then(() => {{
+      projectData.description = descVal;
+    }}));
+  }}
+  await Promise.all(promises);
+  closeEditModal();
+  summaryLoaded = false;
+  renderSummary();
+}}
 
 // ── Design Docs ───────────────────────────────────────────────────────────────
 async function renderDesign() {{
@@ -1257,100 +1275,10 @@ async function renderPrompts() {{
 function promptGoPage(p) {{ window._promptGoPage && window._promptGoPage(p); }}
 function updatePrompts() {{ window._updatePrompts && window._updatePrompts(); }}
 
-// ─── Terminal Tab ──────────────────────────────────────────────────────────────
-function _loadTerminalsTab() {{
-  if (!_isAdmin) return;
-  fetch('/api/terminals', {{headers: _authHeaders()}})
-    .then(r => r.ok ? r.json() : [])
-    .then(panes => {{
-      const mine = panes.filter(p => p.project_id === PROJECT_ID);
-      const list = document.getElementById('term-pane-list');
-      if (!mine.length) {{
-        list.innerHTML = '';
-        document.getElementById('term-output').innerHTML =
-          '<div class="term-empty"><div>⬛</div><div>暂无与本项目关联的活跃终端</div></div>';
-        document.getElementById('term-titlebar').style.display = 'none';
-        document.getElementById('term-inputbar').style.display = 'none';
-        _termCurrentTarget = null;
-        return;
-      }}
-      list.innerHTML = mine.map(p => `
-        <div class="term-pane-row${{p.target === _termCurrentTarget ? ' active' : ''}}"
-             data-target="${{escHtml(p.target)}}"
-             data-cmd="${{escHtml(p.command || '')}}">
-          <div class="term-pane-dot ${{p.waiting ? 'waiting' : 'running'}}"></div>
-          <div>
-            <div class="term-pane-name">${{escHtml(p.target)}}</div>
-            <div class="term-pane-cmd">${{escHtml(p.command || '')}}</div>
-          </div>
-        </div>`).join('');
-      list.querySelectorAll('.term-pane-row').forEach(row => {{
-        row.addEventListener('click', () =>
-          _selectTermPane(row.dataset.target, row.dataset.cmd));
-      }});
-      const _activeTargets = new Set(mine.map(p => p.target));
-      if (_termCurrentTarget && !_activeTargets.has(_termCurrentTarget)) {{
-        _termCurrentTarget = null;
-      }}
-      if (!_termCurrentTarget && mine.length) {{
-        _selectTermPane(mine[0].target, mine[0].command || '');
-      }}
-    }})
-    .catch(() => {{}});
-}}
-
-function _selectTermPane(target, cmd) {{
-  _termCurrentTarget = target;
-  document.getElementById('term-title').textContent = target + (cmd ? '  ·  ' + cmd : '');
-  document.getElementById('term-titlebar').style.display = '';
-  document.getElementById('term-inputbar').style.display = '';
-  document.querySelectorAll('.term-pane-row').forEach(r =>
-    r.classList.toggle('active', r.dataset.target === target));
-  _fetchTermOutput();
-}}
-
-function _fetchTermOutput() {{
-  if (!_termCurrentTarget) return;
-  fetch(`/api/terminals/${{encodeURIComponent(_termCurrentTarget)}}/output?lines=200`,
-    {{headers: _authHeaders()}})
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {{
-      if (!data) return;
-      const el = document.getElementById('term-output');
-      const html = _renderOutput(data.output || '');
-      el.innerHTML = html || '<div style="padding:40px 16px;text-align:center;color:var(--muted);font-size:12px">等待输出…</div>';
-      el.scrollTop = el.scrollHeight;
-    }})
-    .catch(() => {{}});
-}}
-
-function _termSend(keys) {{
-  if (!_termCurrentTarget) return;
-  fetch(`/api/terminals/${{encodeURIComponent(_termCurrentTarget)}}/send`, {{
-    method: 'POST',
-    headers: _authHeaders({{'Content-Type': 'application/json'}}),
-    body: JSON.stringify({{keys}})
-  }}).catch(() => {{}});
-}}
-
-document.getElementById('btn-term-ctrlc').addEventListener('click', () => _termSend('C-c'));
-document.getElementById('btn-term-enter').addEventListener('click', () => _termSend('\\n'));
-
-(function() {{
-  const inp = document.getElementById('term-input');
-  const sendFn = () => {{
-    const v = inp.value.trim();
-    if (!v) return;
-    _termSend(v + '\\n');
-    inp.value = '';
-  }};
-  document.getElementById('term-send-btn').addEventListener('click', sendFn);
-}})();
 
 async function reload() {{
-  summaryLoaded = false; overviewLoaded = false; designLoaded = false; promptsLoaded = false;
+  summaryLoaded = false; designLoaded = false; promptsLoaded = false;
   document.getElementById('panel-summary').innerHTML  = '<div class="loading"><div class="spinner"></div>加载中...</div>';
-  document.getElementById('panel-overview').innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
   document.getElementById('panel-design').innerHTML   = '<div class="loading"><div class="spinner"></div>加载中...</div>';
   document.getElementById('panel-prompts').innerHTML  = '';
   await init();
@@ -1371,8 +1299,7 @@ async function init() {{
   }} catch(e) {{ /* non-fatal */ }}
 
   renderSummary();
-  if (activeTab === 'overview') loadOverview();
-  if (activeTab === 'design')   renderDesign();
+  showTab(activeTab);
 }}
 
 _initAuth().then(() => init());
