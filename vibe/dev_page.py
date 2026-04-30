@@ -119,7 +119,7 @@ def render_dev_page() -> str:
     flex: 1; position: relative; min-height: 0; overflow: hidden;
   }
   #ttyd-frame {
-    border: none; display: none; background: #0d1117;
+    border: none; display: none; background: var(--bg);
     width: 100%; max-width: 100%; height: 100%;
     overflow: hidden;
   }
@@ -185,6 +185,8 @@ def render_dev_page() -> str:
 
   /* ── Mobile detail header (replaces topbar when a pane is open) ── */
   .term-detail-header { display: none; }
+  .pane-switcher { display: none; }
+  .term-switch-btn { display: none; }
 
   /* ── Mobile input bar (hidden on desktop) ── */
   .mobile-input-bar { display: none; }
@@ -250,7 +252,7 @@ def render_dev_page() -> str:
     /* Mobile terminal text output (WebSocket-fed, ANSI-colored) */
     .mobile-term-output.visible {
       display: block; flex: 1; min-height: 0;
-      background: #0d1117; color: #abb2bf;
+      background: var(--bg); color: var(--text);
       font-family: var(--mono); font-size: 12px; line-height: 1.4;
       padding: 6px 8px; margin: 0;
       overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -303,7 +305,105 @@ def render_dev_page() -> str:
     }
     .mobile-send-btn:active { opacity: .7; }
     .mobile-send-btn:disabled { opacity: .3; }
+    /* ── Pane switcher (mobile detail header) ── */
+    .term-switch-btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--sub); font-size: 16px;
+      width: 32px; height: 32px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+      transition: color .12s, border-color .12s;
+    }
+    .term-switch-btn:active { color: var(--accent); border-color: var(--accent); }
+    .pane-switcher {
+      display: none; flex-direction: column;
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      z-index: 210;
+    }
+    .pane-switcher.open { display: flex; }
+    .pane-switcher-item {
+      padding: 12px 16px; cursor: pointer;
+      border-bottom: 1px solid rgba(255,255,255,.04);
+      transition: background .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pane-switcher-item:active { background: rgba(var(--accent-rgb),.1); }
+    .pane-switcher-item.current { background: rgba(var(--accent-rgb),.08); }
+    .pane-switcher-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .pane-switcher-sub { font-size: 11px; color: var(--sub); margin-top: 2px; }
+    .pane-switcher-dot {
+      display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .mobile-attach-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      color: var(--sub); font-size: 18px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: color .12s, border-color .12s;
+    }
+    .mobile-attach-btn:active { color: var(--accent); border-color: var(--accent); }
   }
+
+  /* ── Desktop term toolbar (above iframe) ── */
+  .term-toolbar {
+    display: none; align-items: center; gap: 8px;
+    padding: 4px 12px; background: var(--panel);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .term-toolbar.visible { display: flex; }
+  .term-toolbar-btn {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--sub); font-family: var(--mono); font-size: 12px;
+    padding: 3px 10px; cursor: pointer; transition: color .12s, border-color .12s;
+  }
+  .term-toolbar-btn:hover { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 900px) {
+    .term-toolbar { display: none !important; }
+  }
+
+  /* ── Toast notification ── */
+  #dev-toast {
+    position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 8px 16px; border-radius: 8px; z-index: 600;
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+    box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  }
+  #dev-toast.show { opacity: 1; pointer-events: auto; }
+
+  /* ── Upload confirm popup (desktop) ── */
+  .upload-confirm {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; z-index: 500;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4); min-width: 300px;
+    font-family: var(--mono);
+  }
+  .upload-confirm-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .upload-confirm-path {
+    font-size: 12px; color: var(--green); background: rgba(255,255,255,.04);
+    padding: 6px 10px; border-radius: 6px; word-break: break-all; margin-bottom: 14px;
+  }
+  .upload-confirm-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .upload-confirm-btns button {
+    background: none; border: 1px solid var(--border); color: var(--sub);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-family: var(--mono); transition: all .12s;
+  }
+  .upload-confirm-btns button:hover { border-color: var(--accent); color: var(--accent); }
+  .upload-confirm-btns button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .upload-confirm-overlay {
+    position: fixed; inset: 0; z-index: 499;
+    background: rgba(0,0,0,.4); backdrop-filter: blur(2px);
+  }
+
+  /* ── Prompt line highlight (Phase 3) ── */
+  .term-line-prompt { background: rgba(var(--accent-rgb), 0.04); display: block; }
 """
 
     page_js = r"""
@@ -619,6 +719,9 @@ async function _copyTmuxBuffer() {
 
 function showTerminal() {
   document.getElementById('term-placeholder').style.display = 'none';
+  // Show desktop toolbar
+  var toolbar = document.getElementById('term-toolbar');
+  if (toolbar) toolbar.classList.add('visible');
 
   if (_isMobile) {
     // Mobile: show ANSI-rendered output + start WebSocket stream
@@ -650,6 +753,10 @@ function showTerminal() {
 function showPlaceholder() {
   document.getElementById('ttyd-frame').classList.remove('visible');
   document.getElementById('mobile-term-output').classList.remove('visible');
+  var toolbar = document.getElementById('term-toolbar');
+  if (toolbar) toolbar.classList.remove('visible');
+  var switcher = document.getElementById('pane-switcher');
+  if (switcher) switcher.classList.remove('open');
   _disconnectTermWs();
   document.getElementById('term-placeholder').style.display = '';
   document.getElementById('dev-page').classList.remove('detail-open');
@@ -751,8 +858,10 @@ var _SPECIAL_KEYS = {
 
 // ── ANSI-to-HTML converter (supports 16/256/truecolor + bold) ────────────────
 var _ANSI16 = [
-  '#1a1a2e','#e06c75','#98c379','#e5c07b','#61afef','#c678dd','#56b6c2','#abb2bf',
-  '#5c6370','#f47067','#8ae234','#fce94f','#729fcf','#d4a0e8','#34e2e2','#ffffff'
+  'var(--ansi-0)','var(--ansi-1)','var(--ansi-2)','var(--ansi-3)',
+  'var(--ansi-4)','var(--ansi-5)','var(--ansi-6)','var(--ansi-7)',
+  'var(--ansi-8)','var(--ansi-9)','var(--ansi-10)','var(--ansi-11)',
+  'var(--ansi-12)','var(--ansi-13)','var(--ansi-14)','var(--ansi-15)'
 ];
 function _ansi256(n) {
   if (n < 16) return _ANSI16[n];
@@ -805,6 +914,14 @@ function _ansiToHtml(raw) {
       }
     }
   }
+  // Phase 3: highlight prompt lines (lines ending with $, %, >, ❯)
+  html = html.split('\n').map(function(line) {
+    var stripped = line.replace(/<[^>]*>/g, '').trim();
+    if (/[$%>❯]\s*$/.test(stripped) && stripped.length > 0) {
+      return '<span class="term-line-prompt">' + line + '</span>';
+    }
+    return line;
+  }).join('\n');
   return html;
 }
 
@@ -1018,6 +1135,151 @@ function _navigateHistory(dir) {
   input.value = _cmdHistory[_historyIdx];
 }
 
+// ── Mobile pane switcher ──────────────────────────────────────────────────────
+async function _togglePaneSwitcher() {
+  var panel = document.getElementById('pane-switcher');
+  if (!panel) return;
+  if (panel.classList.contains('open')) {
+    panel.classList.remove('open');
+    return;
+  }
+  // Build list from current pane data
+  try {
+    var res = await fetch('/api/dev/panes', { headers: _authHeaders() });
+    if (!res.ok) return;
+    var panes = await res.json();
+    var html = '';
+    for (var i = 0; i < panes.length; i++) {
+      var p = panes[i];
+      var isCurrent = (_currentTarget === p.target);
+      var st = _paneState[p.target] || 'inactive';
+      var dotColor = { idle:'var(--green)', running:'var(--green)', confirm:'var(--orange)', error:'var(--red)', done:'var(--green)' }[st] || 'var(--border)';
+      html += '<div class="pane-switcher-item' + (isCurrent ? ' current' : '') + '"'
+        + ' data-target="' + escHtml(p.target) + '"'
+        + ' data-cmd="' + escHtml(p.command || '') + '">'
+        + '<div class="pane-switcher-name">'
+        + '<span class="pane-switcher-dot" style="background:' + dotColor + '"></span>'
+        + escHtml(p.label || p.target) + '</div>'
+        + '<div class="pane-switcher-sub">' + escHtml(p.project_name || p.command || '') + '</div>'
+        + '</div>';
+    }
+    panel.innerHTML = html;
+    panel.querySelectorAll('.pane-switcher-item').forEach(function(el) {
+      el.addEventListener('click', function() {
+        panel.classList.remove('open');
+        selectPane(el.dataset.target, el.dataset.cmd);
+      });
+    });
+    panel.classList.add('open');
+  } catch(e) { console.warn('pane switcher:', e); }
+}
+
+// ── Toast notification ────────────────────────────────────────────────────────
+var _toastTimer = null;
+function _showToast(msg, duration) {
+  var el = document.getElementById('dev-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration || 3000);
+}
+
+// ── Image upload ─────────────────────────────────────────────────────────────
+async function _uploadImage(file) {
+  if (!file) return;
+  _showToast('上传中…', 10000);
+  var fd = new FormData();
+  fd.append('file', file);
+  try {
+    var res = await fetch('/api/upload/image', {
+      method: 'POST',
+      headers: _authHeaders(),
+      body: fd
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    var path = data.path || data.url || '';
+    _showToast('图片已上传: ' + path, 4000);
+    if (_isMobile) {
+      // Mobile: insert path into textarea
+      var input = document.getElementById('mobile-cmd-input');
+      if (input) {
+        input.value = (input.value ? input.value + ' ' : '') + path;
+        input.focus();
+      }
+    } else {
+      // Desktop: show confirm popup to send path to terminal
+      _showUploadConfirm(path);
+    }
+  } catch(e) {
+    _showToast('上传失败: ' + e.message, 4000);
+  }
+}
+
+function _showUploadConfirm(path) {
+  // Remove existing
+  var old = document.getElementById('upload-confirm-overlay');
+  if (old) old.remove();
+  old = document.getElementById('upload-confirm-popup');
+  if (old) old.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'upload-confirm-overlay';
+  overlay.className = 'upload-confirm-overlay';
+  overlay.onclick = function() { overlay.remove(); popup.remove(); };
+
+  var popup = document.createElement('div');
+  popup.id = 'upload-confirm-popup';
+  popup.className = 'upload-confirm';
+  popup.innerHTML = '<div class="upload-confirm-title">图片已上传</div>'
+    + '<div class="upload-confirm-path">' + escHtml(path) + '</div>'
+    + '<div class="upload-confirm-btns">'
+    + '<button onclick="document.getElementById(\'upload-confirm-overlay\').click()">关闭</button>'
+    + '<button class="primary" id="upload-send-btn">发送到终端</button>'
+    + '</div>';
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(popup);
+
+  document.getElementById('upload-send-btn').onclick = function() {
+    _sendToTerminal(path);
+    overlay.remove();
+    popup.remove();
+    _showToast('路径已发送到终端', 2000);
+  };
+}
+
+// File input handlers
+function _initUpload() {
+  var mobileInput = document.getElementById('mobile-file-input');
+  if (mobileInput) {
+    mobileInput.addEventListener('change', function() {
+      if (this.files && this.files[0]) _uploadImage(this.files[0]);
+      this.value = '';
+    });
+  }
+  var desktopInput = document.getElementById('desktop-file-input');
+  if (desktopInput) {
+    desktopInput.addEventListener('change', function() {
+      if (this.files && this.files[0]) _uploadImage(this.files[0]);
+      this.value = '';
+    });
+  }
+
+  // Global paste interception (capture image paste before iframe gets it)
+  document.addEventListener('paste', function(e) {
+    var items = e.clipboardData && e.clipboardData.items;
+    for (var i = 0; items && i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        e.preventDefault();
+        _uploadImage(items[i].getAsFile());
+        return;
+      }
+    }
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   await _initAuth();
@@ -1030,8 +1292,9 @@ async function init() {
     if (e.target.closest('.term-pane-kill')) return;
     selectPane(row.dataset.target, row.dataset.cmd);
   });
-  // Init mobile input bar
+  // Init mobile input bar + upload handlers
   _initMobileInput();
+  _initUpload();
   // ttyd iframe is loaded lazily on first pane click (avoids basic-auth dialog on page load)
   await loadPanes();
   setInterval(loadPanes, 5000);
@@ -1074,10 +1337,18 @@ init();
     <div class="term-detail-header" id="term-detail-header">
       <button class="term-detail-back" onclick="showPlaceholder()" title="返回列表">← 列表</button>
       <span class="term-detail-title" id="term-detail-title">终端</span>
+      <button class="term-switch-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>
     </div>
+    <!-- Mobile pane switcher dropdown -->
+    <div class="pane-switcher" id="pane-switcher"></div>
     <div id="term-placeholder" class="term-placeholder">
       <div>从左侧选择一个项目，或者：</div>
       <button class="term-placeholder-btn" onclick="openNewTermDialog()">+ 新建终端窗口</button>
+    </div>
+    <!-- Desktop toolbar (above iframe, visible when pane selected) -->
+    <div class="term-toolbar" id="term-toolbar">
+      <label class="term-toolbar-btn" for="desktop-file-input">📎 上传图片</label>
+      <input type="file" id="desktop-file-input" accept="image/*" style="display:none">
     </div>
     <div class="term-iframe-wrap" id="term-iframe-wrap">
       <div class="term-touch-overlay" id="term-touch-overlay"></div>
@@ -1104,6 +1375,8 @@ init();
         <button class="mobile-key-btn" data-scroll="page-down">PgDn</button>
       </div>
       <div class="mobile-input-row">
+        <label class="mobile-attach-btn" for="mobile-file-input" title="上传图片">📎</label>
+        <input type="file" id="mobile-file-input" accept="image/*" style="display:none">
         <textarea class="mobile-cmd-input" id="mobile-cmd-input" rows="1"
           placeholder="输入命令…" autocomplete="off" autocorrect="off"
           autocapitalize="off" spellcheck="false" enterkeyhint="send"></textarea>
@@ -1123,6 +1396,9 @@ init();
     <div class="new-term-dialog-list" id="new-term-list"></div>
   </div>
 </div>
+
+<!-- Toast notification -->
+<div id="dev-toast"></div>
 
 """
         + settings_overlay_html() + "\n\n"
