@@ -73,15 +73,60 @@
 }
 .skin-preview div { height: 100%; }
 .skin-name { font-size: 11px; color: var(--text-sec, var(--sub)); text-align: center; }
+
+/* Remote hosts */
+.rhost-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.rhost-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; background: var(--card-deep, var(--bg));
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.rhost-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.rhost-dot.online { background: var(--green, #22c55e); box-shadow: 0 0 5px var(--green, #22c55e); }
+.rhost-dot.offline { background: var(--text-muted, #64748b); }
+.rhost-dot.unknown { background: var(--border); }
+.rhost-info { flex: 1; min-width: 0; }
+.rhost-alias { font-size: 12px; font-weight: 600; color: var(--text); }
+.rhost-url { font-size: 10px; color: var(--text-muted, var(--muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rhost-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.rhost-btn {
+  background: none; border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text-muted, var(--muted)); cursor: pointer; padding: 2px 8px;
+  font-size: 11px; transition: all .12s;
+}
+.rhost-btn:hover { border-color: var(--accent); color: var(--accent); }
+.rhost-btn.danger:hover { border-color: var(--red, #ef4444); color: var(--red, #ef4444); }
+.rhost-add-form { display: flex; flex-direction: column; gap: 8px; }
+.rhost-add-row { display: flex; gap: 6px; }
+.rhost-add-row .settings-input { flex: 1; font-size: 12px; padding: 6px 8px; }
+.rhost-guide {
+  margin-top: 12px; padding: 12px; background: var(--card-deep, var(--bg));
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 11px; color: var(--text-sec, var(--sub)); line-height: 1.6;
+}
+.rhost-guide summary {
+  font-weight: 600; color: var(--text); cursor: pointer; font-size: 12px;
+  margin-bottom: 6px;
+}
+.rhost-guide code {
+  background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 3px;
+  font-family: var(--font-mono, var(--mono)); font-size: 11px;
+}
+.rhost-guide h4 { color: var(--accent); font-size: 11px; margin: 8px 0 4px; font-weight: 600; }
 `;
   document.head.appendChild(style);
 })();
 
-/* ── Escape helper ─────────────────────────────────────────────────────────── */
+/* ── Escape helpers ────────────────────────────────────────────────────────── */
 function _escSettings(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+function _escAttr(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 /* ── Skin system ───────────────────────────────────────────────────────────── */
@@ -155,6 +200,7 @@ function initSettings() {
     <div class="settings-tabs">
       <button class="settings-tab active" onclick="switchSettingsTab('appearance',this)">外观</button>
       <button class="settings-tab" onclick="switchSettingsTab('api',this)">API</button>
+      <button class="settings-tab" onclick="switchSettingsTab('hosts',this)">远程主机</button>
       <button class="settings-tab" onclick="switchSettingsTab('security',this)">安全</button>
     </div>
 
@@ -206,6 +252,52 @@ function initSettings() {
       </div>
     </div>
 
+    <!-- 远程主机 tab -->
+    <div class="settings-tab-panel" id="settings-panel-hosts">
+      <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">已连接主机</div>
+        <div class="rhost-list" id="rhost-list">
+          <div style="font-size:11px;color:var(--text-muted)">加载中...</div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">添加主机</div>
+        <div class="rhost-add-form">
+          <div class="rhost-add-row">
+            <input class="settings-input" id="rhost-add-alias" placeholder="别名（如 macbook-pro）" autocomplete="off">
+          </div>
+          <div class="rhost-add-row">
+            <input class="settings-input" id="rhost-add-url" placeholder="地址（如 http://100.64.0.2:8888）" autocomplete="off">
+          </div>
+          <div class="rhost-add-row">
+            <input class="settings-input" id="rhost-add-password" type="password" placeholder="管理员密码（选填）" autocomplete="off">
+            <button class="rhost-btn" onclick="_addRemoteHost()" style="white-space:nowrap">+ 添加</button>
+          </div>
+        </div>
+      </div>
+      <details class="rhost-guide">
+        <summary>如何添加一台新主机？</summary>
+        <h4>macOS</h4>
+        1. 在目标 Mac 上安装 Mira（<code>pip install -e .</code> 或 clone 代码）<br>
+        2. 启动服务，监听所有接口：<br>
+        <code>cd ~/GitHub/mira && vibe serve --host 0.0.0.0</code><br>
+        3. 获取 Tailscale IP：<code>tailscale ip -4</code><br>
+        4. 在上方填入别名、地址（http://IP:8888）和密码<br>
+        <h4>Windows</h4>
+        1. 安装 Python 3.10+ 和 Git<br>
+        2. 克隆 Mira：<code>git clone https://github.com/user/mira.git</code><br>
+        3. 安装依赖：<code>pip install -e .</code><br>
+        4. 启动服务：<code>vibe serve --host 0.0.0.0</code><br>
+        5. 获取 Tailscale IP：<code>tailscale ip -4</code><br>
+        6. Windows 防火墙需放行端口 8888<br>
+        <h4>Linux</h4>
+        步骤同 macOS。如有防火墙：<code>sudo ufw allow 8888/tcp</code><br>
+        <h4>网络要求</h4>
+        所有主机需在同一 Tailscale 网络（或局域网）中。<br>
+        确保目标主机的 Mira 使用 <code>--host 0.0.0.0</code> 启动，否则仅监听 localhost。
+      </details>
+    </div>
+
     <!-- 安全 tab -->
     <div class="settings-tab-panel" id="settings-panel-security">
       <div class="settings-group">
@@ -255,13 +347,14 @@ async function openSettings() {
   if (sel) {
     const current = data.notification_sound || 'Pop';
     sel.innerHTML = '<option value="off">关闭</option>' +
-      (soundData.sounds || []).map(s => `<option value="${s}"${s === current ? ' selected' : ''}>${_escSettings(s)}</option>`).join('');
+      (soundData.sounds || []).map(s => `<option value="${_escAttr(s)}"${s === current ? ' selected' : ''}>${_escSettings(s)}</option>`).join('');
   }
   // Logout button
   const logoutBtn = document.getElementById('settings-logout-btn');
   if (logoutBtn) logoutBtn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
 
   _renderSettingsSkins();
+  _loadRemoteHosts();
   // Reset to first tab
   switchSettingsTab('appearance', document.querySelector('.settings-tab'));
   document.getElementById('settings-overlay').classList.add('open');
@@ -291,4 +384,99 @@ async function saveSettings() {
   closeSettings();
   // Reload balance if available (homepage)
   if (typeof loadBalance === 'function') loadBalance(true);
+}
+
+/* ── Remote Hosts Management ──────────────────────────────────────────────── */
+
+async function _loadRemoteHosts() {
+  const list = document.getElementById('rhost-list');
+  if (!list) return;
+  try {
+    const res = await fetch('/api/settings/remote-hosts', { headers: _authHeaders() });
+    if (!res.ok) { list.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">加载失败</div>'; return; }
+    const data = await res.json();
+    const hosts = data.hosts || [];
+    if (!hosts.length) {
+      list.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">尚未添加远程主机</div>';
+      return;
+    }
+    list.innerHTML = hosts.map(h => {
+      const dotCls = h.online === true ? 'online' : h.online === false ? 'offline' : 'unknown';
+      const statusText = h.online === true ? '在线' : h.online === false ? '离线' : '未知';
+      return `<div class="rhost-item">
+        <span class="rhost-dot ${dotCls}" title="${statusText}"></span>
+        <div class="rhost-info">
+          <div class="rhost-alias">${_escSettings(h.alias)}</div>
+          <div class="rhost-url">${_escSettings(h.url)} ${h.has_password ? '🔒' : ''}</div>
+        </div>
+        <div class="rhost-actions">
+          <button class="rhost-btn" data-alias="${_escAttr(h.alias)}" onclick="_testRemoteHost(this.dataset.alias, this)">测试</button>
+          <button class="rhost-btn danger" data-alias="${_escAttr(h.alias)}" onclick="_removeRemoteHost(this.dataset.alias)">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--red)">加载失败: ' + _escSettings(e.message) + '</div>';
+  }
+}
+
+async function _addRemoteHost() {
+  const alias = document.getElementById('rhost-add-alias').value.trim();
+  const url = document.getElementById('rhost-add-url').value.trim();
+  const password = document.getElementById('rhost-add-password').value.trim();
+  if (!alias || !url) { alert('请填写别名和地址'); return; }
+  if (alias.includes(':')) { alert('别名不能包含冒号'); return; }
+  try {
+    const res = await fetch('/api/settings/remote-hosts', {
+      method: 'POST',
+      headers: _authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ alias, url, admin_password: password }),
+    });
+    if (!res.ok) { const e = await res.json(); alert(e.detail || '添加失败'); return; }
+    document.getElementById('rhost-add-alias').value = '';
+    document.getElementById('rhost-add-url').value = '';
+    document.getElementById('rhost-add-password').value = '';
+    _loadRemoteHosts();
+  } catch (e) {
+    alert('添加失败: ' + e.message);
+  }
+}
+
+async function _removeRemoteHost(alias) {
+  if (!confirm('确认删除远程主机 "' + alias + '"？')) return;
+  try {
+    await fetch('/api/settings/remote-hosts/' + encodeURIComponent(alias), {
+      method: 'DELETE', headers: _authHeaders(),
+    });
+    _loadRemoteHosts();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function _testRemoteHost(alias, btn) {
+  const origText = btn.textContent;
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/settings/remote-hosts/' + encodeURIComponent(alias) + '/test', {
+      method: 'POST', headers: _authHeaders(),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = '✓ ' + data.project_count + ' 项目';
+      btn.style.color = 'var(--green, #22c55e)';
+      btn.style.borderColor = 'var(--green, #22c55e)';
+    } else {
+      btn.textContent = '✗ 离线';
+      btn.style.color = 'var(--red, #ef4444)';
+      btn.style.borderColor = 'var(--red, #ef4444)';
+    }
+    setTimeout(() => { btn.textContent = origText; btn.style.color = ''; btn.style.borderColor = ''; btn.disabled = false; }, 3000);
+    _loadRemoteHosts();
+  } catch (e) {
+    btn.textContent = '✗ 错误';
+    btn.style.color = 'var(--red, #ef4444)';
+    setTimeout(() => { btn.textContent = origText; btn.style.color = ''; btn.style.borderColor = ''; btn.disabled = false; }, 3000);
+  }
 }

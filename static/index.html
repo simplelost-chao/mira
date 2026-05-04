@@ -497,6 +497,38 @@ body {
   }
 }
 
+/* ── Remote host badge on card ─────────────────────────── */
+.card-host-badge {
+  font-size: 9px; padding: 1px 6px; border-radius: 6px;
+  background: rgba(var(--accent-rgb),.15); color: var(--accent-light);
+  white-space: nowrap; flex-shrink: 0; line-height: 14px; font-weight: 600;
+}
+.project-card.card-offline {
+  opacity: 0.5; pointer-events: auto;
+}
+.project-card.card-offline .card-host-badge {
+  background: rgba(255,255,255,.06); color: var(--text-muted);
+}
+.card-offline-label {
+  font-size: 9px; color: var(--red); font-weight: 600; margin-left: 4px;
+}
+
+/* ── Host filter bar ──────────────────────────────────── */
+.host-filter-bar {
+  display: flex; gap: 6px; padding: 0 24px 12px; flex-wrap: wrap;
+}
+.host-filter-btn {
+  font-size: 11px; padding: 3px 10px; border-radius: 12px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-sec); cursor: pointer; transition: all .15s;
+  font-family: var(--font-ui);
+}
+.host-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.host-filter-btn.active {
+  background: rgba(var(--accent-rgb),.15); border-color: var(--accent);
+  color: var(--accent-light); font-weight: 600;
+}
+
 /* ── C1 card layout ─────────────────────────────────────── */
 .card-domain {
   margin: 10px 14px 0; padding: 8px 11px; border-radius: 7px;
@@ -1897,6 +1929,7 @@ body {
     <button class="filter-btn" id="filter-done" onclick="setFilter('done', this)">Done <span class="filter-count" id="count-done">0</span></button>
     <button class="filter-btn" id="filter-trash" onclick="setFilter('trash', this)">Trash <span class="filter-count" id="count-trash">0</span></button>
   </div>
+  <div class="host-filter-bar" id="host-filter-bar" style="display:none"></div>
   <div class="project-grid" id="project-grid">
     <div class="loading-state">加载中...</div>
   </div>
@@ -1974,6 +2007,7 @@ body {
 let allProjects = [];
 let allBaseServices = [];
 let currentFilter = 'active';
+let currentHostFilter = null;  // null = 全部, 'local' = 本机, alias = 远程主机
 let currentProject = null;
 let currentDocIdx = 0;
 let currentModalTab = 'overview';
@@ -2087,7 +2121,8 @@ function escHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function simpleMarkdown(md) {
@@ -2250,6 +2285,7 @@ async function loadProjects() {
     const res = await fetch('/api/projects', {headers: _authHeaders()});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     allProjects = await res.json();
+    renderHostFilterBar();
     renderCards();
     renderGlobal();
     loadTrending('weekly', document.querySelector('.trend-tab[data-period="weekly"]'));
@@ -2285,6 +2321,31 @@ function setFilter(status, btn) {
   renderCards();
 }
 
+// ─── Host filter bar ──────────────────────────────────────────────────────────
+function renderHostFilterBar() {
+  const hosts = new Set();
+  let hasRemote = false;
+  for (const p of allProjects) {
+    if (p._host) { hosts.add(p._host); hasRemote = true; }
+  }
+  const bar = document.getElementById('host-filter-bar');
+  if (!hasRemote) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  let html = `<button class="host-filter-btn${!currentHostFilter ? ' active' : ''}" onclick="setHostFilter(null, this)">全部</button>`;
+  html += `<button class="host-filter-btn${currentHostFilter === 'local' ? ' active' : ''}" data-host="local" onclick="setHostFilter(this.dataset.host, this)">本机</button>`;
+  for (const alias of [...hosts].sort()) {
+    html += `<button class="host-filter-btn${currentHostFilter === alias ? ' active' : ''}" data-host="${escHtml(alias)}" onclick="setHostFilter(this.dataset.host, this)">${escHtml(alias)}</button>`;
+  }
+  bar.innerHTML = html;
+}
+
+function setHostFilter(host, btn) {
+  currentHostFilter = host;
+  document.querySelectorAll('.host-filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderCards();
+}
+
 // ─── Card Rendering ───────────────────────────────────────────────────────────
 function renderCards() {
   let filtered;
@@ -2292,6 +2353,13 @@ function renderCards() {
     filtered = allProjects.filter(p => (p.status || 'active') !== 'trash');
   } else {
     filtered = allProjects.filter(p => (p.status || 'active') === currentFilter);
+  }
+
+  // Host filter
+  if (currentHostFilter === 'local') {
+    filtered = filtered.filter(p => !p._host);
+  } else if (currentHostFilter) {
+    filtered = filtered.filter(p => p._host === currentHostFilter);
   }
 
   // Sort by most recent claude session (descending). Projects never touched
@@ -2467,7 +2535,12 @@ function renderCard(p) {
       <div class="card-footer-row">${tagSpans}${moreTag}${llmTags ? '<span style="flex:1"></span>' + llmTags : ''}</div>
     </div>`;
 
-  const cardClass = isRunning ? ' card-running' : isDown ? ' card-down' : '';
+  const isRemote = !!p._host;
+  const isOffline = isRemote && p._host_online === false;
+  const cardClass = (isRunning ? ' card-running' : isDown ? ' card-down' : '') + (isOffline ? ' card-offline' : '');
+  const hostBadge = isRemote
+    ? `<span class="card-host-badge">${escHtml(p._host)}${isOffline ? '<span class="card-offline-label">离线</span>' : ''}</span>`
+    : '';
   return `<div class="project-card${cardClass}" data-project-id="${escHtml(p.id)}">
     <div class="card-header">
       ${isRunning
@@ -2476,6 +2549,7 @@ function renderCard(p) {
           ? `<span style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;animation:pulse-red 1.5s infinite"></span>`
           : `<span style="width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0"></span>`}
       <span class="card-name">${escHtml(p.name)}</span>
+      ${hostBadge}
       ${statusDropdown(p.id, p.status || 'active')}
       <a class="card-dev-btn" href="/dev?project=${encodeURIComponent(p.id)}" target="_blank"
          onclick="event.stopPropagation()"

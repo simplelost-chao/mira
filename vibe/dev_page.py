@@ -104,6 +104,16 @@ def render_dev_page() -> str:
   .term-group-body.collapsed { display: none; }
   .term-group-body .term-pane-row { padding-left: 26px; }
 
+  /* ── Remote host badge ── */
+  .term-host-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 6px;
+    background: rgba(var(--accent-rgb),.15); color: var(--accent);
+    white-space: nowrap; flex-shrink: 0; line-height: 14px;
+  }
+  .term-host-badge.offline {
+    background: rgba(255,255,255,.06); color: var(--muted);
+  }
+
   /* ── ttyd iframe ── */
   .term-main {
     flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
@@ -454,6 +464,7 @@ function escHtml(s) {
 let _currentTarget = null;
 const _paneState = {};
 const _groupCollapsed = {};  // project_id -> bool
+const _paneHostMap = {};     // target -> host alias (远程 pane 映射)
 const _filterProject = new URLSearchParams(location.search).get('project') || null;
 
 // ── State detection (for sidebar dots) ────────────────────────────────────────
@@ -542,6 +553,10 @@ async function loadPanes(forceRebuild) {
     if (res.status === 401) { openLoginModal(init); return; }
     if (!res.ok) return;
     const panes = await res.json();
+    // 更新远程 pane 映射
+    for (const p of panes) {
+      if (p._host) _paneHostMap[p.target] = p._host;
+    }
     const list = document.getElementById('term-pane-list');
     if (!panes.length) {
       list.innerHTML = `<div class="term-empty-sidebar">暂无活跃终端<br><br><code>mira term &lt;project&gt;</code><br>启动新会话</div>`;
@@ -583,6 +598,7 @@ async function loadPanes(forceRebuild) {
           <div class="term-pane-info">
             <div class="term-pane-name">
               <span class="term-pane-name-text">${escHtml(p.label || p.target)}</span>
+              ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
               <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation(); killPane(this);">×</span>
             </div>
             <div class="term-pane-sub">${escHtml(p.command || '')}</div>
@@ -1203,7 +1219,15 @@ async function _uploadImage(file) {
   var fd = new FormData();
   fd.append('file', file);
   try {
-    var res = await fetch('/api/upload/image', {
+    // 远程 pane → 带 host 参数转发到远程主机
+    var uploadUrl = '/api/upload/image';
+    var activeRow = document.querySelector('.term-pane-row.active');
+    if (activeRow) {
+      var target = activeRow.getAttribute('data-target') || '';
+      var hostMatch = _paneHostMap && _paneHostMap[target];
+      if (hostMatch) uploadUrl += '?host=' + encodeURIComponent(hostMatch);
+    }
+    var res = await fetch(uploadUrl, {
       method: 'POST',
       headers: _authHeaders(),
       body: fd

@@ -34,6 +34,7 @@ def load_global_config(config_path: Optional[Path] = None) -> dict:
         "base_services": data.get("base_services", []),
         "admin_password": data.get("admin_password"),
         "notification_sound": data.get("notification_sound", "Pop"),
+        "remote_hosts": data.get("remote_hosts", []),
     }
 
 
