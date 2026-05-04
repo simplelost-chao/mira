@@ -613,6 +613,14 @@ body {
 .card-spark15-bar.hi { background: var(--purple); opacity: .8; }
 .card-spark15-bar.hi:hover { opacity: 1; }
 
+.card-codex-mini {
+  margin: 4px 14px 0; padding: 5px 11px; border-radius: 7px;
+  background: rgba(34,197,94,.04); border: 1px solid rgba(34,197,94,.12);
+}
+.card-codex-meta { display: flex; align-items: center; gap: 10px; font-size: 10px; color: var(--text-muted); }
+.ccx-label { font-weight: 700; color: var(--green, #22c55e); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+.ccx-val { font-size: 10px; color: var(--text-sec); }
+
 .card-footer-new {
   padding: 9px 14px 13px; margin-top: 8px;
   border-top: 1px solid rgba(255,255,255,.04);
@@ -1616,6 +1624,8 @@ body {
 .sm-sbar { flex: 1; border-radius: 2px 2px 0 0; background: var(--card); min-height: 2px; }
 .sm-sbar.on { background: var(--accent-light); }
 .sm-sbar.hi { background: var(--purple); }
+.sm-sbar.codex.on { background: var(--green, #22c55e); }
+.sm-sbar.codex.hi { background: #16a34a; }
 .sm-todo-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .sm-todo { font-size: 11px; display: flex; align-items: flex-start; gap: 6px; }
 .sm-todo-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
@@ -2370,12 +2380,17 @@ function renderCards() {
     filtered = filtered.filter(p => p._host === currentHostFilter);
   }
 
-  // Sort by most recent claude session (descending). Projects never touched
-  // by claude land at the bottom (empty string sorts after any ISO timestamp).
+  // Sort by most recent AI session (Claude or Codex, descending).
   filtered.sort((a, b) => {
-    const ta = (a.claude_activity && a.claude_activity.last_session) || '';
-    const tb = (b.claude_activity && b.claude_activity.last_session) || '';
-    return tb.localeCompare(ta);
+    const ta = Math.max(
+      new Date((a.claude_activity && a.claude_activity.last_session) || 0).getTime(),
+      new Date((a.codex_activity && a.codex_activity.last_session) || 0).getTime()
+    );
+    const tb = Math.max(
+      new Date((b.claude_activity && b.claude_activity.last_session) || 0).getTime(),
+      new Date((b.codex_activity && b.codex_activity.last_session) || 0).getTime()
+    );
+    return tb - ta;
   });
 
   const grid = document.getElementById('project-grid');
@@ -2512,6 +2527,7 @@ function renderCard(p) {
     return `<span class="card-spark15-bar${cls}" style="height:${h}px" title="${v.toFixed(1)}h 活跃"></span>`;
   }).join('');
 
+  const cx = p.codex_activity;
   const fmtTok = t => t >= 1e9 ? (t/1e9).toFixed(1)+'B' : t >= 1e6 ? (t/1e6).toFixed(1)+'M' : t >= 1e3 ? (t/1e3).toFixed(0)+'k' : String(t);
   const claudeLastStr = (() => {
     if (!ca || !ca.last_session) return '—';
@@ -2529,6 +2545,23 @@ function renderCard(p) {
       </div>
       <div class="card-spark15">${spark15Bars}</div>
     </div>`;
+
+  // ── Codex mini block ──────────────────────────────────────
+  const codexLastStr = (() => {
+    if (!cx || !cx.last_session) return '';
+    const diffH = Math.floor((Date.now() - new Date(cx.last_session)) / 3600000);
+    const diffD = Math.floor(diffH / 24);
+    return diffH < 1 ? '刚刚' : diffH < 24 ? `${diffH}h前` : `${diffD}d前`;
+  })();
+  const codexMiniBlock = cx ? `
+    <div class="card-codex-mini">
+      <div class="card-codex-meta">
+        <span class="ccx-label">Codex</span>
+        <span class="ccx-val">${codexLastStr}</span>
+        <span class="ccx-val">${cx.total_tasks||0} 任务</span>
+        <span class="ccx-val">${cx.session_count_30d||0} 会话/30d</span>
+      </div>
+    </div>` : '';
 
   // ── Footer: row1=services, row2=tags ─────────────────────
   const svcPills = deps.map(s => {
@@ -2576,6 +2609,7 @@ function renderCard(p) {
     ${statGrid}
     ${gitSparkRow}
     ${claudeMiniBlock}
+    ${codexMiniBlock}
     ${footer}
   </div>`;
 }
@@ -2890,6 +2924,31 @@ function renderProjectSummary(p) {
     </div>`;
   }
 
+  // Codex card
+  const cx = p.codex_activity;
+  let codexCard = '';
+  if (cx) {
+    const cxSpark = cx.session_spark_15d || [];
+    const cxSparkMax = Math.max(...cxSpark, 0.1);
+    const cxSparkBars = cxSpark.map(v => {
+      const h = v === 0 ? 100 : Math.min(100, Math.max(15, Math.round((v / 12) * 100)));
+      const cls = v === 0 ? '' : (v >= 12 || v >= cxSparkMax * 0.7) ? ' hi' : ' on';
+      return `<span class="sm-sbar codex${cls}" style="height:${h}%"></span>`;
+    }).join('');
+    const avgDur = cx.avg_task_duration_sec || 0;
+    const durStr = avgDur >= 60 ? (avgDur/60).toFixed(1)+'m' : avgDur.toFixed(0)+'s';
+    codexCard = `<div class="sm-card codex">
+      <div class="sm-section-title" style="margin-bottom:10px">Codex</div>
+      <div class="sm-cl-grid">
+        <div class="sm-cl-stat"><div class="sm-cl-val">${cx.session_count_30d||0}</div><div class="sm-cl-lbl">30天会话</div></div>
+        <div class="sm-cl-stat"><div class="sm-cl-val">${cx.total_tasks||0}</div><div class="sm-cl-lbl">任务数</div></div>
+        <div class="sm-cl-stat"><div class="sm-cl-val">${durStr}</div><div class="sm-cl-lbl">平均耗时</div></div>
+        <div class="sm-cl-stat"><div class="sm-cl-val">${(cx.active_hours||0).toFixed(1)}h</div><div class="sm-cl-lbl">活跃时长</div></div>
+      </div>
+      <div class="sm-spark">${cxSparkBars}</div>
+    </div>`;
+  }
+
   const featCard = features.length ? `<div class="sm-card">
     <div class="sm-section-title" style="margin-bottom:10px">功能列表</div>
     <div class="sm-feat-list">${features.map(f => {
@@ -2903,7 +2962,7 @@ function renderProjectSummary(p) {
 
   el.innerHTML = kpiRow + `<div class="sm-cols">
     <div class="sm-col">${svcCard}${techCard}</div>
-    <div class="sm-col">${claudeCard}${featCard}</div>
+    <div class="sm-col">${claudeCard}${codexCard}${featCard}</div>
   </div>`;
 }
 

@@ -344,6 +344,8 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   .cl-bar {{ flex: 1; border-radius: 2px 2px 0 0; background: var(--border); min-height: 2px; }}
   .cl-bar.on {{ background: var(--accent); }}
   .cl-bar.hi {{ background: var(--purple); }}
+  .cl-bar.codex.on {{ background: var(--green, #22c55e); }}
+  .cl-bar.codex.hi {{ background: #16a34a; }}
   .cl-summary-text {{ font-size: 12px; color: var(--sub); line-height: 1.9; margin-top: 6px; }}
   .cl-summary-text b {{ color: var(--text); }}
   .cl-todos {{ display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }}
@@ -617,6 +619,7 @@ function simpleMarkdown(md) {{
     const el = document.getElementById('panel-summary');
     const p = projectData || {{}};
     const ca = p.claude_activity || null;
+    const cx = p.codex_activity || null;
     const svc = p.service || {{}};
     const deploy = p.deploy || {{}};
     const techStack = p.tech_stack || [];
@@ -682,7 +685,7 @@ function simpleMarkdown(md) {{
     html += `<div class="stats-bar">
       <div class="stats-cell"><div class="stats-val gold">${{git.monthly_commits ?? 0}}</div><div class="stats-lbl">本月提交</div></div>
       <div class="stats-cell"><div class="stats-val purple">${{ca ? (ca._masked ? '***' : '$' + (ca.estimated_cost_usd||0).toFixed(1)) : '—'}}</div><div class="stats-lbl">Claude 花费</div></div>
-      <div class="stats-cell"><div class="stats-val purple">${{ca ? (ca.session_count_30d||0) : '—'}}</div><div class="stats-lbl">30天会话</div></div>
+      <div class="stats-cell"><div class="stats-val purple">${{(ca ? (ca.session_count_30d||0) : 0) + (cx ? (cx.session_count_30d||0) : 0) || '—'}}</div><div class="stats-lbl">30天会话</div></div>
       <div class="stats-cell"><div class="stats-val">${{codeLinesStr}}</div><div class="stats-lbl">代码行</div></div>
       <div class="stats-cell"><div class="stats-val green">${{featPct !== null ? featPct+'%' : '—'}}</div><div class="stats-lbl">功能完成</div></div>
     </div>`;
@@ -722,6 +725,30 @@ function simpleMarkdown(md) {{
       </div>`;
     }} else {{
       html += `<div class="summary-card summary-card-empty">暂无 Claude 数据</div>`;
+    }}
+
+    // Codex card
+    if (cx) {{
+      const cxSpark = cx.session_spark_15d || [];
+      const cxSparkMax = Math.max(...cxSpark, 0.1);
+      const cxSparkBars = cxSpark.map(v => {{
+        const h = v === 0 ? 100 : Math.min(100, Math.max(15, Math.round((v/12)*100)));
+        const cls = v === 0 ? '' : (v >= 12 || v >= cxSparkMax*0.7) ? ' hi' : ' on';
+        return `<span class="cl-bar codex${{cls}}" style="height:${{h}}%" title="${{v.toFixed(1)}}h"></span>`;
+      }}).join('');
+
+      const avgDur = cx.avg_task_duration_sec || 0;
+      const durStr = avgDur >= 60 ? (avgDur/60).toFixed(1)+'m' : avgDur.toFixed(0)+'s';
+
+      html += `<div class="summary-card codex-card">
+        <div class="card-section-title">Codex</div>
+        <div class="card-stats">
+          <div><div class="card-stat-val green">${{cx.session_count_30d||0}}</div><div class="card-stat-lbl">30天会话</div></div>
+          <div><div class="card-stat-val green">${{cx.total_tasks||0}}</div><div class="card-stat-lbl">任务数</div></div>
+          <div><div class="card-stat-val green">${{durStr}}</div><div class="card-stat-lbl">平均耗时</div></div>
+        </div>
+        <div class="cl-spark">${{cxSparkBars}}</div>
+      </div>`;
     }}
 
     // Git card

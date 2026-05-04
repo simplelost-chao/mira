@@ -823,9 +823,15 @@ async function openNewTermDialog() {
     if (res.ok) {
       const projects = await res.json();
       projects.sort((a, b) => {
-        const ta = (a.claude_activity && a.claude_activity.last_session) || '';
-        const tb = (b.claude_activity && b.claude_activity.last_session) || '';
-        return tb.localeCompare(ta);
+        const ta = Math.max(
+          new Date((a.claude_activity && a.claude_activity.last_session) || 0).getTime(),
+          new Date((a.codex_activity && a.codex_activity.last_session) || 0).getTime()
+        );
+        const tb = Math.max(
+          new Date((b.claude_activity && b.claude_activity.last_session) || 0).getTime(),
+          new Date((b.codex_activity && b.codex_activity.last_session) || 0).getTime()
+        );
+        return tb - ta;
       });
       for (const p of projects) {
         if (!p.path) continue;
