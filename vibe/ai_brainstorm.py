@@ -136,13 +136,14 @@ def _slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
-def _make_vibe_yaml(name: str, description: str, port: int | None, domain: str | None) -> str:
-    lines = [f"name: {name}", f"description: {description}"]
-    if port:
-        lines.append(f"port: {port}")
-    if domain and domain.strip():
-        lines.append(f"domain: {domain.strip()}")
-    return "\n".join(lines) + "\n"
+def _make_vibe_yaml(name: str, description: str, port, domain) -> str:
+    import yaml
+    data: dict = {"name": name, "description": description}
+    if port is not None:
+        data["port"] = port
+    if domain is not None and domain.strip():
+        data["domain"] = domain.strip()
+    return yaml.dump(data, allow_unicode=True, default_flow_style=False)
 
 
 def _derive_favicon(logo_svg: str) -> str:
@@ -175,19 +176,23 @@ def create_project(
         raise FileExistsError(f"目录已存在: {proj_dir}")
 
     proj_dir.mkdir(parents=True)
+    try:
+        (proj_dir / "vibe.yaml").write_text(_make_vibe_yaml(name, description, port, domain), encoding="utf-8")
+        (proj_dir / "logo.svg").write_text(logo_svg, encoding="utf-8")
+        (proj_dir / "favicon.svg").write_text(_derive_favicon(logo_svg), encoding="utf-8")
 
-    (proj_dir / "vibe.yaml").write_text(_make_vibe_yaml(name, description, port, domain), encoding="utf-8")
-    (proj_dir / "logo.svg").write_text(logo_svg, encoding="utf-8")
-    (proj_dir / "favicon.svg").write_text(_derive_favicon(logo_svg), encoding="utf-8")
-
-    env = {**os.environ,
-           "GIT_AUTHOR_NAME": "Mira", "GIT_AUTHOR_EMAIL": "mira@local",
-           "GIT_COMMITTER_NAME": "Mira", "GIT_COMMITTER_EMAIL": "mira@local"}
-    subprocess.run(["git", "init"], cwd=proj_dir, check=True, capture_output=True)
-    subprocess.run(["git", "add", "."], cwd=proj_dir, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"init: {name}"],
-        cwd=proj_dir, check=True, capture_output=True, env=env,
-    )
+        env = {**os.environ,
+               "GIT_AUTHOR_NAME": "Mira", "GIT_AUTHOR_EMAIL": "mira@local",
+               "GIT_COMMITTER_NAME": "Mira", "GIT_COMMITTER_EMAIL": "mira@local"}
+        subprocess.run(["git", "init"], cwd=proj_dir, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=proj_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"init: {name}"],
+            cwd=proj_dir, check=True, capture_output=True, env=env,
+        )
+    except Exception:
+        import shutil
+        shutil.rmtree(proj_dir, ignore_errors=True)
+        raise
 
     return {"project_id": project_id, "path": str(proj_dir)}
