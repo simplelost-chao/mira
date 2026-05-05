@@ -2,8 +2,12 @@
 """AI brainstorm — multi-model project naming & logo generation."""
 from __future__ import annotations
 import json
+import os
+import re
+import subprocess
 import urllib.request
 import urllib.error
+from pathlib import Path
 from typing import Any
 
 
@@ -125,3 +129,65 @@ def call_brainstorm(description: str, model_id: str, cfg: dict) -> list[dict]:
     if not candidates:
         raise RuntimeError(f"AI 返回内容无法解析为候选方案:\n{content[:300]}")
     return candidates
+
+
+def _slugify(name: str) -> str:
+    """'My Project' → 'my-project'"""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def _make_vibe_yaml(name: str, description: str, port: int | None, domain: str | None) -> str:
+    lines = [f"name: {name}", f"description: {description}"]
+    if port:
+        lines.append(f"port: {port}")
+    if domain and domain.strip():
+        lines.append(f"domain: {domain.strip()}")
+    return "\n".join(lines) + "\n"
+
+
+def _derive_favicon(logo_svg: str) -> str:
+    """Produce a 32×32 favicon by replacing width/height in the SVG."""
+    svg = re.sub(r'width="[^"]*"', 'width="32"', logo_svg)
+    svg = re.sub(r'height="[^"]*"', 'height="32"', svg)
+    if "viewBox" not in svg:
+        svg = svg.replace("<svg", '<svg viewBox="0 0 64 64"', 1)
+    return svg
+
+
+def create_project(
+    base_dir,
+    name: str,
+    description: str,
+    logo_svg: str,
+    port,
+    domain,
+) -> dict:
+    """Create project directory with vibe.yaml, logo.svg, favicon.svg, git init.
+
+    Returns {"project_id": str, "path": str}.
+    Raises FileExistsError if directory already exists.
+    """
+    base_dir = Path(base_dir)
+    project_id = _slugify(name)
+    proj_dir = base_dir / project_id
+
+    if proj_dir.exists():
+        raise FileExistsError(f"目录已存在: {proj_dir}")
+
+    proj_dir.mkdir(parents=True)
+
+    (proj_dir / "vibe.yaml").write_text(_make_vibe_yaml(name, description, port, domain), encoding="utf-8")
+    (proj_dir / "logo.svg").write_text(logo_svg, encoding="utf-8")
+    (proj_dir / "favicon.svg").write_text(_derive_favicon(logo_svg), encoding="utf-8")
+
+    env = {**os.environ,
+           "GIT_AUTHOR_NAME": "Mira", "GIT_AUTHOR_EMAIL": "mira@local",
+           "GIT_COMMITTER_NAME": "Mira", "GIT_COMMITTER_EMAIL": "mira@local"}
+    subprocess.run(["git", "init"], cwd=proj_dir, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=proj_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"init: {name}"],
+        cwd=proj_dir, check=True, capture_output=True, env=env,
+    )
+
+    return {"project_id": project_id, "path": str(proj_dir)}

@@ -68,3 +68,50 @@ def test_parse_missing_fields_skipped():
     result = parse_candidates(raw)
     assert len(result) == 1
     assert result[0]["name"] == "Good"
+
+
+import os
+import subprocess
+from pathlib import Path
+from vibe.ai_brainstorm import create_project
+
+
+def test_create_project_basic(tmp_path):
+    result = create_project(
+        base_dir=tmp_path,
+        name="Stride",
+        description="追踪跑步数据",
+        logo_svg='<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="20" fill="#00ff9d"/></svg>',
+        port=None,
+        domain=None,
+    )
+    assert result["project_id"] == "stride"
+    proj_dir = tmp_path / "stride"
+    assert proj_dir.is_dir()
+    assert (proj_dir / ".git").is_dir()
+    assert (proj_dir / "vibe.yaml").exists()
+    assert (proj_dir / "logo.svg").exists()
+    assert (proj_dir / "favicon.svg").exists()
+
+
+def test_create_project_vibe_yaml_content(tmp_path):
+    create_project(tmp_path, "Stride", "追踪跑步数据", "<svg/>", port=8090, domain="stride.example.com")
+    content = (tmp_path / "stride" / "vibe.yaml").read_text()
+    assert "name: Stride" in content
+    assert "description:" in content
+    assert "port: 8090" in content
+    assert "domain: stride.example.com" in content
+
+
+def test_create_project_no_port_no_domain(tmp_path):
+    create_project(tmp_path, "Stride", "追踪跑步数据", "<svg/>", port=None, domain=None)
+    content = (tmp_path / "stride" / "vibe.yaml").read_text()
+    assert "port" not in content
+    assert "domain" not in content
+
+
+def test_create_project_duplicate_raises(tmp_path):
+    import pytest
+    create_project(tmp_path, "Stride", "first", "<svg/>", port=None, domain=None)
+    with pytest.raises(FileExistsError):
+        create_project(tmp_path, "Stride", "second", "<svg/>", port=None, domain=None)
