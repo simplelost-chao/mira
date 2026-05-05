@@ -35,12 +35,16 @@ def _e(s) -> str:
 
 _FLOW_COLORS = ['blue', 'gold', 'green', 'purple', 'red', 'blue', 'gold', 'green']
 
+_RE_CODE = re.compile(r'`([^`]+)`')
+_RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
+_RE_ITALIC = re.compile(r'\*([^*]+)\*')
+
 def _inline(text: str) -> str:
     """Inline markdown: bold, code, italic."""
     t = _e(text)
-    t = re.sub(r'`([^`]+)`', r'<code>\1</code>', t)
-    t = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', t)
-    t = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', t)
+    t = _RE_CODE.sub(r'<code>\1</code>', t)
+    t = _RE_BOLD.sub(r'<strong>\1</strong>', t)
+    t = _RE_ITALIC.sub(r'<em>\1</em>', t)
     return t
 
 
@@ -182,13 +186,13 @@ def _section(num: str, title: str, body: str) -> str:
 </div>'''
 
 
-def render_overview_page(p: ProjectInfo) -> str:
+def render_overview_page(p: ProjectInfo, embed: bool = False) -> str:
     from vibe.topbar import theme_vars_css, topbar_css, topbar_html, settings_overlay_html, topbar_js
     _theme_css = theme_vars_css()
     _tb_css    = topbar_css()
-    _tb_html   = topbar_html()
-    _overlays  = settings_overlay_html()
-    _tb_js     = topbar_js()
+    _tb_html   = "" if embed else topbar_html()
+    _overlays  = "" if embed else settings_overlay_html()
+    _tb_js     = "" if embed else topbar_js()
 
     git    = p.git    or type('', (), {'branch': None, 'commit_hash': None, 'dirty_files': [],
                                        'monthly_commits': 0, 'recent_commits': []})()

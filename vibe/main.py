@@ -1,11 +1,17 @@
 import asyncio
 import hashlib
+import hmac
+import ipaddress
+import re
+import shutil
+import subprocess
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from urllib.parse import urlparse
 
 import time
 import threading
@@ -14,6 +20,108 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 cli = typer.Typer()
 
 from contextlib import asynccontextmanager
+
+# ── ttyd subprocess management ─────────────────────────────────────────────────
+_TTYD_PORT = 7681
+_ttyd_proc: subprocess.Popen | None = None
+
+def _ttyd_bin() -> str:
+    return shutil.which("ttyd") or "/opt/homebrew/bin/ttyd"
+
+def _tmux_bin() -> str:
+    return shutil.which("tmux") or "/opt/homebrew/bin/tmux"
+
+def _start_ttyd() -> None:
+    """Start ttyd subprocess. Uses admin_password as HTTP basic auth (admin:<pwd>).
+
+    Without admin_password set, ttyd is wide open — only safe on localhost/tailnet.
+    With it set, every request to /terminal/ requires Authorization header.
+    """
+    global _ttyd_proc
+    ttyd = _ttyd_bin()
+    tmux = _tmux_bin()
+    if not Path(ttyd).exists():
+        return
+
+    from vibe.config import load_global_config
+    pwd = (load_global_config().get("admin_password") or "").strip()
+
+    cmd = [
+        ttyd, "-p", str(_TTYD_PORT),
+        "--writable",
+        "--base-path", "/terminal",
+    ]
+    if pwd:
+        cmd += ["--credential", f"admin:{pwd}"]
+    cmd += [tmux, "new-session", "-A", "-s", "mira", "-c", str(Path.home())]
+
+    _ttyd_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def _watch_ttyd() -> None:
+    """Restart ttyd if it dies."""
+    while True:
+        time.sleep(5)
+        if _ttyd_proc and _ttyd_proc.poll() is not None:
+            _start_ttyd()
+
+
+def _migrate_remote_passwords() -> None:
+    """自动将 remote_hosts 中的明文密码迁移为 hash 存储。"""
+    import yaml
+    cfg_path = Path(__file__).parent.parent / "vibe.yaml"
+    if not cfg_path.exists():
+        return
+    data = yaml.safe_load(cfg_path.read_text()) or {}
+    hosts = data.get("remote_hosts", [])
+    migrated = False
+    for entry in hosts:
+        pw = (entry.get("admin_password") or "").strip()
+        if pw and not entry.get("admin_password_hash"):
+            entry["admin_password_hash"] = hashlib.sha256(pw.encode()).hexdigest()
+            del entry["admin_password"]
+            migrated = True
+    if migrated:
+        data["remote_hosts"] = hosts
+        cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+
+def _init_remote_hosts() -> None:
+    """从配置中初始化远程主机列表。"""
+    _migrate_remote_passwords()
+    from vibe.config import load_global_config
+    cfg = load_global_config()
+    for entry in cfg.get("remote_hosts", []):
+        host = _RemoteHost.from_config(entry)
+        if host:
+            _remote_hosts.append(host)
+
+
+def _remote_refresh_loop() -> None:
+    """定期拉取远程主机项目和 pane 列表（300s 间隔）。"""
+    import asyncio as _aio
+    _INTERVAL = 300
+
+    async def _poll_once():
+        for host in _remote_hosts:
+            projects = await host.fetch_projects()
+            _remote_cache[host.alias] = projects
+            panes = await host.fetch_panes()
+            _remote_panes_cache[host.alias] = panes
+
+    import logging as _rlog
+    _logger = _rlog.getLogger(__name__)
+    # 首次立即拉取
+    try:
+        _aio.run(_poll_once())
+    except Exception as e:
+        _logger.warning("remote refresh initial poll failed: %s", e)
+
+    while True:
+        time.sleep(_INTERVAL)
+        try:
+            _aio.run(_poll_once())
+        except Exception as e:
+            _logger.warning("remote refresh poll failed: %s", e)
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -30,11 +138,33 @@ async def _lifespan(app: FastAPI):
     threading.Thread(target=run_indexer, daemon=True).start()
     from vibe.terminal_monitor import run_monitor
     threading.Thread(target=run_monitor, daemon=True).start()
+    _start_ttyd()
+    threading.Thread(target=_watch_ttyd, daemon=True).start()
+    # 远程主机
+    _init_remote_hosts()
+    if _remote_hosts:
+        threading.Thread(target=_remote_refresh_loop, daemon=True).start()
     yield
+    if _ttyd_proc:
+        _ttyd_proc.terminate()
 
 api = FastAPI(title="Vibe Manager", lifespan=_lifespan)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
+VERSION_FILE = Path(__file__).parent.parent / "version.json"
+
+import json as _json
+
+def _read_version() -> str:
+    try:
+        return _json.loads(VERSION_FILE.read_text()).get("version", "0.0.0")
+    except Exception:
+        return "0.0.0"
+
+
+@api.get("/api/version")
+def get_version():
+    return {"version": _read_version()}
 
 if STATIC_DIR.exists():
     api.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -56,6 +186,13 @@ _refreshing = False
 _alerts: list[str] = []
 _alerts_lock = threading.Lock()
 
+# ── Remote hosts ──────────────────────────────────────────────────────────────
+from vibe.remote_client import RemoteHost as _RemoteHost
+
+_remote_hosts: list[_RemoteHost] = []
+_remote_cache: dict[str, list[dict]] = {}  # alias -> projects
+_remote_panes_cache: dict[str, list[dict]] = {}  # alias -> panes
+
 _AGENT_MODEL = "qwen2.5:7b"
 
 # ── Admin Auth ─────────────────────────────────────────────────────────────────
@@ -73,7 +210,8 @@ def _is_admin(request: Request) -> bool:
     token = _admin_token()
     if token is None:
         return True  # No password configured → open access
-    return request.headers.get("X-Admin-Token") == token
+    req_token = request.headers.get("X-Admin-Token") or ""
+    return hmac.compare_digest(req_token, token)
 
 
 _DANGEROUS_PATTERNS = [
@@ -283,9 +421,9 @@ def _enrich_domains(projects: list[dict]) -> list[dict]:
 
     # Resolve IPs in parallel (is_running already correct from collect_service)
     ip_map: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=len(hostnames)) as pool:
+    with ThreadPoolExecutor(max_workers=min(10, len(hostnames))) as pool:
         ip_futs = {pool.submit(_resolve_ip, h): h for h in hostnames}
-        for f in as_completed(ip_futs):
+        for f in as_completed(ip_futs, timeout=8.0):
             ip_map[ip_futs[f]] = f.result()
 
     for p in projects:
@@ -357,12 +495,43 @@ def get_all_projects(force: bool = False) -> list[dict]:
 
 def _background_refresh():
     """Refresh cache every TTL seconds."""
+    import logging as _log
     while True:
         time.sleep(_CACHE_TTL)
         try:
             _rebuild_and_persist()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.getLogger(__name__).warning("background refresh failed: %s", e)
+
+
+def _get_remote_host(alias: str) -> _RemoteHost | None:
+    """按 alias 查找远程主机。"""
+    for h in _remote_hosts:
+        if h.alias == alias:
+            return h
+    return None
+
+
+def _tagged_remote_projects() -> list[dict]:
+    """返回所有远程项目，ID 加前缀、注入 _host 字段。"""
+    result: list[dict] = []
+    for host in _remote_hosts:
+        projects = _remote_cache.get(host.alias, host.last_projects)
+        for p in projects:
+            tagged = {**p}
+            tagged["id"] = f"{host.alias}:{p['id']}"
+            tagged["_host"] = host.alias
+            tagged["_host_url"] = host.url
+            tagged["_host_online"] = host.online
+            result.append(tagged)
+    return result
+
+
+def get_all_projects_with_remote(force: bool = False) -> list[dict]:
+    """本地项目 + 远程项目合并。"""
+    local = get_all_projects(force=force)
+    remote = _tagged_remote_projects()
+    return local + remote
 
 
 def _mask_projects(projects: list[dict]) -> list[dict]:
@@ -383,12 +552,12 @@ def _mask_projects(projects: list[dict]) -> list[dict]:
 
 @api.get("/api/projects")
 def list_projects(request: Request):
-    projects = get_all_projects()
+    projects = get_all_projects_with_remote()
     return projects if _is_admin(request) else _mask_projects(projects)
 
-@api.get("/api/projects/{project_id}")
+@api.get("/api/projects/{project_id:path}")
 def get_project(request: Request, project_id: str):
-    projects = get_all_projects()
+    projects = get_all_projects_with_remote()
     for p in projects:
         if p["id"] == project_id:
             return p if _is_admin(request) else _mask_projects([p])[0]
@@ -425,13 +594,14 @@ def project_detail_page(request: Request, project_id: str):
     if item:
         masked = _mask_projects([item])[0] if not _is_admin(request) else item
         slim = {k: v for k, v in masked.items() if k not in _LAZY_FIELDS}
-        inline_data = _json.dumps(slim, default=str)
+        # 防止 </script> 注入：转义斜杠
+        inline_data = _json.dumps(slim, default=str).replace("</", r"<\/")
     else:
         inline_data = "null"
     return HTMLResponse(render_detail_page(project_id, name, inline_data), headers=_NC)
 
 @api.get("/projects/{project_id}/overview", response_class=HTMLResponse)
-def project_overview_page(project_id: str):
+def project_overview_page(project_id: str, embed: bool = False):
     from vibe.overview_page import render_overview_page
     from vibe.models import ProjectInfo
 
@@ -447,7 +617,7 @@ def project_overview_page(project_id: str):
 
     # Reuse cached collect_project data — no re-collection needed
     info = ProjectInfo(**item)
-    return HTMLResponse(render_overview_page(info), headers=_NC)
+    return HTMLResponse(render_overview_page(info, embed=embed), headers=_NC)
 
 @api.post("/api/refresh")
 def refresh_all(request: Request):
@@ -456,7 +626,9 @@ def refresh_all(request: Request):
     return get_all_projects(force=True)
 
 @api.get("/api/projects/{project_id}/design-docs")
-def list_design_docs(project_id: str):
+def list_design_docs(request: Request, project_id: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     projects = get_all_projects()
     for p in projects:
         if p["id"] == project_id:
@@ -464,7 +636,9 @@ def list_design_docs(project_id: str):
     raise HTTPException(status_code=404, detail="Project not found")
 
 @api.get("/api/projects/{project_id}/design-docs/{filename}")
-def get_design_doc(project_id: str, filename: str):
+def get_design_doc(request: Request, project_id: str, filename: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     projects = get_all_projects()
     for p in projects:
         if p["id"] == project_id:
@@ -476,15 +650,19 @@ def get_design_doc(project_id: str, filename: str):
 
 
 @api.get("/api/projects/{project_id}/prompts")
-def get_project_prompts(project_id: str):
+def get_project_prompts(request: Request, project_id: str):
     """Return user prompts for a project from the session index DB."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.history_db import get_prompts
     return get_prompts(project_id)
 
 
 @api.get("/api/prompts")
-def get_all_prompts():
+def get_all_prompts(request: Request):
     """Return user prompts grouped by project from the session index DB."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.history_db import get_all_project_prompts
     return {"projects": get_all_project_prompts()}
 
@@ -761,15 +939,39 @@ def get_balance_activity(request: Request, force: bool = False):
     return {"openrouter": masked or None, "_masked": True}
 
 
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+_auth_attempts: dict[str, list[float]] = {}
+_AUTH_WINDOW = 60.0  # 秒
+_AUTH_MAX = 5  # 每窗口最大尝试次数
+
+def _rate_limit_ok(ip: str) -> bool:
+    now = time.time()
+    # 防止 dict 无限增长：超过 1000 个 IP 时清理过期条目
+    if len(_auth_attempts) > 1000:
+        expired = [k for k, v in _auth_attempts.items() if not v or now - v[-1] > _AUTH_WINDOW]
+        for k in expired:
+            del _auth_attempts[k]
+    attempts = _auth_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < _AUTH_WINDOW]
+    if len(attempts) >= _AUTH_MAX:
+        _auth_attempts[ip] = attempts
+        return False
+    attempts.append(now)
+    _auth_attempts[ip] = attempts
+    return True
+
 # ── Auth endpoints ─────────────────────────────────────────────────────────────
 
 @api.post("/api/auth/login")
-def auth_login(body: dict):
+def auth_login(request: Request, body: dict):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_limit_ok(client_ip):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
     from vibe.config import load_global_config
     password = (load_global_config().get("admin_password") or "").strip()
     if not password:
         return {"ok": True, "token": "no-auth"}
-    if (body.get("password") or "").strip() != password:
+    if not hmac.compare_digest((body.get("password") or "").strip(), password):
         raise HTTPException(status_code=401, detail="密码错误")
     return {"ok": True, "token": hashlib.sha256(password.encode()).hexdigest()}
 
@@ -778,6 +980,12 @@ def auth_login(body: dict):
 def auth_check(request: Request):
     token = _admin_token()
     return {"admin": _is_admin(request), "auth_required": token is not None}
+
+
+@api.get("/api/hosts")
+def list_hosts():
+    """返回远程主机连接状态列表。"""
+    return [h.status_dict() for h in _remote_hosts]
 
 
 # ── Settings (API keys stored in vibe.yaml) ────────────────────────────────────
@@ -796,6 +1004,7 @@ def get_settings(request: Request):
             result[k] = "****" if v else ""
     # admin_password: always fully masked regardless of admin status
     result["admin_password"] = "****" if cfg.get("admin_password") else ""
+    result["notification_sound"] = cfg.get("notification_sound", "Pop")
     return result
 
 @api.post("/api/settings")
@@ -813,18 +1022,189 @@ def save_settings(request: Request, body: dict):
             v = (body[k] or "").strip()
             if v and not v.endswith("****"):   # real value → save
                 data[k] = v
-            # empty → skip (keep existing key unchanged)
+            elif v == "":   # empty → delete key
+                data.pop(k, None)
     # admin_password: save if provided and not placeholder
     if "admin_password" in body:
         v = (body["admin_password"] or "").strip()
         if v and v != "****":
             data["admin_password"] = v
+    # notification_sound
+    if "notification_sound" in body:
+        v = (body["notification_sound"] or "").strip()
+        if v:
+            data["notification_sound"] = v
     cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
     # invalidate balance cache with fresh config
     from .balance import fetch_all_balances
     from .config import load_global_config
     fetch_all_balances(load_global_config(), force=True)
     return {"ok": True}
+
+# ── Remote Hosts CRUD ─────────────────────────────────────────────────────────
+
+@api.get("/api/settings/remote-hosts")
+def get_remote_hosts(request: Request):
+    """列出已配置的远程主机（密码脱敏）。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.config import load_global_config
+    cfg = load_global_config()
+    hosts = cfg.get("remote_hosts", [])
+    result = []
+    for entry in hosts:
+        alias = entry.get("alias", "")
+        url = entry.get("url", "")
+        has_pw = bool(entry.get("admin_password_hash") or entry.get("admin_password", "").strip())
+        # 找运行时状态
+        runtime = _get_remote_host(alias)
+        result.append({
+            "alias": alias,
+            "url": url,
+            "has_password": has_pw,
+            "online": runtime.online if runtime else None,
+        })
+    return {"hosts": result}
+
+
+def _is_allowed_remote_url(url: str) -> bool:
+    """只允许私有网络 / Tailscale CGNAT 地址，防止 SSRF。"""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback:
+            return True
+        # Tailscale CGNAT 范围: 100.64.0.0/10
+        if ip in ipaddress.ip_network("100.64.0.0/10"):
+            return True
+        return False
+    except (ValueError, TypeError):
+        # 非 IP 地址（域名）— 拒绝以防 DNS 重绑定攻击
+        return False
+
+@api.post("/api/settings/remote-hosts")
+def add_remote_host_endpoint(request: Request, body: dict):
+    """添加远程主机到 vibe.yaml 并热加载。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    alias = (body.get("alias") or "").strip()
+    url = (body.get("url") or "").strip().rstrip("/")
+    password = (body.get("admin_password") or "").strip()
+    if not alias or not url:
+        raise HTTPException(status_code=400, detail="alias 和 url 为必填项")
+    if ":" in alias:
+        raise HTTPException(status_code=400, detail="alias 不能包含冒号")
+    if not _is_allowed_remote_url(url):
+        raise HTTPException(status_code=400, detail="URL 必须指向私有网络或 Tailscale 地址")
+    # 密码只存哈希，不存明文
+    token_hash = hashlib.sha256(password.encode()).hexdigest() if password else ""
+    # 写入 vibe.yaml
+    import yaml
+    cfg_path = Path(__file__).parent.parent / "vibe.yaml"
+    data = {}
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text()) or {}
+    remote_hosts = data.get("remote_hosts", [])
+    # 去重：同 alias 则覆盖
+    remote_hosts = [h for h in remote_hosts if h.get("alias") != alias]
+    entry = {"alias": alias, "url": url}
+    if token_hash:
+        entry["admin_password_hash"] = token_hash
+    # 清理旧的明文密码字段（如果存在）
+    entry.pop("admin_password", None)
+    remote_hosts.append(entry)
+    data["remote_hosts"] = remote_hosts
+    cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+    # 热加载到运行时
+    existing = _get_remote_host(alias)
+    if existing:
+        existing.url = url
+        existing.token = token_hash
+    else:
+        host = _RemoteHost.from_config(entry)
+        if host:
+            _remote_hosts.append(host)
+    return {"ok": True}
+
+
+@api.delete("/api/settings/remote-hosts/{alias}")
+def remove_remote_host_endpoint(request: Request, alias: str):
+    """删除远程主机��置。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    import yaml
+    cfg_path = Path(__file__).parent.parent / "vibe.yaml"
+    data = {}
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text()) or {}
+    remote_hosts = data.get("remote_hosts", [])
+    new_hosts = [h for h in remote_hosts if h.get("alias") != alias]
+    if len(new_hosts) == len(remote_hosts):
+        raise HTTPException(status_code=404, detail="未找到该主机")
+    data["remote_hosts"] = new_hosts
+    cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+    # 从���行时移��
+    for i, h in enumerate(_remote_hosts):
+        if h.alias == alias:
+            _remote_hosts.pop(i)
+            _remote_cache.pop(alias, None)
+            _remote_panes_cache.pop(alias, None)
+            break
+    return {"ok": True}
+
+
+@api.post("/api/settings/remote-hosts/{alias}/test")
+async def test_remote_host_endpoint(request: Request, alias: str):
+    """测试远程主机连接。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    client_ip = request.client.host if request.client else "unknown"
+    if not _rate_limit_ok(f"test:{client_ip}"):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+    host = _get_remote_host(alias)
+    if not host:
+        raise HTTPException(status_code=404, detail="未找到该主机")
+    projects = await host.fetch_projects()
+    return {
+        "ok": host.online,
+        "project_count": len(projects),
+        "online": host.online,
+    }
+
+
+@api.get("/api/sounds")
+def list_sounds():
+    """返回可用的系统提示音列表。"""
+    sounds_dir = Path("/System/Library/Sounds")
+    names = sorted(f.stem for f in sounds_dir.glob("*.aiff")) if sounds_dir.exists() else []
+    if not names:
+        names = ["Pop", "Glass", "Ping", "Purr", "Tink", "Hero", "Submarine"]
+    return {"sounds": names}
+
+@api.get("/api/sounds/{name}")
+def get_sound(name: str):
+    """提供系统音效文件。"""
+    if not re.match(r'^[\w\s-]+$', name):
+        raise HTTPException(status_code=400, detail="Invalid sound name")
+    sound_file = Path("/System/Library/Sounds") / f"{name}.aiff"
+    if not sound_file.resolve().parent == Path("/System/Library/Sounds").resolve():
+        raise HTTPException(status_code=400, detail="Invalid sound name")
+    if not sound_file.exists():
+        raise HTTPException(status_code=404, detail="Sound not found")
+    return FileResponse(sound_file, media_type="audio/aiff")
+
+@api.get("/api/llm-providers")
+def get_llm_providers():
+    """聚合所有项目检测到的 LLM provider 列表（去重）。"""
+    projects = get_all_projects()
+    providers: set[str] = set()
+    for p in projects:
+        for api_name in p.get("llm_apis", []):
+            providers.add(api_name)
+    return {"providers": sorted(providers)}
 
 
 # ── History / Session Warehouse ────────────────────────────────────────────────
@@ -893,6 +1273,26 @@ def stats_view(request: Request, range: str = "30d"):  # noqa: A002
     return data
 
 
+# ── Remote target parsing ─────────────────────────────────────────────────────
+
+def _parse_target(target: str) -> tuple[_RemoteHost | None, str]:
+    """解析终端 target 字符串。
+
+    远程格式: "alias:session:window.pane" → (host, "session:window.pane")
+    本地格式: "session:window.pane" → (None, "session:window.pane")
+
+    判断依据：远程 target 至少有 3 段（alias + session + window.pane），
+    且第一段匹配已知的远程主机 alias。
+    """
+    parts = target.split(":", 1)
+    if len(parts) == 2:
+        maybe_alias, rest = parts
+        host = _get_remote_host(maybe_alias)
+        if host is not None:
+            return host, rest
+    return None, target
+
+
 # ── Terminal Bridge ────────────────────────────────────────────────────────────
 
 @api.get("/api/terminals")
@@ -911,21 +1311,144 @@ def dev_panes_list(request: Request):
     from vibe.tmux_bridge import list_panes
     from vibe.terminal_monitor import get_panes
     monitored = {p["target"]: p for p in get_panes()}
+    # Build a lookup so we can return each project's display name (vibe.yaml `name`)
+    projects = get_all_projects()
+    proj_by_path = {pr["path"]: pr for pr in projects}
     all_panes = list_panes()
     result = []
     for p in all_panes:
         target = p["target"]
         mon = monitored.get(target, {})
         label = mon.get("label") or f"{p['command']}/{Path(p['cwd']).name}"
+        # Match cwd to a project by longest-path-prefix
+        match = None
+        cwd = p["cwd"]
+        for path, proj in proj_by_path.items():
+            if cwd == path or cwd.startswith(path + "/"):
+                if match is None or len(path) > len(match["path"]):
+                    match = proj
+        project_id = mon.get("project_id") or (Path(match["path"]).name if match else Path(cwd).name)
+        project_name = (match["name"] if match else None) or project_id
         result.append({
             "target": target,
             "label": label,
             "command": p["command"],
             "cwd": p["cwd"],
             "waiting": mon.get("waiting", False),
-            "project_id": mon.get("project_id") or Path(p["cwd"]).name,
+            "project_id": project_id,
+            "project_name": project_name,
         })
+    # 合并远程 pane（加 alias 前缀）
+    for host in _remote_hosts:
+        remote_panes = _remote_panes_cache.get(host.alias, host.last_panes)
+        for rp in remote_panes:
+            result.append({
+                **rp,
+                "target": f"{host.alias}:{rp['target']}",
+                "_host": host.alias,
+                "_host_online": host.online,
+            })
     return result
+
+
+@api.delete("/api/dev/panes/{target:path}")
+async def dev_kill_pane(request: Request, target: str):
+    """Kill a tmux pane (target = session:window.pane). Removes it from
+    the live tmux server, which propagates to /dev sidebar (auto-refresh)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    # 远程代理
+    remote_host, real_target = _parse_target(target)
+    if remote_host is not None:
+        result = await remote_host.proxy_kill_pane(real_target)
+        if result is None:
+            raise HTTPException(status_code=502, detail=f"远程主机 {remote_host.alias} 不可达")
+        return result
+    import subprocess
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    from vibe.terminal_monitor import unregister_pane
+    proc = subprocess.run(
+        [_TMUX_BIN, "kill-pane", "-t", target],
+        capture_output=True, text=True, env=_TMUX_ENV,
+    )
+    if proc.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"tmux kill-pane failed: {proc.stderr.strip()}")
+    unregister_pane(target)
+    return {"ok": True, "target": target}
+
+
+@api.post("/api/projects/{project_id}/name")
+def update_project_name(project_id: str, request: Request, body: dict):
+    """Rename a project — writes `name:` into project's vibe.yaml.
+
+    Creates vibe.yaml if it doesn't exist. Invalidates project cache so
+    the new name is picked up on next /api/projects request.
+    """
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    new_name = (body.get("name") or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="name required")
+    projects = get_all_projects()
+    proj = next((p for p in projects if p.get("id") == project_id), None)
+    if not proj:
+        raise HTTPException(status_code=404, detail="project not found")
+    import yaml
+    yaml_path = Path(proj["path"]) / "vibe.yaml"
+    cfg = {}
+    if yaml_path.exists():
+        try:
+            with open(yaml_path) as f:
+                cfg = yaml.safe_load(f) or {}
+        except Exception:
+            cfg = {}
+    cfg["name"] = new_name
+    with open(yaml_path, "w") as f:
+        yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
+    # In-place patch the cache so the next request sees the new name
+    # immediately (rebuild would take 10-30s and block the API). Kick off
+    # a background full rebuild for any other fields that might depend
+    # on vibe.yaml.
+    with _cache_lock:
+        if _cache:
+            for cp in _cache:
+                if cp.get("id") == project_id:
+                    cp["name"] = new_name
+                    break
+    threading.Thread(target=_rebuild_and_persist, daemon=True).start()
+    return {"ok": True, "name": new_name}
+
+
+@api.post("/api/projects/{project_id}/description")
+def update_project_description(project_id: str, request: Request, body: dict):
+    """Update project description — writes `description:` into project's vibe.yaml."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    new_desc = (body.get("description") or "").strip()
+    projects = get_all_projects()
+    proj = next((p for p in projects if p.get("id") == project_id), None)
+    if not proj:
+        raise HTTPException(status_code=404, detail="project not found")
+    import yaml
+    yaml_path = Path(proj["path"]) / "vibe.yaml"
+    cfg = {}
+    if yaml_path.exists():
+        try:
+            with open(yaml_path) as f:
+                cfg = yaml.safe_load(f) or {}
+        except Exception:
+            cfg = {}
+    cfg["description"] = new_desc
+    with open(yaml_path, "w") as f:
+        yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
+    with _cache_lock:
+        if _cache:
+            for cp in _cache:
+                if cp.get("id") == project_id:
+                    cp["description"] = new_desc
+                    break
+    threading.Thread(target=_rebuild_and_persist, daemon=True).start()
+    return {"ok": True, "description": new_desc}
 
 
 @api.get("/api/terminals/alerts")
@@ -960,9 +1483,16 @@ def terminals_unregister(request: Request, target: str):
 
 
 @api.get("/api/terminals/{target:path}/output")
-def terminals_output(request: Request, target: str, lines: int = 200):
+async def terminals_output(request: Request, target: str, lines: int = 200):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
+    # 远程代理
+    remote_host, real_target = _parse_target(target)
+    if remote_host is not None:
+        result = await remote_host.proxy_terminal_output(real_target, lines)
+        if result is None:
+            raise HTTPException(status_code=502, detail=f"远程主机 {remote_host.alias} 不可达")
+        return result
     from vibe.tmux_bridge import capture_pane
     try:
         text = capture_pane(target, lines=lines)
@@ -971,28 +1501,114 @@ def terminals_output(request: Request, target: str, lines: int = 200):
     return {"target": target, "output": text}
 
 
+@api.websocket("/ws/terminal/{target:path}/stream")
+async def terminal_stream_ws(ws: WebSocket, target: str):
+    """Stream terminal output via WebSocket for mobile clients.
+
+    Uses capture-pane with ANSI codes every 200ms and only sends when
+    content changes. This gives <200ms latency real-time streaming without
+    sharing the ttyd PTY (so mobile and desktop are fully independent).
+    """
+    # WS 认证：优先检查 header，兼容 query param（浏览器 WS 无法设 header）
+    ws_token = ws.headers.get("x-admin-token") or ws.query_params.get("token", "")
+    expected = _admin_token()
+    if expected and not hmac.compare_digest(ws_token, expected):
+        await ws.close(code=1008, reason="Unauthorized")
+        return
+    await ws.accept()
+
+    # 远程 WebSocket 代理：连接远程 Mira 的同名 WS 端点，双向转发
+    remote_host, real_target = _parse_target(target)
+    if remote_host is not None:
+        import websockets as _ws
+        remote_ws_url = remote_host.url.replace("http://", "ws://").replace("https://", "wss://")
+        remote_ws_url += f"/ws/terminal/{real_target}/stream"
+        # token 通过 header 传输，不放在 URL 中（避免日志泄露）
+        extra_headers = {}
+        if remote_host.token:
+            extra_headers["X-Admin-Token"] = remote_host.token
+        try:
+            async with _ws.connect(remote_ws_url, additional_headers=extra_headers) as remote_ws:
+                async def _remote_to_client():
+                    try:
+                        async for msg in remote_ws:
+                            if isinstance(msg, bytes):
+                                await ws.send_bytes(msg)
+                            else:
+                                await ws.send_text(msg)
+                    except Exception:
+                        pass
+
+                async def _client_to_remote():
+                    try:
+                        async for msg in ws.iter_text():
+                            await remote_ws.send(msg)
+                    except Exception:
+                        pass
+
+                await asyncio.gather(_remote_to_client(), _client_to_remote())
+        except Exception:
+            pass
+        return
+
+    from vibe.tmux_bridge import capture_pane
+    prev_hash = ""
+    try:
+        while True:
+            text = await asyncio.to_thread(capture_pane, target, 300, ansi=True)
+            h = hashlib.md5(text.encode()).hexdigest()
+            if h != prev_hash:
+                prev_hash = h
+                await ws.send_text(text)
+            await asyncio.sleep(0.2)
+    except (WebSocketDisconnect, Exception):
+        pass
+
+
 _UPLOAD_DIR = Path("/tmp/mira-uploads")
 
+_ALLOWED_UPLOAD_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp"}
+_UPLOAD_MAX = 50 * 1024 * 1024
+
 @api.post("/api/upload/image")
-async def upload_image(request: Request, file: UploadFile = File(...)):
+async def upload_image(request: Request, file: UploadFile = File(...), host: str = ""):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    ct = file.content_type or ""
-    if not ct.startswith("image/"):
-        raise HTTPException(status_code=400, detail="只接受图片文件")
-    content = await file.read()
-    if len(content) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="图片太大（最大 20MB）")
+    # 先验证类型，再读取完整内容
+    ct = (file.content_type or "").split(";")[0].strip().lower()
+    if ct not in _ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=415, detail=f"只允许上传图片文件，不支持 {ct}")
+    # 分块读取，避免一次性加载超大文件到内存
+    chunks = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1MB chunks
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _UPLOAD_MAX:
+            raise HTTPException(status_code=413, detail="文件太大（最大 50MB）")
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    # 远程代理：带 host 参数时转发到远程主机
+    if host:
+        remote_host = _get_remote_host(host)
+        if remote_host is None:
+            raise HTTPException(status_code=404, detail=f"未知远程主机: {host}")
+        result = await remote_host.proxy_upload(content, file.filename or "file", ct)
+        if result is None:
+            raise HTTPException(status_code=502, detail=f"远程主机 {host} 不可达")
+        return result
     import uuid, mimetypes
     _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "img").suffix or (mimetypes.guess_extension(ct) or ".png")
+    ext = Path(file.filename or "file").suffix or (mimetypes.guess_extension(ct) or "")
     dest = _UPLOAD_DIR / f"{uuid.uuid4().hex[:10]}{ext}"
     dest.write_bytes(content)
     return {"path": str(dest)}
 
 
 @api.post("/api/terminals/{target:path}/send")
-def terminals_send(request: Request, target: str, body: dict):
+async def terminals_send(request: Request, target: str, body: dict):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     keys = body.get("keys", "")
@@ -1000,6 +1616,13 @@ def terminals_send(request: Request, target: str, body: dict):
         raise HTTPException(status_code=400, detail="keys required")
     if len(keys) > 4096:
         raise HTTPException(status_code=400, detail="keys too long (max 4096 chars)")
+    # 远程代理
+    remote_host, real_target = _parse_target(target)
+    if remote_host is not None:
+        result = await remote_host.proxy_send_keys(real_target, keys)
+        if result is None:
+            raise HTTPException(status_code=502, detail=f"远程主机 {remote_host.alias} 不可达")
+        return result
     from vibe.tmux_bridge import send_keys
     try:
         send_keys(target, keys)
@@ -1152,6 +1775,165 @@ async def ws_service_status(websocket: WebSocket):
         pass
     except Exception:
         pass
+
+
+# ── ttyd HTTP proxy ─────────────────────────────────────────────────────────────
+
+@api.api_route("/terminal/{path:path}", methods=["GET", "POST", "HEAD"])
+async def ttyd_http_proxy(path: str, request: Request):
+    """Proxy HTTP requests (HTML/JS/CSS assets) to the ttyd process.
+
+    No admin check here — ttyd is bound to 127.0.0.1 and unreachable
+    from outside. The security boundary is Mira's login page.
+    """
+    import httpx
+    url = f"http://127.0.0.1:{_TTYD_PORT}/terminal/{path}"
+    params = str(request.url.query)
+    if params:
+        url += "?" + params
+    async with httpx.AsyncClient(trust_env=False) as client:
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers={k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")},
+                content=await request.body(),
+                timeout=10,
+            )
+        except httpx.ConnectError:
+            raise HTTPException(status_code=502, detail="ttyd 未运行")
+    # Strip hop-by-hop and encoding headers (httpx decompresses; don't re-claim gzip)
+    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
+    headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
+    return Response(content=resp.content, status_code=resp.status_code, headers=headers)
+
+
+@api.websocket("/terminal/ws")
+async def ttyd_ws_proxy(websocket: WebSocket):
+    """Proxy WebSocket connection to ttyd.
+
+    Forwards admin:<admin_password> as basic auth to ttyd (which requires it
+    when --credential is set). Security boundary remains Mira login + ttyd auth.
+    """
+    import websockets as _ws
+    import base64
+    from vibe.config import load_global_config
+
+    # ttyd 自身的 basic auth (--credential) 已经是安全边界，
+    # 这里不再做 Mira token 验证——ttyd 前端 JS 无法注入 query param。
+    await websocket.accept(subprotocol="tty")
+    ttyd_url = f"ws://127.0.0.1:{_TTYD_PORT}/terminal/ws"
+
+    pwd = (load_global_config().get("admin_password") or "").strip()
+    extra_headers = []
+    if pwd:
+        token = base64.b64encode(f"admin:{pwd}".encode()).decode()
+        extra_headers = [("Authorization", f"Basic {token}")]
+
+    try:
+        async with _ws.connect(
+            ttyd_url, subprotocols=["tty"],
+            additional_headers=extra_headers,
+        ) as ttyd_ws:
+            async def browser_to_ttyd():
+                try:
+                    async for msg in websocket.iter_bytes():
+                        await ttyd_ws.send(msg)
+                except Exception:
+                    pass
+
+            async def ttyd_to_browser():
+                try:
+                    async for msg in ttyd_ws:
+                        if isinstance(msg, bytes):
+                            await websocket.send_bytes(msg)
+                        else:
+                            await websocket.send_text(msg)
+                except Exception:
+                    pass
+
+            await asyncio.gather(browser_to_ttyd(), ttyd_to_browser())
+    except Exception:
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# ── Terminal focus / new-window API ────────────────────────────────────────────
+
+@api.post("/api/terminal/focus")
+async def terminal_focus(request: Request, body: dict):
+    """Switch tmux client view to a specific pane (used by sidebar click)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    target = (body.get("target") or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="target required")
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    import re
+    # target format: session:window.pane  e.g. "mira:0.1"
+    m = re.match(r'^(.+):(\d+)\.(\d+)$', target)
+    if not m:
+        raise HTTPException(status_code=400, detail="invalid target format")
+    session, window, _pane = m.group(1), m.group(2), m.group(3)
+    # Set the session's active window (works regardless of which client),
+    # then select the target pane within that window.
+    subprocess.run([_TMUX_BIN, "select-window", "-t", f"{session}:{window}"],
+                   env=_TMUX_ENV, capture_output=True)
+    subprocess.run([_TMUX_BIN, "select-pane", "-t", target],
+                   env=_TMUX_ENV, capture_output=True)
+    return {"ok": True}
+
+
+@api.post("/api/terminals/{target:path}/scroll")
+async def terminal_scroll(request: Request, target: str, body: dict):
+    """Scroll a tmux pane using copy-mode (for mobile touch scroll)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import scroll_pane
+    direction = (body.get("direction") or "").strip()
+    if direction not in ("up", "down", "page-up", "page-down", "top", "bottom", "exit"):
+        raise HTTPException(status_code=400, detail="invalid direction")
+    lines = min(int(body.get("lines", 5)), 50)
+    scroll_pane(target, direction, lines)
+    return {"ok": True}
+
+
+@api.post("/api/terminal/new-window")
+async def terminal_new_window(request: Request, body: dict):
+    """Create a new tmux window, optionally in a project directory."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    cwd = (body.get("cwd") or "").strip() or None
+    cmd = [_TMUX_BIN, "new-window", "-t", "mira"]
+    if cwd:
+        cwd_path = Path(cwd).expanduser().resolve()
+        if not cwd_path.is_dir():
+            raise HTTPException(status_code=400, detail="cwd 目录不存在")
+        cmd += ["-c", str(cwd_path)]
+    result = subprocess.run(cmd, env=_TMUX_ENV, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr.strip())
+    return {"ok": True}
+
+
+@api.get("/api/terminal/buffer")
+async def terminal_buffer(request: Request):
+    """Return tmux paste buffer (last copied text from copy-mode)."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    result = subprocess.run(
+        [_TMUX_BIN, "show-buffer"],
+        env=_TMUX_ENV, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return {"text": ""}
+    return {"text": result.stdout}
 
 
 @cli.callback()

@@ -28,6 +28,16 @@ class ClaudeActivity(BaseModel):
     session_spark_15d: list[float] = []  # per-day active hours, last 15 days (12h = full)
 
 
+class CodexActivity(BaseModel):
+    last_session: Optional[str] = None
+    session_count_7d: int = 0
+    session_count_30d: int = 0
+    active_hours: float = 0.0
+    session_spark_15d: list[float] = []
+    total_tasks: int = 0
+    avg_task_duration_sec: float = 0.0
+
+
 class PlanTask(BaseModel):
     text: str
     done: bool
@@ -143,4 +153,5 @@ class ProjectInfo(BaseModel):
     external_deps: list[ExternalDep] = []
     llm_apis: list[str] = []
     claude_activity: Optional[ClaudeActivity] = None
+    codex_activity: Optional[CodexActivity] = None
     error: Optional[str] = None

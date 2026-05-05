@@ -166,7 +166,21 @@ def index_file(path: Path, session_id: str, project_id: str, project_name: str) 
     except ValueError as e:
         logger.error('Failed to advance last_line for %s: %s', session_id, e)
 
-    # Update daily stats for this session
+    # Update daily stats — only recompute if we actually processed new lines,
+    # and at most once every 5 minutes per session to avoid full-file rescans
+    # on every incremental write (e.g. active Claude Code conversations).
+    _stats_update_if_due(session_id, project_id, lines, path)
+
+
+_stats_last_updated: dict[str, float] = {}
+_STATS_UPDATE_INTERVAL = 300.0  # 最多每 5 分钟重算一次 stats
+
+
+def _stats_update_if_due(session_id: str, project_id: str, lines: list[str], path: Path) -> None:
+    """Recompute and persist daily stats, but at most once per 5 minutes per session."""
+    now = time.time()
+    if now - _stats_last_updated.get(session_id, 0) < _STATS_UPDATE_INTERVAL:
+        return
     try:
         stats = _compute_session_stats(lines)
         if stats:
@@ -180,7 +194,8 @@ def index_file(path: Path, session_id: str, project_id: str, project_name: str) 
                 output_tokens=stats["output_tokens"],
                 active_hours=stats["active_hours"],
             )
-    except Exception as e:  # DB errors (OperationalError, IntegrityError, etc.) are non-fatal
+            _stats_last_updated[session_id] = now
+    except Exception as e:
         logger.warning("upsert_daily_stats failed for %s: %s", path, e)
 
 

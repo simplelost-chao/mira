@@ -54,17 +54,27 @@ def list_panes() -> list[dict]:
     return panes
 
 
-def capture_pane(target: str, lines: int = 200) -> str:
-    """Return recent output from a tmux pane."""
-    proc = subprocess.run(
-        [_TMUX_BIN, "capture-pane", "-t", target, "-p", "-J"],
-        capture_output=True, text=True, env=_TMUX_ENV,
-    )
+def capture_pane(target: str, lines: int = 200, ansi: bool = False) -> str:
+    """Return recent output from a tmux pane.
+
+    Args:
+        target: tmux pane target (e.g. "mira:0.0")
+        lines:  how many scrollback lines to capture (0 = visible only)
+        ansi:   if True, preserve ANSI escape sequences (-e flag)
+    """
+    cmd = [_TMUX_BIN, "capture-pane", "-t", target, "-p", "-J"]
+    if ansi:
+        cmd.append("-e")
+    if lines > 0:
+        cmd.extend(["-S", str(-lines)])
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=_TMUX_ENV)
     if proc.returncode != 0:
         raise RuntimeError(f"capture-pane failed for target '{target}': {proc.stderr.strip()}")
     text = proc.stdout
-    tail = text.splitlines()[-lines:]
-    return "\n".join(tail)
+    if not ansi and lines > 0:
+        tail = text.splitlines()[-lines:]
+        return "\n".join(tail)
+    return text
 
 
 def send_keys(target: str, keys: str) -> None:
@@ -87,3 +97,37 @@ def send_keys(target: str, keys: str) -> None:
             _run([_TMUX_BIN, "send-keys", "-t", target, part])
         if i < len(parts) - 1:
             _run([_TMUX_BIN, "send-keys", "-t", target, "Enter"])
+
+
+def scroll_pane(target: str, direction: str, lines: int = 5) -> None:
+    """Scroll a tmux pane using copy-mode.
+
+    direction: 'up', 'down', 'top', 'bottom', 'page-up', 'page-down', 'exit'
+    """
+    if not _TARGET_RE.match(target):
+        raise RuntimeError(f"Invalid tmux target format: {target!r}")
+
+    def _run(cmd: list[str]) -> None:
+        subprocess.run(cmd, capture_output=True, text=True, env=_TMUX_ENV)
+
+    if direction == "exit":
+        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cancel"])
+        return
+
+    # Enter copy-mode if not already in it (idempotent)
+    _run([_TMUX_BIN, "copy-mode", "-t", target])
+
+    if direction == "up":
+        for _ in range(lines):
+            _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cursor-up"])
+    elif direction == "down":
+        for _ in range(lines):
+            _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cursor-down"])
+    elif direction == "page-up":
+        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "page-up"])
+    elif direction == "page-down":
+        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "page-down"])
+    elif direction == "top":
+        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "history-top"])
+    elif direction == "bottom":
+        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "history-bottom"])

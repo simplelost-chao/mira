@@ -219,7 +219,8 @@ def test_stats_page_returns_html():
     assert b'stats' in resp.content.lower()
 
 
-def test_detail_page_has_terminal_tab():
+def test_detail_page_has_dev_link():
+    """Terminal tab was migrated to /dev page; detail page now has a Dev link."""
     from unittest.mock import patch
     with patch('vibe.main.get_all_projects', return_value=[{
         'id': 'mira', 'name': 'Mira', 'path': '/mira',
@@ -228,7 +229,5 @@ def test_detail_page_has_terminal_tab():
         resp = client.get('/projects/mira')
     assert resp.status_code == 200
     body = resp.text
-    assert 'tab-terminals' in body
-    assert 'panel-terminals' in body
-    assert '_loadTerminalsTab' in body
-    assert '_termSend' in body
+    assert '/dev' in body
+    assert 'tab-overview' in body

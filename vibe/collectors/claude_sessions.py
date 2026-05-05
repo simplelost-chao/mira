@@ -12,6 +12,8 @@ CLAUDE_DIR = Path.home() / ".claude" / "projects"
 _cache: dict[str, tuple[frozenset, dict]] = {}
 # Per-file membership cache: (file_path_str, mtime) → bool (does it touch the project?)
 _file_cache: dict[tuple[str, float], bool] = {}
+_CACHE_MAX = 500
+_FILE_CACHE_MAX = 10000
 
 
 def _session_touches_project(jsonl_path: Path, project_path: str, scan_lines: int = 300, aliases: list[str] | None = None) -> bool:
@@ -140,6 +142,9 @@ def collect_claude_activity(project_path: str, aliases: list[str] | None = None)
             continue
         key = (str(f), mtime, project_path)
         if key not in _file_cache:
+            # 防止缓存无限增长
+            if len(_file_cache) > _FILE_CACHE_MAX:
+                _file_cache.clear()
             _file_cache[key] = _session_touches_project(f, project_path, aliases=aliases)
         if _file_cache[key]:
             matching.append(f)
@@ -241,5 +246,8 @@ def collect_claude_activity(project_path: str, aliases: list[str] | None = None)
         "active_hours": round(active_secs / 3600, 1),
         "session_spark_15d": spark_15d,
     }
+    # 防止缓存无限增长
+    if len(_cache) > _CACHE_MAX:
+        _cache.clear()
     _cache[project_path] = (fingerprint, result)
     return result

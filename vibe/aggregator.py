@@ -2,7 +2,7 @@ import re
 import json
 from pathlib import Path
 from typing import Optional
-from vibe.models import ProjectInfo, TechStack, DeployInfo, ClaudeActivity
+from vibe.models import ProjectInfo, TechStack, DeployInfo, ClaudeActivity, CodexActivity
 from vibe.collectors.git import collect_git
 from vibe.collectors.plans import collect_plans
 from vibe.collectors.service import collect_service
@@ -13,6 +13,7 @@ from vibe.collectors.design_docs import collect_design_docs
 from vibe.collectors.deploy import collect_deploy
 from vibe.collectors.dependencies import collect_dependencies
 from vibe.collectors.claude_sessions import collect_claude_activity
+from vibe.collectors.codex_sessions import collect_codex_activity
 from vibe.collectors.llm import collect_llm_apis
 
 _ARCH_SECTION_RE = re.compile(r"^#{1,3}\s+(架构|Architecture)", re.IGNORECASE)
@@ -193,11 +194,19 @@ def collect_project(path: Path, name: str, vibe_cfg: Optional[dict]) -> ProjectI
         external_deps=_safe(collect_dependencies, path, default=[]),
         llm_apis=_safe(collect_llm_apis, path, default=[]),
         claude_activity=_safe(_collect_claude, str(path), (vibe_cfg or {}).get("aliases", [])),
+        codex_activity=_safe(_collect_codex, str(path)),
     )
 
 
-def _collect_claude(project_path: str, aliases: list = []) -> Optional[ClaudeActivity]:
+def _collect_claude(project_path: str, aliases: list | None = None) -> Optional[ClaudeActivity]:
     data = collect_claude_activity(project_path, aliases=aliases)
     if not data:
         return None
     return ClaudeActivity(**data)
+
+
+def _collect_codex(project_path: str) -> Optional[CodexActivity]:
+    data = collect_codex_activity(project_path)
+    if not data:
+        return None
+    return CodexActivity(**data)
