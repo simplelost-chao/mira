@@ -133,11 +133,13 @@ async def _lifespan(app: FastAPI):
         _cache, _cache_ts = cached, ts
     threading.Thread(target=_background_refresh, daemon=True).start()
     from vibe.history_db import init_db as history_init_db
-    from vibe.session_indexer import run_indexer
+    from vibe.session_indexer import run_indexer, backfill_cache_tokens
     history_init_db()
+    threading.Thread(target=backfill_cache_tokens, daemon=True, name='mira-backfill').start()
     threading.Thread(target=run_indexer, daemon=True).start()
     from vibe.terminal_monitor import run_monitor
     threading.Thread(target=run_monitor, daemon=True).start()
+    threading.Thread(target=_monitor_base_services_loop, daemon=True, name='mira-svc-monitor').start()
     _start_ttyd()
     threading.Thread(target=_watch_ttyd, daemon=True).start()
     # 远程主机
@@ -191,6 +193,9 @@ _refreshing = False
 # ── Agent ──────────────────────────────────────────────────────────────────────
 _alerts: list[str] = []
 _alerts_lock = threading.Lock()
+
+# ── Base-service monitor ───────────────────────────────────────────────────────
+_base_svc_state: dict[str, bool] = {}   # name → last known is_running
 
 # ── Remote hosts ──────────────────────────────────────────────────────────────
 from vibe.remote_client import RemoteHost as _RemoteHost
@@ -361,6 +366,104 @@ def _check_anomalies(projects: list[dict]) -> None:
         _alerts.extend(f"[{ts}] {a}" for a in new_alerts)
         if len(_alerts) > 50:
             del _alerts[:-50]
+
+
+def _send_os_notification(title: str, body: str, sound: str = "Pop") -> None:
+    import subprocess
+    try:
+        script = (
+            f'display notification "{body}" '
+            f'with title "{title}" '
+            f'sound name "{sound}"'
+        )
+        subprocess.run(["osascript", "-e", script], timeout=5,
+                       capture_output=True)
+    except Exception:
+        pass
+
+
+def _auto_restart(name: str, cmd: str, port: int | None, sound: str) -> None:
+    """Execute restart_cmd and notify on result."""
+    import subprocess
+    from datetime import datetime
+    try:
+        subprocess.run(cmd, shell=True, timeout=30)
+        # Wait up to 15s for the port to come up
+        for _ in range(15):
+            time.sleep(1)
+            if port and _check_port(port):
+                ts = datetime.now().strftime("%H:%M")
+                with _alerts_lock:
+                    _alerts.append(f"[{ts}] {name} 自动重启成功")
+                _send_os_notification("Mira 监控 ✅", f"{name} 自动重启成功", sound)
+                _base_svc_state[name] = True
+                return
+        ts = datetime.now().strftime("%H:%M")
+        with _alerts_lock:
+            _alerts.append(f"[{ts}] {name} 自动重启后端口仍无响应")
+        _send_os_notification("Mira 监控 ❌", f"{name} 重启失败，请手动检查", sound)
+    except Exception as e:
+        _send_os_notification("Mira 监控 ❌", f"{name} 重启出错: {e}", sound)
+
+
+def _monitor_base_services_loop() -> None:
+    """Background thread: check base services every 60s, notify on state change."""
+    _MONITOR_INTERVAL = 60
+    from datetime import datetime
+    from vibe.config import load_global_config
+    global _base_svc_state
+
+    # ── Establish baseline (no notifications on first pass) ───────────────────
+    try:
+        cfg = load_global_config()
+        for svc in cfg.get("base_services") or []:
+            name = svc.get("name", "")
+            port, process = svc.get("port"), svc.get("process")
+            up = (_check_port(port) if port else False) or \
+                 (_check_process(process) if process else False)
+            _base_svc_state[name] = up
+    except Exception:
+        pass
+
+    while True:
+        time.sleep(_MONITOR_INTERVAL)
+        try:
+            cfg = load_global_config()
+            sound = cfg.get("notification_sound", "Pop")
+            for svc in cfg.get("base_services") or []:
+                name = svc.get("name", "")
+                port, process = svc.get("port"), svc.get("process")
+                up = (_check_port(port) if port else False) or \
+                     (_check_process(process) if process else False)
+                prev = _base_svc_state.get(name)
+                _base_svc_state[name] = up
+
+                if prev is None or prev == up:
+                    continue   # no change
+
+                ts = datetime.now().strftime("%H:%M")
+                if not up:   # up → down
+                    detail = f"端口 {port} 无响应" if port else "进程已退出"
+                    restart_cmd = svc.get("restart_cmd", "").strip()
+                    if restart_cmd:
+                        msg = f"{name} 服务已停止，正在自动重启…"
+                        threading.Thread(
+                            target=_auto_restart,
+                            args=(name, restart_cmd, port, sound),
+                            daemon=True,
+                        ).start()
+                    else:
+                        msg = f"{name} 服务已停止 – {detail}"
+                    with _alerts_lock:
+                        _alerts.append(f"[{ts}] {msg}")
+                    _send_os_notification("Mira 监控 ⚠️", msg, sound)
+                else:         # down → up
+                    msg = f"{name} 服务已恢复"
+                    with _alerts_lock:
+                        _alerts.append(f"[{ts}] {msg}")
+                    _send_os_notification("Mira 监控 ✅", msg, sound)
+        except Exception:
+            pass
 
 
 def _collect_one(item: dict) -> dict:
@@ -590,6 +693,74 @@ def stats_page_route():
 def dev_page_route():
     from vibe.dev_page import render_dev_page
     return HTMLResponse(render_dev_page(), headers=_NC)
+
+
+@api.get("/new", response_class=HTMLResponse)
+def new_project_page(request: Request):
+    from vibe.new_project_page import render_new_project_page
+    return HTMLResponse(render_new_project_page(), headers=_NC)
+
+
+@api.post("/api/projects/brainstorm")
+def brainstorm_project(request: Request, body: dict):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    description = (body.get("description") or "").strip()
+    model_id = (body.get("model") or "").strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="description 不能为空")
+    if not model_id:
+        raise HTTPException(status_code=400, detail="model 不能为空")
+    from vibe.ai_brainstorm import call_brainstorm
+    from vibe.config import load_global_config
+    cfg = load_global_config()
+    try:
+        candidates = call_brainstorm(description, model_id, cfg)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"candidates": candidates}
+
+
+@api.post("/api/projects/create")
+def create_project_endpoint(request: Request, body: dict):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    name     = (body.get("name") or "").strip()
+    desc     = (body.get("description") or "").strip()
+    logo_svg = (body.get("logo_svg") or "").strip()
+    port     = body.get("port") or None
+    domain   = (body.get("domain") or "").strip() or None
+    if not name:
+        raise HTTPException(status_code=400, detail="name 不能为空")
+    if not desc:
+        raise HTTPException(status_code=400, detail="description 不能为空")
+
+    from vibe.ai_brainstorm import create_project
+    from vibe.config import load_global_config
+    from pathlib import Path
+    cfg = load_global_config()
+    scan_dirs = [Path(d).expanduser() for d in (cfg.get("scan_dirs") or [])]
+    base_dir = next((d for d in scan_dirs if d.is_dir()), None)
+    if base_dir is None:
+        raise HTTPException(status_code=500, detail="未找到有效的 scan_dirs 目录")
+
+    log_lines = []
+    try:
+        log_lines.append(f"✓ 创建目录 {base_dir / name.lower()}")
+        result = create_project(base_dir, name, desc, logo_svg, port, domain)
+        log_lines.append("✓ 写入 vibe.yaml")
+        log_lines.append("✓ 写入 logo.svg")
+        log_lines.append("✓ 生成 favicon.svg")
+        log_lines.append("✓ git init & 初始提交")
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"创建失败: {e}")
+
+    import threading
+    threading.Thread(target=_rebuild_and_persist, daemon=True).start()
+
+    return {"project_id": result["project_id"], "path": result["path"], "log": log_lines}
 
 
 @api.get("/projects/{project_id}", response_class=HTMLResponse)
@@ -896,8 +1067,31 @@ def list_base_services(request: Request):
             "used_by": used_by,
             "public_url": public_url,
             "extra_tunnels": extra_tunnels,
+            "has_restart": bool(svc.get("restart_cmd", "").strip()),
         })
     return result
+
+
+@api.post("/api/base-services/{name}/restart")
+async def restart_base_service(name: str, request: Request):
+    """Manually trigger restart_cmd for a base service."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.config import load_global_config
+    cfg = load_global_config()
+    svc = next((s for s in (cfg.get("base_services") or [])
+                if s.get("name") == name), None)
+    if not svc:
+        raise HTTPException(status_code=404, detail=f"未找到服务: {name}")
+    cmd = svc.get("restart_cmd", "").strip()
+    if not cmd:
+        raise HTTPException(status_code=400, detail="该服务未配置 restart_cmd")
+    sound = cfg.get("notification_sound", "Pop")
+    port = svc.get("port")
+    threading.Thread(
+        target=_auto_restart, args=(name, cmd, port, sound), daemon=True
+    ).start()
+    return {"status": "restarting", "name": name}
 
 
 def _check_service_statuses() -> dict:
@@ -1004,7 +1198,7 @@ def list_hosts(request: Request):
 
 
 # ── Settings (API keys stored in vibe.yaml) ────────────────────────────────────
-_SETTINGS_KEYS = ["openrouter_api_key", "deepseek_api_key", "kimi_api_key"]
+_SETTINGS_KEYS = ["openrouter_api_key", "deepseek_api_key", "kimi_api_key", "gemini_api_key", "doubao_api_key", "doubao_access_key", "doubao_secret_key"]
 
 @api.get("/api/settings")
 def get_settings(request: Request):
@@ -1796,6 +1990,125 @@ async def ws_service_status(websocket: WebSocket):
 
 # ── ttyd HTTP proxy ─────────────────────────────────────────────────────────────
 
+# Injected into ttyd's HTML so the terminal follows Mira's active skin.
+# Runs inside the iframe: reads localStorage, polls for the xterm Terminal
+# instance (React mounts it async), and listens for postMessage updates.
+_TTYD_THEME_INJECT = """<script id="mira-ttyd-theme">
+(function(){
+/* Per-skin config: colors + terminal options */
+var T={
+  'default':{
+    bg:'#080c14',fg:'#eef1f7',cu:'#4f46e5',ca:'#080c14',sel:'rgba(79,70,229,.3)',
+    k:'#3a3f4b',r:'#e06c75',g:'#3fb950',y:'#d29922',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#eef1f7',
+    bk:'#4a5060',br:'#e06c75',bg2:'#3fb950',by:'#e5a650',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
+    cursorStyle:'block',cursorBlink:false,fontSize:14},
+  'claude-light':{
+    bg:'#f5f3ef',fg:'#1a1a1a',cu:'#da7756',ca:'#ffffff',sel:'rgba(218,119,86,.25)',
+    k:'#383a42',r:'#dc2626',g:'#16a34a',y:'#ca8a04',b:'#4078f2',m:'#a626a4',c:'#0184bc',w:'#1a1a1a',
+    bk:'#b0b0b0',br:'#dc2626',bg2:'#16a34a',by:'#d97706',bb:'#4078f2',bm:'#a626a4',bc:'#0184bc',bw:'#383a42',
+    cursorStyle:'bar',cursorBlink:true,fontSize:14},
+  'claude-dark':{
+    bg:'#131313',fg:'#ededed',cu:'#09B83E',ca:'#131313',sel:'rgba(9,184,62,.25)',
+    k:'#3a3f4b',r:'#ef4444',g:'#4caf50',y:'#d4a84b',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#ededed',
+    bk:'#5d5d5d',br:'#ef4444',bg2:'#4caf50',by:'#e5a84b',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
+    cursorStyle:'block',cursorBlink:false,fontSize:14},
+  'neon-pixel':{
+    bg:'#0a0a0a',fg:'#e0e0ff',cu:'#ff00ff',ca:'#0a0a0a',sel:'rgba(0,255,0,.2)',
+    k:'#282840',r:'#ff0040',g:'#00ff00',y:'#ffff00',b:'#00ccff',m:'#ff00ff',c:'#00ffff',w:'#e0e0ff',
+    bk:'#505070',br:'#ff0040',bg2:'#00ff00',by:'#ff8800',bb:'#00ccff',bm:'#ff00ff',bc:'#00ffff',bw:'#ffffff',
+    cursorStyle:'block',cursorBlink:true,fontSize:14},
+  'pixel-cyber':{
+    bg:'#020c1a',fg:'#eef8ff',cu:'#ff0055',ca:'#020c1a',sel:'rgba(0,212,255,.2)',
+    k:'#2a5570',r:'#ff3355',g:'#00ff88',y:'#ffaa00',b:'#00d4ff',m:'#a855f7',c:'#00d4ff',w:'#eef8ff',
+    bk:'#6bbad8',br:'#ff3355',bg2:'#00ff88',by:'#ffaa00',bb:'#00d4ff',bm:'#a855f7',bc:'#00d4ff',bw:'#ffffff',
+    cursorStyle:'block',cursorBlink:true,fontSize:14}
+};
+/* Per-skin CSS injected into the iframe body */
+var CSS_EXTRA={
+  'neon-pixel':[
+    /* CRT vignette: brighter center, dim corners */
+    '.xterm{position:relative}',
+    '.xterm::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:10;',
+    'background:radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.55) 100%)}',
+    /* Faint green phosphor scanlines */
+    '.xterm::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:11;',
+    'background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,255,0,.028) 3px,rgba(0,255,0,.028) 4px)}',
+    /* Accent scrollbar */
+    '.xterm-viewport::-webkit-scrollbar{width:6px}',
+    '.xterm-viewport::-webkit-scrollbar-thumb{background:#ff00ff;border-radius:0}',
+    '.xterm-viewport::-webkit-scrollbar-track{background:#0a0a0a}',
+    /* Green border around terminal */
+    '.xterm-screen{outline:1px solid rgba(0,255,0,.2)}'
+  ].join(''),
+  'pixel-cyber':[
+    /* CRT vignette: cyan-tinted */
+    '.xterm{position:relative}',
+    '.xterm::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:10;',
+    'background:radial-gradient(ellipse at center,transparent 55%,rgba(0,8,20,.65) 100%)}',
+    /* Cyan scanlines */
+    '.xterm::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:11;',
+    'background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,212,255,.022) 3px,rgba(0,212,255,.022) 4px)}',
+    /* Cyan scrollbar */
+    '.xterm-viewport::-webkit-scrollbar{width:6px}',
+    '.xterm-viewport::-webkit-scrollbar-thumb{background:#00d4ff;border-radius:0}',
+    '.xterm-viewport::-webkit-scrollbar-track{background:#020c1a}',
+    /* Cyan border frame */
+    '.xterm-screen{outline:1px solid rgba(0,212,255,.3);box-shadow:0 0 20px rgba(0,212,255,.08) inset}'
+  ].join(''),
+  'claude-light':[
+    '.xterm-viewport::-webkit-scrollbar{width:6px}',
+    '.xterm-viewport::-webkit-scrollbar-thumb{background:#da7756;border-radius:3px}',
+    '.xterm-viewport::-webkit-scrollbar-track{background:#e8e4de}'
+  ].join(''),
+  'claude-dark':[
+    '.xterm-viewport::-webkit-scrollbar{width:6px}',
+    '.xterm-viewport::-webkit-scrollbar-thumb{background:#09B83E;border-radius:3px}',
+    '.xterm-viewport::-webkit-scrollbar-track{background:#131313}'
+  ].join(''),
+  'default':[
+    '.xterm-viewport::-webkit-scrollbar{width:6px}',
+    '.xterm-viewport::-webkit-scrollbar-thumb{background:#4f46e5;border-radius:3px}',
+    '.xterm-viewport::-webkit-scrollbar-track{background:#080c14}'
+  ].join('')
+};
+var _term=null;
+function skin(){return localStorage.getItem('mira-skin')||'default';}
+function applyCSS(t,sk){
+  var s=document.getElementById('mira-s');
+  if(!s){s=document.createElement('style');s.id='mira-s';document.head.appendChild(s);}
+  s.textContent='html,body,.xterm,.xterm-viewport{background:'+t.bg+'!important}'
+    +(CSS_EXTRA[sk]||'');
+}
+function mkTheme(t){
+  return {background:t.bg,foreground:t.fg,cursor:t.cu,cursorAccent:t.ca,
+    selectionBackground:t.sel,
+    black:t.k,red:t.r,green:t.g,yellow:t.y,blue:t.b,magenta:t.m,cyan:t.c,white:t.w,
+    brightBlack:t.bk,brightRed:t.br,brightGreen:t.bg2,brightYellow:t.by,
+    brightBlue:t.bb,brightMagenta:t.bm,brightCyan:t.bc,brightWhite:t.bw};
+}
+function setTheme(term,t){
+  var th=mkTheme(t);
+  try{term.options.theme=th;}catch(e){try{term.setOption('theme',th);}catch(e2){}}
+  try{term.options.cursorStyle=t.cursorStyle||'block';}catch(e){try{term.setOption('cursorStyle',t.cursorStyle||'block');}catch(e2){}}
+  try{term.options.cursorBlink=!!t.cursorBlink;}catch(e){try{term.setOption('cursorBlink',!!t.cursorBlink);}catch(e2){}}
+}
+function apply(){
+  var sk=skin();var t=T[sk]||T['default'];
+  applyCSS(t,sk);
+  if(_term){setTheme(_term,t);return;}
+  if(window.term&&window.term.element){_term=window.term;setTheme(_term,t);return;}
+  var n=0,id=setInterval(function(){
+    if(window.term&&window.term.element){
+      clearInterval(id);_term=window.term;setTheme(_term,T[skin()]||T['default']);
+    } else if(++n>100){clearInterval(id);}
+  },150);
+}
+window.addEventListener('message',function(e){if(e.data&&e.data.type==='mira-theme')apply();});
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);
+else apply();
+})();
+</script>"""  # end _TTYD_THEME_INJECT
+
 @api.api_route("/terminal/{path:path}", methods=["GET", "POST", "HEAD"])
 async def ttyd_http_proxy(path: str, request: Request):
     """Proxy HTTP requests (HTML/JS/CSS assets) to the ttyd process.
@@ -1822,7 +2135,11 @@ async def ttyd_http_proxy(path: str, request: Request):
     # Strip hop-by-hop and encoding headers (httpx decompresses; don't re-claim gzip)
     skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
-    return Response(content=resp.content, status_code=resp.status_code, headers=headers)
+    content = resp.content
+    # Inject theme script into the ttyd HTML page
+    if "text/html" in resp.headers.get("content-type", "") and b"</body>" in content:
+        content = content.replace(b"</body>", _TTYD_THEME_INJECT.encode() + b"</body>", 1)
+    return Response(content=content, status_code=resp.status_code, headers=headers)
 
 
 @api.websocket("/terminal/ws")
@@ -1896,13 +2213,50 @@ async def terminal_focus(request: Request, body: dict):
     if not m:
         raise HTTPException(status_code=400, detail="invalid target format")
     session, window, _pane = m.group(1), m.group(2), m.group(3)
-    # Set the session's active window (works regardless of which client),
-    # then select the target pane within that window.
+    # Select the window and pane in the target session.
     subprocess.run([_TMUX_BIN, "select-window", "-t", f"{session}:{window}"],
                    env=_TMUX_ENV, capture_output=True)
     subprocess.run([_TMUX_BIN, "select-pane", "-t", target],
                    env=_TMUX_ENV, capture_output=True)
-    return {"ok": True}
+
+    # Collect TTYs of all ttyd-spawned tmux clients.
+    # Strategy: find child processes of any running ttyd process (not just the
+    # one Mira started — it may have been orphaned after a restart).
+    ttyd_ttys: set[str] = set()
+
+    def _collect_ttyd_ttys(parent_pid: str) -> None:
+        child_res = subprocess.run(
+            ["pgrep", "-P", parent_pid],
+            capture_output=True, text=True,
+        )
+        for child_pid in child_res.stdout.strip().splitlines():
+            tty_res = subprocess.run(
+                ["ps", "-p", child_pid.strip(), "-o", "tty="],
+                capture_output=True, text=True,
+            )
+            tty = tty_res.stdout.strip()
+            if tty and tty != "??":
+                ttyd_ttys.add(f"/dev/{tty}")
+
+    # Primary: use tracked _ttyd_proc if still alive
+    if _ttyd_proc and _ttyd_proc.poll() is None:
+        _collect_ttyd_ttys(str(_ttyd_proc.pid))
+
+    # Fallback: scan for any running ttyd (handles orphaned ttyd after Mira restarts)
+    if not ttyd_ttys:
+        ttyd_scan = subprocess.run(
+            ["pgrep", "-f", "ttyd"],
+            capture_output=True, text=True,
+        )
+        for pid in ttyd_scan.stdout.strip().splitlines():
+            _collect_ttyd_ttys(pid.strip())
+
+    for tty in ttyd_ttys:
+        subprocess.run(
+            [_TMUX_BIN, "switch-client", "-c", tty, "-t", f"{session}:{window}"],
+            env=_TMUX_ENV, capture_output=True,
+        )
+    return {"ok": True, "switched": len(ttyd_ttys)}
 
 
 @api.post("/api/terminals/{target:path}/scroll")
