@@ -365,6 +365,24 @@ body {
     border-left-color: var(--green);
   }
 }
+.new-project-card {
+  border: 2px dashed rgba(var(--accent-rgb, 0,255,157), .3);
+  border-radius: var(--radius);
+  min-height: 120px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  cursor: pointer; gap: 8px;
+  transition: border-color .2s, background .2s;
+  color: var(--sub);
+  text-decoration: none;
+}
+.new-project-card:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 0,255,157), .04);
+  color: var(--accent);
+}
+.new-project-card .npc-plus { font-size: 28px; line-height: 1; }
+.new-project-card .npc-label { font-size: 12px; font-weight: 600; }
 .card-header {
   display: flex;
   align-items: center;
@@ -1907,6 +1925,7 @@ body {
 <div class="topbar">
   <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
+  <a class="topbar-btn" href="/stats" id="stats-nav-btn" title="开发统计" style="text-decoration:none">Stats</a>
   <a class="topbar-btn" href="/dev" title="进入开发模式" style="text-decoration:none">Dev</a>
   <button class="topbar-btn" id="chat-fab" onclick="toggleChat()" aria-label="打开 Mira 对话" style="position:relative">⌘<span id="anomaly-badge"></span></button>
   <button class="topbar-btn" onclick="openSettings()" title="设置">
@@ -1932,6 +1951,13 @@ body {
 <div id="panel-overview" style="padding: 0 28px 48px" class="main-page">
   <div class="kpi-row" id="kpi-row" style="margin-top:24px"></div>
   <div id="balance-row" style="display:none;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px"></div>
+
+  <!-- A: Base Services 状态卡片 -->
+  <div id="infra-section" style="display:none;margin-bottom:24px">
+    <div class="infra-section-title">基础服务</div>
+    <div class="infra-grid" id="infra-grid"></div>
+  </div>
+
   <div class="filter-bar">
     <button class="filter-btn" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
     <button class="filter-btn active" id="filter-active" onclick="setFilter('active', this)">Active <span class="filter-count" id="count-active">0</span></button>
@@ -2406,7 +2432,10 @@ function renderCards() {
     }
     return;
   }
-  grid.innerHTML = filtered.map(renderCard).join('');
+  const newCard = !currentHostFilter
+    ? '<a class="new-project-card" href="/new"><div class="npc-plus">+</div><div class="npc-label">新建项目</div></a>'
+    : '';
+  grid.innerHTML = filtered.map(renderCard).join('') + newCard;
 }
 
 const DEPLOY_ICONS = {
@@ -2682,11 +2711,8 @@ function renderGlobal() {
   const totalFiles = allProjects.reduce((s, p) => s + ((p.loc && p.loc.file_count) || 0), 0);
   const totalLines = allProjects.reduce((s, p) => s + ((p.loc && p.loc.code_lines) || 0), 0);
   const anyCostMasked = allProjects.some(p => p.claude_activity?._masked);
-  const totalCost = allProjects.reduce((s, p) => s + ((p.claude_activity?.estimated_cost_usd) || 0), 0);
-  const totalOut = allProjects.reduce((s, p) => s + ((p.claude_activity?.output_tokens) || 0), 0);
-  const totalIn = allProjects.reduce((s, p) => s + ((p.claude_activity?.input_tokens) || 0), 0);
-  const totalCacheR = allProjects.reduce((s, p) => s + ((p.claude_activity?.cache_read_tokens) || 0), 0);
 
+  // Render static cards first with placeholders for token/cost KPIs
   document.getElementById('kpi-row').innerHTML = `
     <div class="kpi-card">
       <div class="kpi-accent-bar" style="background:var(--green)"></div>
@@ -2711,15 +2737,28 @@ function renderGlobal() {
     <div class="kpi-card" style="flex:1.6;border-color:rgba(var(--accent-light-rgb),.2)">
       <div class="kpi-accent-bar" style="background:var(--accent)"></div>
       <div class="kpi-inner">
-        <div class="kpi-stat"><span class="kpi-label">Claude 花费</span><span class="kpi-value kpi-accent">${anyCostMasked ? '***' : '$' + totalCost.toFixed(0)}</span></div>
+        <div class="kpi-stat"><span class="kpi-label">Claude 花费</span><span class="kpi-value kpi-accent" id="kpi-cost">${anyCostMasked ? '***' : '…'}</span></div>
         <div class="kpi-vdiv"></div>
-        <div class="kpi-stat"><span class="kpi-label">Cache 读取</span><span class="kpi-value kpi-purple">${anyCostMasked ? '***' : fmtNum(totalCacheR)}</span></div>
+        <div class="kpi-stat"><span class="kpi-label">Cache 读取</span><span class="kpi-value kpi-purple" id="kpi-cache-r">${anyCostMasked ? '***' : '…'}</span></div>
         <div class="kpi-vdiv"></div>
-        <div class="kpi-stat"><span class="kpi-label">输出</span><span class="kpi-value kpi-accent">${anyCostMasked ? '***' : fmtNum(totalOut)}</span></div>
+        <div class="kpi-stat"><span class="kpi-label">输出</span><span class="kpi-value kpi-accent" id="kpi-out">${anyCostMasked ? '***' : '…'}</span></div>
         <div class="kpi-vdiv"></div>
-        <div class="kpi-stat"><span class="kpi-label">输入</span><span class="kpi-value kpi-muted">${anyCostMasked ? '***' : fmtNum(totalIn)}</span></div>
+        <div class="kpi-stat"><span class="kpi-label">输入</span><span class="kpi-value kpi-muted" id="kpi-in">${anyCostMasked ? '***' : '…'}</span></div>
       </div>
     </div>`;
+
+  // Fetch accurate totals from stats API (includes unclassified sessions)
+  if (!anyCostMasked) {
+    fetch('/api/stats', {headers: _authHeaders()}).then(r => r.ok ? r.json() : null).then(data => {
+      if (!data) return;
+      const t = data.totals || {};
+      const el = id => document.getElementById(id);
+      if (el('kpi-cost'))    el('kpi-cost').textContent    = '$' + (t.estimated_cost_usd || 0).toFixed(0);
+      if (el('kpi-cache-r')) el('kpi-cache-r').textContent = fmtNum(t.cache_read_tokens || 0);
+      if (el('kpi-out'))     el('kpi-out').textContent     = fmtNum(t.output_tokens || 0);
+      if (el('kpi-in'))      el('kpi-in').textContent      = fmtNum(t.input_tokens || 0);
+    }).catch(() => {});
+  }
 
   const tbody = document.getElementById('summary-tbody');
   tbody.innerHTML = allProjects.map(p => {
@@ -3466,8 +3505,60 @@ async function loadInfraServices() {
   try {
     const res = await fetch('/api/base-services');
     allBaseServices = await res.json();
-    renderCards(); // re-render cards to show deps
+    renderCards(); // re-render project cards to show deps
+    renderInfraSection(allBaseServices);
   } catch(e) {}
+}
+
+function renderInfraSection(services) {
+  const section = document.getElementById('infra-section');
+  const grid = document.getElementById('infra-grid');
+  if (!section || !grid || !services || !services.length) return;
+  section.style.display = '';
+
+  grid.innerHTML = services.map(svc => {
+    const on = svc.is_running;
+    const icon = _INFRA_ICONS[svc.type] || '◉';
+    const portLabel = svc.port ? `:${svc.port}` : '';
+    const urlRow = (svc.public_url || svc.has_restart) ? `
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px;min-width:0">
+        ${svc.public_url ? `<a href="https://${escHtml(svc.public_url)}" target="_blank"
+            style="color:var(--accent);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1"
+            title="${escHtml(svc.public_url)}">${escHtml(svc.public_url)}</a>` : '<span style="flex:1"></span>'}
+        ${svc.has_restart ? `<button onclick="restartInfraSvc('${escHtml(svc.name)}')" style="
+            flex-shrink:0;background:none;border:1px solid var(--border);border-radius:4px;
+            color:var(--sub);font-size:10px;padding:2px 7px;cursor:pointer;
+            transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--sub)'">↺ 重启</button>` : ''}
+      </div>` : '';
+    return `<div class="infra-card ${on ? 'running' : 'stopped'}" id="infra-card-${escHtml(svc.name)}">
+      <div class="infra-icon ${svc.type || 'other'}">${icon}</div>
+      <div class="infra-body">
+        <div class="infra-name">${escHtml(svc.name)}</div>
+        <div class="infra-desc" title="${escHtml(svc.desc || '')}">${escHtml(svc.desc || '')}</div>
+        <div class="infra-meta">
+          <div class="infra-dot ${on ? 'on' : 'off'}"></div>
+          <span class="infra-status ${on ? 'on' : 'off'}">${on ? '运行中' : '已停止'}</span>
+          <span class="infra-port">${portLabel}</span>
+        </div>
+        ${urlRow}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function restartInfraSvc(name) {
+  const btn = document.querySelector(`#infra-card-${name} button`);
+  if (btn) { btn.textContent = '...'; btn.disabled = true; }
+  try {
+    const res = await fetch(`/api/base-services/${encodeURIComponent(name)}/restart`,
+      { method: 'POST', headers: _authHeaders() });
+    if (res.status === 401) { openLoginModal(() => restartInfraSvc(name)); return; }
+    if (!res.ok) { alert('重启失败'); }
+  } catch(e) { alert('重启请求失败'); }
+  if (btn) { btn.textContent = '↺ 重启'; btn.disabled = false; }
+  // Refresh status after 15s
+  setTimeout(loadInfraServices, 15000);
 }
 
 // ─── Navigation delegation ────────────────────────────────────────────────────
@@ -3917,7 +4008,7 @@ function renderBalanceCard(p, activity = null) {
     <div class="balance-header" style="display:flex;align-items:center;gap:12px">
       <div class="balance-logo">${escHtml(p.name)}</div>
       <div class="balance-divider balance-divider-primary"></div>
-      ${stats || `<div class="balance-stat balance-stat-primary"><div class="balance-val">—</div><div class="balance-lbl">暂无数据</div></div>`}
+      ${stats || `<div class="balance-stat balance-stat-primary"><div class="balance-val">${escHtml(p.label || '—')}</div><div class="balance-lbl">${p.label ? '额度类型' : '暂无数据'}</div></div>`}
       <span class="balance-card-toggle">▼</span>
     </div>
     ${sparkHtml}
