@@ -188,6 +188,7 @@ _initAuth().then(loadStats);
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         "<title>开发统计 · Mira</title>\n"
         "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>\n"
+        '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">\n'
         '<link rel="stylesheet" href="/static/fonts/fonts.css">\n'
         "<style>\n"
         + _theme_css

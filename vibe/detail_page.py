@@ -14,6 +14,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{project_name.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")} · Mira</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}

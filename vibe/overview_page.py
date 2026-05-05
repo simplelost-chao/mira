@@ -376,6 +376,7 @@ def render_overview_page(p: ProjectInfo, embed: bool = False) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_e(p.name)} · 全局面貌</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
 {_theme_css}

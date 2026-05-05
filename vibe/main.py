@@ -174,6 +174,12 @@ if STATIC_DIR.exists():
         return FileResponse(str(STATIC_DIR / "index.html"),
                             headers={"Cache-Control": "no-cache"})
 
+    @api.get("/favicon.ico", response_class=FileResponse)
+    def favicon():
+        return FileResponse(str(STATIC_DIR / "favicon.svg"),
+                            media_type="image/svg+xml",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
 # ── In-memory cache ────────────────────────────────────────────────────────────
 _cache: list[dict] = []
 _cache_ts: float = 0.0
