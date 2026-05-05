@@ -211,7 +211,7 @@ async function _initAuth() {
     const { admin } = await fetch('/api/auth/check', {headers: _authHeaders()}).then(r => r.json());
     _isAdmin = admin;
     if (!admin) { _adminToken = ''; localStorage.removeItem('mira-admin-token'); }
-  } catch(_) { _isAdmin = true; }
+  } catch(_) { _isAdmin = false; }
 }
 
 let _loginCallback = null;
