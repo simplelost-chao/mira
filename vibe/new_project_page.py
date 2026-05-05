@@ -172,7 +172,7 @@ def render_new_project_page() -> str:
     page_js = r"""
 let _candidates = [];
 let _selectedIdx = -1;
-let _adminToken = localStorage.getItem('mira-admin-token') || '';
+// _adminToken is declared by topbar.js, reuse it here
 
 // Load available models
 (async function() {
