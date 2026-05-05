@@ -72,24 +72,26 @@ def _make_payload(model_id: str, description: str, cfg: dict) -> tuple[str, dict
     if model_id == "deepseek":
         return (
             "https://api.deepseek.com/v1/chat/completions",
-            {"Authorization": f"Bearer {cfg['deepseek_api_key']}", "Content-Type": "application/json"},
+            {"Authorization": f"Bearer {cfg.get('deepseek_api_key', '')}", "Content-Type": "application/json"},
             json.dumps({"model": "deepseek-chat", "messages": messages, "temperature": 0.9}),
         )
     if model_id == "openrouter":
         return (
             "https://openrouter.ai/api/v1/chat/completions",
-            {"Authorization": f"Bearer {cfg['openrouter_api_key']}", "Content-Type": "application/json"},
+            {"Authorization": f"Bearer {cfg.get('openrouter_api_key', '')}", "Content-Type": "application/json"},
             json.dumps({"model": "anthropic/claude-3.5-haiku", "messages": messages, "temperature": 0.9}),
         )
     if model_id == "gemini":
-        key = cfg["gemini_api_key"]
+        key = cfg.get("gemini_api_key") or ""
+        if not key:
+            raise RuntimeError("Gemini API key 未配置")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}"
         body = {"contents": [{"parts": [{"text": _SYSTEM_PROMPT + "\n\n" + description}]}]}
         return (url, {"Content-Type": "application/json"}, json.dumps(body))
     if model_id == "doubao":
         return (
             "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-            {"Authorization": f"Bearer {cfg['doubao_api_key']}", "Content-Type": "application/json"},
+            {"Authorization": f"Bearer {cfg.get('doubao_api_key', '')}", "Content-Type": "application/json"},
             json.dumps({"model": "ep-20250117145003-bpbqm", "messages": messages, "temperature": 0.9}),
         )
     raise ValueError(f"Unknown model: {model_id}")
@@ -97,9 +99,12 @@ def _make_payload(model_id: str, description: str, cfg: dict) -> tuple[str, dict
 
 def _extract_content(model_id: str, resp_data: dict) -> str:
     """Extract text content from API response."""
-    if model_id == "gemini":
-        return resp_data["candidates"][0]["content"]["parts"][0]["text"]
-    return resp_data["choices"][0]["message"]["content"]
+    try:
+        if model_id == "gemini":
+            return resp_data["candidates"][0]["content"]["parts"][0]["text"]
+        return resp_data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"AI 响应格式异常: {e}，原始数据: {str(resp_data)[:200]}")
 
 
 def call_brainstorm(description: str, model_id: str, cfg: dict) -> list[dict]:
@@ -110,7 +115,8 @@ def call_brainstorm(description: str, model_id: str, cfg: dict) -> list[dict]:
         with urllib.request.urlopen(req, timeout=30) as resp:
             resp_data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"AI API 错误 {e.code}: {e.read().decode()[:200]}")
+        safe_url = url.split("?")[0] if "?" in url else url
+        raise RuntimeError(f"AI API 错误 {e.code} ({safe_url}): {e.read().decode()[:200]}")
     except Exception as e:
         raise RuntimeError(f"AI 调用失败: {e}")
 
