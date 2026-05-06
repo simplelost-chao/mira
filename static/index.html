@@ -4144,6 +4144,7 @@ _initAuth().then(ready => {
   if (!ready) return; // waiting at login gate
   loadProjects();
   loadInfraServices();
+  loadClaudeUsage();
   connectStatusWs();
   loadBalance();
 });
