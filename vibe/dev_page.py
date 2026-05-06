@@ -1117,7 +1117,13 @@ function _ansiToHtml(raw) {
   var text = raw.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ''); // OSC
   text = text.replace(/\x1b\[[\?]?[0-9;]*[A-LN-Za-ln-z]/g, '');    // CSI non-SGR
   // 2. Strip trailing whitespace per line (tmux pads to full terminal width)
-  text = text.split('\n').map(function(l) { return l.replace(/[\s\x1b]+$/, ''); }).join('\n');
+  //    Also drop lines that are purely box-drawing chars (tmux borders / status separators)
+  text = text.split('\n').map(function(l) {
+    l = l.replace(/[\s\x1b]+$/, '');
+    var plain = l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+    if (plain.length > 4 && /^[\u2500-\u257F]+$/.test(plain)) return '';
+    return l;
+  }).join('\n');
   // 3. Collapse consecutive blank lines and trim trailing blanks
   text = text.replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n');
   // Split on SGR sequences
