@@ -133,10 +133,12 @@ def topbar_css() -> str:
         "  }\n"
         "  .topbar-back:hover { color: var(--text); border-color: var(--accent); }\n"
         "  .topbar-btn {\n"
-        "    background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);\n"
-        "    color: var(--sub); font-size: 13px; padding: 4px 10px; cursor: pointer;\n"
-        "    font-family: var(--mono); transition: all .15s; display: inline-flex; align-items: center;\n"
+        "    display: inline-flex; align-items: center; justify-content: center;\n"
+        "    width: 32px; height: 32px; background: none; border: 1px solid var(--border);\n"
+        "    border-radius: var(--radius-sm); color: var(--sub); cursor: pointer;\n"
+        "    transition: all .15s; text-decoration: none; position: relative;\n"
         "  }\n"
+        "  .topbar-btn svg { display: block; }\n"
         "  .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }\n"
         "  .topbar-detail-btn {\n"
         "    display: none;\n"
@@ -186,13 +188,14 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
     if back_url:
         parts.append(f'  <a class="topbar-back" href="{back_url}">← 返回</a>')
     if not hide_dev:
-        parts.append('  <a class="topbar-btn" href="/dev" title="进入开发模式" style="text-decoration:none">Dev</a>')
-    if not hide_dev:
-        parts.append('  <a class="topbar-btn" href="/" title="MIRA 对话" style="text-decoration:none">⌘</a>')
+        parts.append('  <a class="topbar-btn" href="/dev" title="终端" style="text-decoration:none">'
+                      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                      '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'
+                      '</svg></a>')
     parts += [
         '  <button class="topbar-btn" onclick="openSettings()" title="设置">',
-        '    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">',
-        '      <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
+        '    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">',
+        '      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1.08H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/>',
         '    </svg>',
         '  </button>',
     ]
