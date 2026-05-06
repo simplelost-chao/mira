@@ -1497,7 +1497,13 @@ function _initMobileInput() {
     }
     // Regular special keys
     var keyName = btn.dataset.key;
-    var seq = _SPECIAL_KEYS[keyName] || (keyName && keyName.length === 1 ? keyName : null);
+    var seq = _SPECIAL_KEYS[keyName];
+    if (!seq && keyName && keyName.length === 1) {
+      // Single char keys (digits etc): send char + Enter
+      if (!_isMobile && _inScrollMode) _scrollTerminal('exit');
+      _sendToTerminal(keyName + '\n');
+      return;
+    }
     if (seq) {
       if (!_isMobile && _inScrollMode) _scrollTerminal('exit');
       _sendToTerminal(seq);
