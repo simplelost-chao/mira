@@ -383,6 +383,75 @@ def render_dev_page() -> str:
   }
   #dev-toast.show { opacity: 1; pointer-events: auto; }
 
+  /* ── Safari-style tab switcher (mobile only) ── */
+  .tab-switcher {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,.88);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 60px 20px 40px;
+    display: none; opacity: 0;
+    transition: opacity .25s;
+  }
+  .tab-switcher.open { display: block; }
+  .tab-switcher.visible { opacity: 1; }
+  .tab-card {
+    position: relative; width: 100%;
+    margin-bottom: -12px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,.1);
+    overflow: hidden;
+    transform-origin: center bottom;
+    transform: perspective(800px) rotateX(2deg);
+    transition: transform .35s ease, opacity .3s;
+    box-shadow: 0 4px 24px rgba(0,0,0,.5);
+    opacity: 0;
+  }
+  .tab-card:last-child { margin-bottom: 0; }
+  .tab-card.active { border-color: var(--accent); box-shadow: 0 4px 24px rgba(0,0,0,.5), 0 0 0 1px var(--accent); }
+  .tab-card.show { opacity: 1; }
+  .tab-card-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .tab-card-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  }
+  .tab-card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab-card-close {
+    width: 22px; height: 22px; flex-shrink: 0;
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; font-size: 18px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; transition: background .15s, color .15s;
+  }
+  .tab-card-close:active { background: rgba(255,255,255,.1); color: var(--red); }
+  .tab-card-preview {
+    height: 150px; overflow: hidden; position: relative;
+  }
+  .tab-card-preview-inner {
+    transform: scale(0.35); transform-origin: top left;
+    width: 285%; height: 430px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.4;
+    color: var(--text); padding: 6px 8px;
+    pointer-events: none; user-select: none;
+  }
+  .tab-card-empty {
+    height: 150px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 12px;
+  }
+  /* pixel-cyber skin */
+  [data-theme="pixel-cyber"] .tab-card { border-color: rgba(0,212,255,.2); box-shadow: 0 4px 20px rgba(0,8,20,.6), 0 0 12px rgba(0,212,255,.08); }
+  [data-theme="pixel-cyber"] .tab-card.active { border-color: #00d4ff; box-shadow: 0 4px 20px rgba(0,8,20,.6), 0 0 16px rgba(0,212,255,.25); }
+  [data-theme="pixel-cyber"] .tab-switcher { background: rgba(0,8,20,.92); }
+  /* neon-pixel skin */
+  [data-theme="neon-pixel"] .tab-card { border-color: rgba(0,255,0,.15); }
+  [data-theme="neon-pixel"] .tab-card.active { border-color: #ff00ff; box-shadow: 0 0 16px rgba(255,0,255,.2); }
+
   /* ── Upload confirm popup (desktop) ── */
   .upload-confirm {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -902,6 +971,7 @@ async function killPane(killEl) {
 
 // ── Pane selection ────────────────────────────────────────────────────────────
 async function selectPane(target, cmd) {
+  if (_isMobile) _saveSnapshot();  // save current pane's terminal output before switching
   _currentTarget = target;
   const rows = document.querySelectorAll('.term-pane-row');
   rows.forEach(r => r.classList.toggle('active', r.dataset.target === target));
@@ -1250,6 +1320,8 @@ function _connectTermWs(target) {
     var wasAtBottom = (output.scrollHeight - output.scrollTop - output.clientHeight) < 40;
     output.innerHTML = _ansiToHtml(e.data);
     if (wasAtBottom) output.scrollTop = output.scrollHeight;
+    // Cache snapshot for tab switcher
+    if (_currentTarget) _paneSnapshots[_currentTarget] = output.innerHTML;
     // Update state dot from WebSocket data
     if (_currentTarget) _onStateChange(_currentTarget, _detectState(_stripAnsi(e.data)));
   };
@@ -1467,6 +1539,135 @@ function _navigateHistory(dir) {
 }
 
 // ── Mobile pane switcher ──────────────────────────────────────────────────────
+// ── Safari-style tab switcher (mobile) ─────────────────────────────────────
+var _paneSnapshots = {};
+
+function _saveSnapshot() {
+  if (!_currentTarget) return;
+  var output = document.getElementById('mobile-term-output');
+  if (output && output.innerHTML) _paneSnapshots[_currentTarget] = output.innerHTML;
+}
+
+async function _openTabSwitcher() {
+  _saveSnapshot();
+  var overlay = document.getElementById('tab-switcher');
+  if (!overlay) return;
+  // If already open, close
+  if (overlay.classList.contains('open')) { _closeTabSwitcher(); return; }
+  try {
+    var res = await fetch('/api/dev/panes', { headers: _authHeaders() });
+    if (!res.ok) return;
+    var panes = await res.json();
+    var html = '';
+    var dotColors = { idle:'var(--green)', running:'var(--green)', confirm:'var(--orange)', error:'var(--red)', done:'var(--green)' };
+    for (var i = 0; i < panes.length; i++) {
+      var p = panes[i];
+      var isCurrent = (_currentTarget === p.target);
+      var st = _paneState[p.target] || 'inactive';
+      var dotColor = dotColors[st] || 'var(--muted)';
+      var name = (p.label || p.target).replace(/^.*\//, '');
+      var snap = _paneSnapshots[p.target];
+      var previewHtml = snap
+        ? '<div class="tab-card-preview"><div class="tab-card-preview-inner">' + snap + '</div></div>'
+        : '<div class="tab-card-empty">暂无预览</div>';
+      html += '<div class="tab-card' + (isCurrent ? ' active' : '') + '"'
+        + ' data-target="' + escHtml(p.target) + '"'
+        + ' data-cmd="' + escHtml(p.command || '') + '"'
+        + ' style="transition-delay:' + (i * 40) + 'ms">'
+        + '<div class="tab-card-header">'
+        + '<span class="tab-card-dot" style="background:' + dotColor + '"></span>'
+        + '<span class="tab-card-name">' + escHtml(name) + '</span>'
+        + '<button class="tab-card-close" onclick="event.stopPropagation();_killTabCard(this)" title="关闭">&times;</button>'
+        + '</div>'
+        + previewHtml
+        + '</div>';
+    }
+    overlay.innerHTML = html;
+    overlay.classList.add('open');
+    // Trigger stagger animation
+    requestAnimationFrame(function() {
+      overlay.classList.add('visible');
+      overlay.querySelectorAll('.tab-card').forEach(function(c) { c.classList.add('show'); });
+    });
+    // 3D scroll
+    overlay.addEventListener('scroll', _tabScrollRAF);
+    // Click backdrop to close
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) _closeTabSwitcher();
+    });
+    // Click card to select
+    overlay.querySelectorAll('.tab-card').forEach(function(card) {
+      card.addEventListener('click', function() {
+        var t = card.dataset.target, cmd = card.dataset.cmd;
+        card.style.transform = 'perspective(800px) scale(1.03)';
+        card.style.transition = 'transform .15s';
+        setTimeout(function() {
+          _closeTabSwitcher();
+          selectPane(t, cmd);
+        }, 150);
+      });
+    });
+    // Initial 3D positioning
+    _updateTabPerspective();
+    // Scroll active card into view
+    var activeCard = overlay.querySelector('.tab-card.active');
+    if (activeCard) activeCard.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  } catch(e) { console.warn('tab switcher:', e); }
+}
+
+var _tabRAF = null;
+function _tabScrollRAF() {
+  if (_tabRAF) return;
+  _tabRAF = requestAnimationFrame(function() {
+    _updateTabPerspective();
+    _tabRAF = null;
+  });
+}
+function _updateTabPerspective() {
+  var overlay = document.getElementById('tab-switcher');
+  if (!overlay) return;
+  var viewH = window.innerHeight;
+  overlay.querySelectorAll('.tab-card').forEach(function(card) {
+    var rect = card.getBoundingClientRect();
+    var center = rect.top + rect.height / 2;
+    var ratio = center / viewH;
+    var angle = 4 - ratio * 8;
+    angle = Math.max(-4, Math.min(4, angle));
+    card.style.transform = 'perspective(800px) rotateX(' + angle.toFixed(1) + 'deg)';
+  });
+}
+
+function _closeTabSwitcher() {
+  var overlay = document.getElementById('tab-switcher');
+  if (!overlay) return;
+  overlay.classList.remove('visible');
+  overlay.removeEventListener('scroll', _tabScrollRAF);
+  setTimeout(function() {
+    overlay.classList.remove('open');
+    overlay.innerHTML = '';
+  }, 250);
+}
+
+function _killTabCard(btn) {
+  var card = btn.closest('.tab-card');
+  if (!card) return;
+  var target = card.dataset.target;
+  card.style.transition = 'transform .3s, opacity .3s';
+  card.style.transform = 'translateX(-100%) rotateZ(-5deg)';
+  card.style.opacity = '0';
+  setTimeout(function() {
+    card.remove();
+    delete _paneSnapshots[target];
+    // Kill the pane via API
+    fetch('/api/terminals/' + encodeURIComponent(target), {
+      method: 'DELETE', headers: _authHeaders()
+    }).then(function() { loadPanes(true); });
+    // If no cards left, close
+    var overlay = document.getElementById('tab-switcher');
+    if (overlay && !overlay.querySelector('.tab-card')) _closeTabSwitcher();
+  }, 300);
+}
+
 async function _togglePaneSwitcher() {
   var panel = document.getElementById('pane-switcher');
   if (!panel) return;
@@ -1733,6 +1934,9 @@ init();
         + "</style>\n</head>\n<body>\n\n"
         + topbar_html(title="Dev", hide_dev=True) + "\n\n"
         + """\
+<!-- Tab switcher overlay (mobile) -->
+<div class="tab-switcher" id="tab-switcher"></div>
+
 <div class="dev-page" id="dev-page">
   <!-- Sidebar: pane list -->
   <div class="term-sidebar">
