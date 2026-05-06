@@ -251,7 +251,7 @@ function renderCandidates(candidates) {
   const list = document.getElementById('candidate-list');
   list.innerHTML = candidates.map((c, i) => `
     <div class="candidate-card" id="ccard-${i}" onclick="selectCandidate(${i})">
-      <div class="candidate-logo">${c.logo_svg}</div>
+      <div class="candidate-logo"><img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(c.logo_svg)}" style="width:38px;height:38px;object-fit:contain" alt="logo"></div>
       <div style="flex:1">
         <div>
           <span class="candidate-name">${_esc(c.name)}</span>

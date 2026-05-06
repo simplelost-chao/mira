@@ -133,7 +133,10 @@ def call_brainstorm(description: str, model_id: str, cfg: dict) -> list[dict]:
 
 def _slugify(name: str) -> str:
     """'My Project' → 'my-project'"""
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not slug:
+        raise ValueError(f"项目名称「{name}」无法生成有效的目录名，请使用英文名称")
+    return slug
 
 
 def _make_vibe_yaml(name: str, description: str, port, domain) -> str:
@@ -169,8 +172,16 @@ def create_project(
     Raises FileExistsError if directory already exists.
     """
     base_dir = Path(base_dir)
+    if len(name) > 64:
+        raise ValueError("项目名称不能超过 64 个字符")
     project_id = _slugify(name)
     proj_dir = base_dir / project_id
+
+    # Verify no path traversal
+    try:
+        proj_dir.resolve().relative_to(base_dir.resolve())
+    except ValueError:
+        raise ValueError(f"无效的项目名称，路径越界: {project_id}")
 
     if proj_dir.exists():
         raise FileExistsError(f"目录已存在: {proj_dir}")
