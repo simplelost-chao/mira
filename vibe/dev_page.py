@@ -203,9 +203,7 @@ def render_dev_page() -> str:
   /* ── Mobile ── */
   @media (max-width: 900px) {
     .term-detail-header {
-      display: flex; align-items: center; gap: 10px;
-      height: 40px; padding: 0 12px; flex-shrink: 0;
-      background: var(--panel); border-bottom: 1px solid var(--border);
+      display: none !important;
     }
     .term-detail-back {
       background: none; border: 1px solid var(--border);
@@ -222,9 +220,10 @@ def render_dev_page() -> str:
     /* Hide desktop term-detail-header by default; it only shows on mobile */
     .dev-page:not(.detail-open) .term-detail-header { display: none; }
 
-    /* When detail is open: hide topbar, use full viewport */
-    body:has(.dev-page.detail-open) .topbar { display: none !important; }
-    .dev-page.detail-open { height: var(--app-h, 100dvh); }
+    /* When detail is open: hide non-essential topbar buttons, keep topbar visible */
+    body:has(.dev-page.detail-open) .topbar .topbar-btn { display: none !important; }
+    body:has(.dev-page.detail-open) .topbar .topbar-detail-btns { display: flex !important; }
+    .dev-page.detail-open { height: calc(var(--app-h, 100dvh) - 52px); }
 
     .dev-page { height: calc(var(--app-h) - 52px); }
     .term-sidebar { width: 100%; flex: 1; border-right: none; }
