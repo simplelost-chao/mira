@@ -905,7 +905,12 @@ async function selectPane(target, cmd) {
   rows.forEach(r => r.classList.toggle('active', r.dataset.target === target));
   document.getElementById('dev-page').classList.add('detail-open');
   // Lock body scroll on mobile to prevent iOS rubber-banding
-  if (_isMobile) document.body.classList.add('detail-locked');
+  if (_isMobile) {
+    document.body.classList.add('detail-locked');
+    // Hide non-essential topbar buttons, show detail buttons
+    document.querySelectorAll('.topbar .topbar-btn').forEach(function(b) { b.style.display = 'none'; });
+    document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = 'inline-flex'; });
+  }
 
   // Update mobile detail header title with project_name from the row
   const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"]`);
@@ -996,6 +1001,9 @@ function showPlaceholder() {
   document.getElementById('term-placeholder').style.display = '';
   document.getElementById('dev-page').classList.remove('detail-open');
   document.body.classList.remove('detail-locked');
+  // Restore topbar buttons
+  document.querySelectorAll('.topbar .topbar-btn').forEach(function(b) { b.style.display = ''; });
+  document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = ''; });
 }
 
 // ── New window ────────────────────────────────────────────────────────────────
