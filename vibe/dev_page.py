@@ -389,60 +389,61 @@ def render_dev_page() -> str:
     background: rgba(0,0,0,.88);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: 60px 20px 40px;
+    padding: 60px 12px 40px;
     display: none; opacity: 0;
     transition: opacity .25s;
   }
   .tab-switcher.open { display: block; }
   .tab-switcher.visible { opacity: 1; }
+  .tab-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
   .tab-card {
-    position: relative; width: 100%;
-    margin-bottom: -12px;
+    position: relative;
     border-radius: 10px;
     background: var(--bg);
     border: 1px solid rgba(255,255,255,.1);
     overflow: hidden;
     transform-origin: center bottom;
-    transform: perspective(800px) rotateX(2deg);
+    transform: perspective(800px) rotateX(1.5deg);
     transition: transform .35s ease, opacity .3s;
-    box-shadow: 0 4px 24px rgba(0,0,0,.5);
+    box-shadow: 0 4px 16px rgba(0,0,0,.5);
     opacity: 0;
   }
-  .tab-card:last-child { margin-bottom: 0; }
-  .tab-card.active { border-color: var(--accent); box-shadow: 0 4px 24px rgba(0,0,0,.5), 0 0 0 1px var(--accent); }
+  .tab-card.active { border-color: var(--accent); box-shadow: 0 4px 16px rgba(0,0,0,.5), 0 0 0 1px var(--accent); }
   .tab-card.show { opacity: 1; }
   .tab-card-header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px;
+    display: flex; align-items: center; gap: 5px;
+    padding: 6px 8px;
     background: var(--panel);
     border-bottom: 1px solid rgba(255,255,255,.06);
-    font-size: 13px; font-weight: 600; color: var(--text);
+    font-size: 10px; font-weight: 600; color: var(--text);
   }
   .tab-card-dot {
-    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
   }
   .tab-card-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tab-card-close {
-    width: 22px; height: 22px; flex-shrink: 0;
+    width: 18px; height: 18px; flex-shrink: 0;
     background: none; border: none; color: var(--muted);
-    cursor: pointer; font-size: 18px; line-height: 1;
+    cursor: pointer; font-size: 14px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
     border-radius: 50%; transition: background .15s, color .15s;
   }
   .tab-card-close:active { background: rgba(255,255,255,.1); color: var(--red); }
   .tab-card-preview {
-    height: 150px; overflow: hidden; position: relative;
+    height: 180px; overflow: hidden; position: relative;
   }
   .tab-card-preview-inner {
-    transform: scale(0.35); transform-origin: top left;
-    width: 285%; height: 430px;
+    transform: scale(0.45); transform-origin: top left;
+    width: 222%; height: 400px;
     font-family: var(--mono); font-size: 12px; line-height: 1.4;
-    color: var(--text); padding: 6px 8px;
+    color: var(--text); padding: 4px 6px;
     pointer-events: none; user-select: none;
   }
   .tab-card-empty {
-    height: 150px; display: flex; align-items: center; justify-content: center;
-    color: var(--muted); font-size: 12px;
+    height: 180px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 11px;
   }
   /* pixel-cyber skin */
   [data-theme="pixel-cyber"] .tab-card { border-color: rgba(0,212,255,.2); box-shadow: 0 4px 20px rgba(0,8,20,.6), 0 0 12px rgba(0,212,255,.08); }
@@ -1582,7 +1583,7 @@ async function _openTabSwitcher() {
         + previewHtml
         + '</div>';
     }
-    overlay.innerHTML = html;
+    overlay.innerHTML = '<div class="tab-grid">' + html + '</div>';
     overlay.classList.add('open');
     // Trigger stagger animation
     requestAnimationFrame(function() {
