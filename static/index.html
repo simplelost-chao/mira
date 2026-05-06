@@ -3624,21 +3624,22 @@ async function loadClaudeUsage() {
       + bar('本周用量 (7d)', d.weekly)
       + '</div>';
 
-    // Update topbar indicator
+    // Update topbar indicator (two bars: session + weekly)
     const tb = document.getElementById('topbar-usage');
-    if (tb && d.weekly?.utilization != null) {
-      const pct = Math.round(d.weekly.utilization * 100);
-      const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-      let reset = '';
-      if (d.weekly.resets_at) {
-        const h = Math.floor((d.weekly.resets_at * 1000 - Date.now()) / 3600000);
-        if (h > 0) reset = ` · ${h}h`;
+    if (tb) {
+      function tbBar(label, data) {
+        if (!data || data.utilization == null) return '';
+        const pct = Math.round(data.utilization * 100);
+        const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
+        return `<span class="topbar-usage-label">${label} ${pct}%</span>`
+          + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
       }
-      tb.innerHTML = `<span class="topbar-usage-label">CC ${pct}%${reset}</span>`
-        + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
-      tb.style.display = 'flex';
-      tb.title = 'Claude Code: ' + pct + '% weekly' + reset;
+      const html = tbBar('5h', d.session) + tbBar('7d', d.weekly);
+      if (html) { tb.innerHTML = html; tb.style.display = 'flex'; }
     }
+
+    // Hide the card section (topbar is enough)
+    if (section) section.style.display = 'none';
   } catch(e) {}
   setTimeout(loadClaudeUsage, 120000);
 }

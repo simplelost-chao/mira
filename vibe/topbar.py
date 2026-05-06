@@ -277,21 +277,15 @@ async function _loadTopbarUsage() {
     if (d.error) return;
     const el = document.getElementById('topbar-usage');
     if (!el) return;
-    const pct = d.weekly?.utilization != null ? Math.round(d.weekly.utilization * 100) : null;
-    if (pct === null) return;
-    const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-    let reset = '';
-    if (d.weekly.resets_at) {
-      const diff = d.weekly.resets_at * 1000 - Date.now();
-      if (diff > 0) {
-        const h = Math.floor(diff / 3600000);
-        reset = h > 0 ? ` · ${h}h` : '';
-      }
+    function _tb(label, data) {
+      if (!data || data.utilization == null) return '';
+      const pct = Math.round(data.utilization * 100);
+      const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
+      return `<span class="topbar-usage-label">${label} ${pct}%</span>`
+        + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
     }
-    el.innerHTML = `<span class="topbar-usage-label">CC ${pct}%${reset}</span>`
-      + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
-    el.style.display = 'flex';
-    el.title = `Claude Code: ${pct}% weekly${reset}`;
+    const html = _tb('5h', d.session) + _tb('7d', d.weekly);
+    if (html) { el.innerHTML = html; el.style.display = 'flex'; }
   } catch(e) {}
   setTimeout(_loadTopbarUsage, 120000);
 }
