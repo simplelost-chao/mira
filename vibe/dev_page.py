@@ -433,18 +433,20 @@ def render_dev_page() -> str:
   }
   .tab-card-close:active { background: rgba(255,255,255,.1); color: var(--red); }
   .tab-card-preview {
-    height: 180px; overflow: hidden; position: relative;
-  }
-  .tab-card-preview-inner {
-    transform: scale(0.45); transform-origin: top left;
-    width: 222%; height: 400px;
-    font-family: var(--mono); font-size: 12px; line-height: 1.4;
-    color: var(--text); padding: 4px 6px;
+    height: 120px; overflow: hidden; position: relative;
+    font-family: var(--mono); font-size: 10px; line-height: 1.35;
+    color: var(--text); padding: 6px 8px;
     pointer-events: none; user-select: none;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .tab-card-preview::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40px;
+    background: linear-gradient(transparent, var(--bg));
+    pointer-events: none;
   }
   .tab-card-empty {
-    height: 180px; display: flex; align-items: center; justify-content: center;
-    color: var(--muted); font-size: 11px;
+    height: 120px; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 10px;
   }
   /* pixel-cyber skin */
   [data-theme="pixel-cyber"] .tab-card { border-color: rgba(0,212,255,.2); box-shadow: 0 4px 20px rgba(0,8,20,.6), 0 0 12px rgba(0,212,255,.08); }
@@ -1322,8 +1324,11 @@ function _connectTermWs(target) {
     var wasAtBottom = (output.scrollHeight - output.scrollTop - output.clientHeight) < 40;
     output.innerHTML = _ansiToHtml(e.data);
     if (wasAtBottom) output.scrollTop = output.scrollHeight;
-    // Cache snapshot for tab switcher
-    if (_currentTarget) _paneSnapshots[_currentTarget] = output.innerHTML;
+    // Cache snapshot for tab switcher (last 20 lines of plain text)
+    if (_currentTarget) {
+      var _lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
+      _paneSnapshots[_currentTarget] = _lines.slice(-20).join('\n');
+    }
     // Update state dot from WebSocket data
     if (_currentTarget) _onStateChange(_currentTarget, _detectState(_stripAnsi(e.data)));
   };
@@ -1553,7 +1558,11 @@ var _paneSnapshots = {};
 function _saveSnapshot() {
   if (!_currentTarget) return;
   var output = document.getElementById('mobile-term-output');
-  if (output && output.innerHTML) _paneSnapshots[_currentTarget] = output.innerHTML;
+  if (output && output.textContent) {
+    // Save last ~20 lines of plain text for preview
+    var lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
+    _paneSnapshots[_currentTarget] = lines.slice(-20).join('\n');
+  }
 }
 
 function _openTabSwitcher() {
@@ -1577,7 +1586,7 @@ function _openTabSwitcher() {
     var name = (nameEl ? nameEl.textContent : target).replace(/^.*\//, '');
     var snap = _paneSnapshots[target];
     var previewHtml = snap
-      ? '<div class="tab-card-preview"><div class="tab-card-preview-inner">' + snap + '</div></div>'
+      ? '<div class="tab-card-preview">' + escHtml(snap) + '</div>'
       : '<div class="tab-card-empty">暂无预览</div>';
     html += '<div class="tab-card' + (isCurrent ? ' active' : '') + ' show"'
       + ' data-target="' + escHtml(target) + '"'
