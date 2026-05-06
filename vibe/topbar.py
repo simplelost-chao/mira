@@ -172,7 +172,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
         hide_dev: If True, hides the Dev button (use on the dev page itself).
     """
     parts = [
-        '<div class="topbar">',
+        '<div class="topbar" style="position:fixed;top:0;left:0;right:0">',
         '  <a class="topbar-logo" href="/" style="text-decoration:none">',
         '    <span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span>',
         '  </a>',
