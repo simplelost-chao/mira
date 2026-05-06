@@ -282,13 +282,15 @@ body {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
-.topbar-usage { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--sub); cursor: default; white-space: nowrap; }
-.topbar-usage-bar { width: 48px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+.topbar-usage { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--sub); cursor: default; white-space: nowrap; }
+.topbar-usage-row { display: flex; align-items: center; gap: 5px; }
+.topbar-usage-label { min-width: 28px; }
+.topbar-usage-bar { width: 48px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
 .topbar-usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }
 .topbar-usage-fill.low { background: var(--green); }
 .topbar-usage-fill.mid { background: var(--orange); }
 .topbar-usage-fill.high { background: var(--red); }
-@media (max-width: 900px) { .topbar-usage-label { display: none; } .topbar-usage-bar { width: 32px; } }
+@media (max-width: 900px) { .topbar-usage-bar { width: 36px; } }
 .refresh-btn {
   background: rgba(var(--accent-rgb),0.15);
   border: 1px solid var(--accent);
@@ -3631,10 +3633,10 @@ async function loadClaudeUsage() {
         if (!data || data.utilization == null) return '';
         const pct = Math.round(data.utilization * 100);
         const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-        return `<span class="topbar-usage-label">${label} ${pct}%</span>`
-          + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
+        return `<div class="topbar-usage-row"><span class="topbar-usage-label">${label} ${pct}%</span>`
+          + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div></div>`;
       }
-      const html = tbBar('5h', d.session) + tbBar('7d', d.weekly);
+      const html = tbBar('会话', d.session) + tbBar('周', d.weekly);
       if (html) { tb.innerHTML = html; tb.style.display = 'flex'; }
     }
 

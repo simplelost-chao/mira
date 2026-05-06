@@ -106,19 +106,20 @@ def topbar_css() -> str:
         "  .topbar-spacer { flex: 1; }\n"
         "  /* Claude usage indicator in topbar */\n"
         "  .topbar-usage {\n"
-        "    display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--sub);\n"
+        "    display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: var(--sub);\n"
         "    cursor: default; white-space: nowrap;\n"
         "  }\n"
+        "  .topbar-usage-row { display: flex; align-items: center; gap: 5px; }\n"
+        "  .topbar-usage-label { min-width: 28px; }\n"
         "  .topbar-usage-bar {\n"
-        "    width: 48px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden;\n"
+        "    width: 48px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden;\n"
         "  }\n"
         "  .topbar-usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }\n"
         "  .topbar-usage-fill.low { background: var(--green); }\n"
         "  .topbar-usage-fill.mid { background: var(--orange); }\n"
         "  .topbar-usage-fill.high { background: var(--red); }\n"
         "  @media (max-width: 900px) {\n"
-        "    .topbar-usage-label { display: none; }\n"
-        "    .topbar-usage-bar { width: 32px; }\n"
+        "    .topbar-usage-bar { width: 36px; }\n"
         "  }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
@@ -281,10 +282,10 @@ async function _loadTopbarUsage() {
       if (!data || data.utilization == null) return '';
       const pct = Math.round(data.utilization * 100);
       const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-      return `<span class="topbar-usage-label">${label} ${pct}%</span>`
-        + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
+      return `<div class="topbar-usage-row"><span class="topbar-usage-label">${label} ${pct}%</span>`
+        + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div></div>`;
     }
-    const html = _tb('5h', d.session) + _tb('7d', d.weekly);
+    const html = _tb('会话', d.session) + _tb('周', d.weekly);
     if (html) { el.innerHTML = html; el.style.display = 'flex'; }
   } catch(e) {}
   setTimeout(_loadTopbarUsage, 120000);
