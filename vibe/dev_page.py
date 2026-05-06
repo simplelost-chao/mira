@@ -224,8 +224,8 @@ def render_dev_page() -> str:
     .term-main { display: none; flex-direction: column; }
     .dev-page.detail-open .term-sidebar { display: none; }
     .dev-page.detail-open .term-main {
-      display: flex; position: fixed; inset: 0; top: 0;
-      height: var(--app-h, 100dvh); z-index: 200;
+      display: flex; position: fixed; left: 0; right: 0; bottom: 0; top: 52px;
+      height: calc(var(--app-h, 100dvh) - 52px); z-index: 90;
       background: var(--bg);
       overscroll-behavior: none;
       overflow: hidden; max-width: 100vw;
