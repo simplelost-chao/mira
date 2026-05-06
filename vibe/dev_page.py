@@ -240,11 +240,12 @@ def render_dev_page() -> str:
     .mobile-term-output.visible {
       display: block; flex: 1; min-height: 0;
       background: var(--bg); color: var(--text);
-      font-family: var(--mono); font-size: 12px; line-height: 1.4;
-      padding: 6px 8px; margin: 0;
+      font-family: var(--mono); font-size: 11px; line-height: 1.35;
+      padding: 4px 6px; margin: 0;
       overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch;
       white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
       overscroll-behavior: contain;
+      -webkit-text-size-adjust: none;
     }
 
     .term-sep {
