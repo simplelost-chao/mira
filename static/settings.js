@@ -146,6 +146,11 @@ function applySkin(id) {
 // Apply saved skin immediately
 applySkin(localStorage.getItem('mira-skin') || 'default');
 
+/* ── Dev flat list toggle ──────────────────────────────────────────────────── */
+function toggleDevFlatList(on) {
+  localStorage.setItem('mira-dev-flat-list', on ? '1' : '');
+}
+
 /* ── Notification sound ────────────────────────────────────────────────────── */
 let _notificationSound = localStorage.getItem('mira-notification-sound') || 'Pop';
 
@@ -166,7 +171,7 @@ const _clearedKeys = new Set();
 function clearKeyInput(inputId) {
   const el = document.getElementById(inputId);
   if (el) { el.value = ''; el.placeholder = '已清除，保存后生效'; }
-  const keyMap = { 'set-openrouter': 'openrouter_api_key', 'set-deepseek': 'deepseek_api_key', 'set-kimi': 'kimi_api_key' };
+  const keyMap = { 'set-openrouter': 'openrouter_api_key', 'set-deepseek': 'deepseek_api_key', 'set-kimi': 'kimi_api_key', 'set-gemini': 'gemini_api_key', 'set-doubao': 'doubao_api_key', 'set-doubao-ak': 'doubao_access_key', 'set-doubao-sk': 'doubao_secret_key' };
   if (keyMap[inputId]) _clearedKeys.add(keyMap[inputId]);
 }
 
@@ -211,6 +216,13 @@ function initSettings() {
         <div class="skin-grid" id="settings-skin-grid"></div>
       </div>
       <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">终端列表</div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--sub)">
+          <input type="checkbox" id="set-dev-flat-list" onchange="toggleDevFlatList(this.checked)" style="accent-color:var(--accent)">
+          平铺模式（不按项目分组）
+        </label>
+      </div>
+      <div class="settings-group">
         <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">提示音效</div>
         <div style="display:flex;gap:6px;align-items:center">
           <select class="settings-input" id="set-notification-sound" style="flex:1;appearance:auto"></select>
@@ -248,6 +260,34 @@ function initSettings() {
         <div style="display:flex;gap:6px">
           <input class="settings-input" id="set-kimi" type="password" placeholder="sk-..." autocomplete="off" style="flex:1">
           <button class="settings-clear-btn" onclick="clearKeyInput('set-kimi')" title="清除">✕</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">Gemini API Key</div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-gemini" type="password" placeholder="AIza..." autocomplete="off" style="flex:1">
+          <button class="settings-clear-btn" onclick="clearKeyInput('set-gemini')" title="清除">✕</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">豆包 ARK API Key <span style="font-weight:400;color:var(--text-muted,var(--muted));font-size:10px">（LLM 推理用，不含余额）</span></div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-doubao" type="password" placeholder="..." autocomplete="off" style="flex:1">
+          <button class="settings-clear-btn" onclick="clearKeyInput('set-doubao')" title="清除">✕</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">豆包 Access Key <span style="font-weight:400;color:var(--text-muted,var(--muted));font-size:10px">（余额查询，火山引擎 AK）</span></div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-doubao-ak" type="password" placeholder="AKxx..." autocomplete="off" style="flex:1">
+          <button class="settings-clear-btn" onclick="clearKeyInput('set-doubao-ak')" title="清除">✕</button>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">豆包 Secret Key <span style="font-weight:400;color:var(--text-muted,var(--muted));font-size:10px">（余额查询，火山引擎 SK）</span></div>
+        <div style="display:flex;gap:6px">
+          <input class="settings-input" id="set-doubao-sk" type="password" placeholder="..." autocomplete="off" style="flex:1">
+          <button class="settings-clear-btn" onclick="clearKeyInput('set-doubao-sk')" title="清除">✕</button>
         </div>
       </div>
     </div>
@@ -326,13 +366,17 @@ async function openSettings() {
     fetch('/api/sounds').then(r => r.json()).catch(() => ({ sounds: [] })),
   ]);
   // Clear previous values
-  ['set-openrouter', 'set-deepseek', 'set-kimi', 'set-admin-password'].forEach(id => {
+  ['set-openrouter', 'set-deepseek', 'set-kimi', 'set-gemini', 'set-doubao', 'set-doubao-ak', 'set-doubao-sk', 'set-admin-password'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   document.getElementById('set-openrouter').placeholder = data.openrouter_api_key || 'sk-or-...';
   document.getElementById('set-deepseek').placeholder   = data.deepseek_api_key   || 'sk-...';
   document.getElementById('set-kimi').placeholder       = data.kimi_api_key       || 'sk-...';
+  document.getElementById('set-gemini').placeholder       = data.gemini_api_key     || 'AIza...';
+  document.getElementById('set-doubao').placeholder       = data.doubao_api_key     || '...';
+  document.getElementById('set-doubao-ak').placeholder   = data.doubao_access_key  || 'AKxx...';
+  document.getElementById('set-doubao-sk').placeholder   = data.doubao_secret_key  || '...';
   document.getElementById('set-admin-password').placeholder = data.admin_password ? '留空则不修改' : '未设置';
   // Provider tags
   const box = document.getElementById('settings-providers');
@@ -354,6 +398,9 @@ async function openSettings() {
   if (logoutBtn) logoutBtn.style.display = (_isAdmin && _adminToken) ? '' : 'none';
 
   _renderSettingsSkins();
+  // Init dev flat list checkbox
+  var _flatCb = document.getElementById('set-dev-flat-list');
+  if (_flatCb) _flatCb.checked = !!localStorage.getItem('mira-dev-flat-list');
   _loadRemoteHosts();
   // Reset to first tab
   switchSettingsTab('appearance', document.querySelector('.settings-tab'));
@@ -366,7 +413,7 @@ function closeSettings() {
 
 async function saveSettings() {
   const body = {};
-  const keys = { openrouter_api_key: 'set-openrouter', deepseek_api_key: 'set-deepseek', kimi_api_key: 'set-kimi' };
+  const keys = { openrouter_api_key: 'set-openrouter', deepseek_api_key: 'set-deepseek', kimi_api_key: 'set-kimi', gemini_api_key: 'set-gemini', doubao_api_key: 'set-doubao', doubao_access_key: 'set-doubao-ak', doubao_secret_key: 'set-doubao-sk' };
   for (const [k, id] of Object.entries(keys)) {
     const v = document.getElementById(id).value.trim();
     if (v) body[k] = v;

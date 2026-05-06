@@ -767,7 +767,25 @@ async function _bgPoll() {
   _bgPollTimer = setTimeout(_bgPoll, inDetail ? 15000 : 10000);
 }
 
-// ── Pane list (grouped by project) ────────────────────────────────────────────
+// ── Pane row renderer ─────────────────────────────────────────────────────────
+function _renderPaneRow(p, st) {
+  return `<div class="term-pane-row${_currentTarget === p.target ? ' active' : ''}"
+       data-target="${escHtml(p.target)}"
+       data-cmd="${escHtml(p.command || '')}"
+       data-project-id="${escHtml(p.project_id || '')}">
+    <div class="term-pane-dot ${st}"></div>
+    <div class="term-pane-info">
+      <div class="term-pane-name">
+        <span class="term-pane-name-text">${escHtml(p.label || p.target)}</span>
+        ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
+        <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation(); killPane(this);">×</span>
+      </div>
+      <div class="term-pane-sub">${escHtml(p.command || '')}</div>
+    </div>
+  </div>`;
+}
+
+// ── Pane list ─────────────────────────────────────────────────────────────────
 let _firstLoad = true;
 async function loadPanes(forceRebuild) {
   if (!_isAdmin) { openLoginModal(init); return; }
@@ -789,49 +807,46 @@ async function loadPanes(forceRebuild) {
       return;
     }
 
-    // Group panes by project_id
-    const groups = new Map();
-    for (const p of panes) {
-      const pid = p.project_id || '_ungrouped';
-      if (!groups.has(pid)) groups.set(pid, { name: p.project_name || p.project_id || '未分组', panes: [] });
-      groups.get(pid).panes.push(p);
-    }
-
-    // On first load with ?project=xxx, collapse all other groups
-    if (_firstLoad && _filterProject) {
-      for (const [pid] of groups) {
-        _groupCollapsed[pid] = (pid !== _filterProject);
-      }
-    }
-    _firstLoad = false;
-
+    var _flatMode = !!localStorage.getItem('mira-dev-flat-list');
     let html = '';
-    for (const [pid, grp] of groups) {
-      const collapsed = !!_groupCollapsed[pid];
-      html += `<div class="term-group-header" data-group="${escHtml(pid)}" onclick="toggleGroup('${escHtml(pid)}')">
-        <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
-        <span class="term-group-name">${escHtml(grp.name)}</span>
-        <span class="term-group-count">${grp.panes.length}</span>
-      </div>
-      <div class="term-group-body${collapsed ? ' collapsed' : ''}" data-group-body="${escHtml(pid)}">`;
-      for (const p of grp.panes) {
+
+    if (_flatMode) {
+      // Flat list: no grouping
+      for (const p of panes) {
         const st = _paneState[p.target] || 'inactive';
-        html += `<div class="term-pane-row${_currentTarget === p.target ? ' active' : ''}"
-             data-target="${escHtml(p.target)}"
-             data-cmd="${escHtml(p.command || '')}"
-             data-project-id="${escHtml(p.project_id || '')}">
-          <div class="term-pane-dot ${st}"></div>
-          <div class="term-pane-info">
-            <div class="term-pane-name">
-              <span class="term-pane-name-text">${escHtml(p.label || p.target)}</span>
-              ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
-              <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation(); killPane(this);">×</span>
-            </div>
-            <div class="term-pane-sub">${escHtml(p.command || '')}</div>
-          </div>
-        </div>`;
+        html += _renderPaneRow(p, st);
       }
-      html += '</div>';
+    } else {
+      // Group panes by project_id
+      const groups = new Map();
+      for (const p of panes) {
+        const pid = p.project_id || '_ungrouped';
+        if (!groups.has(pid)) groups.set(pid, { name: p.project_name || p.project_id || '未分组', panes: [] });
+        groups.get(pid).panes.push(p);
+      }
+
+      // On first load with ?project=xxx, collapse all other groups
+      if (_firstLoad && _filterProject) {
+        for (const [pid] of groups) {
+          _groupCollapsed[pid] = (pid !== _filterProject);
+        }
+      }
+      _firstLoad = false;
+
+      for (const [pid, grp] of groups) {
+        const collapsed = !!_groupCollapsed[pid];
+        html += `<div class="term-group-header" data-group="${escHtml(pid)}" onclick="toggleGroup('${escHtml(pid)}')">
+          <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
+          <span class="term-group-name">${escHtml(grp.name)}</span>
+          <span class="term-group-count">${grp.panes.length}</span>
+        </div>
+        <div class="term-group-body${collapsed ? ' collapsed' : ''}" data-group-body="${escHtml(pid)}">`;
+        for (const p of grp.panes) {
+          const st = _paneState[p.target] || 'inactive';
+          html += _renderPaneRow(p, st);
+        }
+        html += '</div>';
+      }
     }
     // Skip DOM rebuild if user is in detail view (mobile terminal active)
     // to avoid interrupting IME/voice input in the iframe
