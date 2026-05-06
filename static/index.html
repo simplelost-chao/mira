@@ -290,6 +290,8 @@ body {
 }
 .topbar-icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 .topbar-icon-btn svg { display: block; }
+.topbar-dev-btn { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),.08); }
+.topbar-dev-btn:hover { background: rgba(var(--accent-rgb),.18); }
 .topbar-usage { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
 .topbar-ring { position: relative; width: 28px; height: 28px; }
 .topbar-ring svg { transform: rotate(-90deg); }
@@ -1969,22 +1971,16 @@ body {
   <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
   <div class="topbar-usage" id="topbar-usage" style="display:none" title="Claude Code 用量"></div>
+  <a class="topbar-icon-btn topbar-dev-btn" href="/dev" title="终端">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+    </svg>
+  </a>
   <a class="topbar-icon-btn" href="/stats" id="stats-nav-btn" title="统计">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 20V10M12 20V4M6 20v-6"/>
     </svg>
   </a>
-  <a class="topbar-icon-btn" href="/dev" title="终端">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-    </svg>
-  </a>
-  <button class="topbar-icon-btn" id="chat-fab" onclick="toggleChat()" title="对话" style="position:relative">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-    </svg>
-    <span id="anomaly-badge"></span>
-  </button>
   <button class="topbar-icon-btn" onclick="openSettings()" title="设置">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1.08H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/>
