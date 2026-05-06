@@ -277,6 +277,15 @@ def render_dev_page() -> str:
       color: var(--accent); text-decoration: underline;
       word-break: break-all;
     }
+    #term-disconnect-banner {
+      background: rgba(220,38,38,.15); border: 1px solid rgba(220,38,38,.4);
+      color: var(--red); font-family: var(--mono); font-size: 12px;
+      padding: 8px 12px; text-align: center;
+    }
+    #term-disconnect-banner button {
+      background: var(--red); color: #fff; border: none; border-radius: 4px;
+      padding: 4px 12px; margin-left: 8px; font-size: 12px; cursor: pointer;
+    }
 
     /* ── Mobile input bar ── */
     .mobile-input-bar {
@@ -1235,12 +1244,15 @@ function _connectTermWs(target) {
 
   _termWs.onclose = function() {
     _termWs = null;
+    // Show disconnected banner on mobile
+    if (_isMobile) _showDisconnectBanner(target);
     // Auto-reconnect if still viewing this pane
     if (_currentTarget === target && _isMobile &&
         document.getElementById('dev-page').classList.contains('detail-open')) {
       setTimeout(function() { _connectTermWs(target); }, 2000);
     }
   };
+  _termWs.onopen = function() { _hideDisconnectBanner(); };
   _termWs.onerror = function() {};
 }
 
@@ -1250,6 +1262,24 @@ function _disconnectTermWs() {
     try { _termWs.close(); } catch(e) {}
     _termWs = null;
   }
+}
+
+function _showDisconnectBanner(target) {
+  var existing = document.getElementById('term-disconnect-banner');
+  if (existing) return;
+  var banner = document.createElement('div');
+  banner.id = 'term-disconnect-banner';
+  banner.innerHTML = '连接已断开 <button onclick="_reconnectMobile()">重新连接</button> <button onclick="location.reload()">刷新页面</button>';
+  var output = document.getElementById('mobile-term-output');
+  if (output) output.parentNode.insertBefore(banner, output);
+}
+function _hideDisconnectBanner() {
+  var b = document.getElementById('term-disconnect-banner');
+  if (b) b.remove();
+}
+function _reconnectMobile() {
+  _hideDisconnectBanner();
+  if (_currentTarget) _connectTermWs(_currentTarget);
 }
 
 async function _sendToTerminal(keys) {
