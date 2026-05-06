@@ -31,20 +31,41 @@ def _read_yaml(path: Path) -> dict:
         raise RuntimeError(f"Failed to load config from {path}: {e}") from e
 
 
+_config_cache: dict | None = None
+_config_cache_mtimes: tuple[float, float] = (0.0, 0.0)
+
+def _get_config_mtimes(config_path: Path) -> tuple[float, float]:
+    home_path = Path.home() / ".vibe.yaml"
+    def _mtime(p: Path) -> float:
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0.0
+    return (_mtime(home_path), _mtime(config_path))
+
+
 def load_global_config(config_path: Optional[Path] = None) -> dict:
+    global _config_cache, _config_cache_mtimes
     if config_path is None:
         config_path = Path(__file__).parent.parent / "vibe.yaml"
-    # Merge home config (~/.vibe.yaml) with project config
+    current_mtimes = _get_config_mtimes(config_path)
+    if _config_cache is not None and current_mtimes == _config_cache_mtimes:
+        return _config_cache
+    # Reload
     home_data = _read_yaml(Path.home() / ".vibe.yaml")
     proj_data = _read_yaml(config_path)
-    data = {**home_data, **proj_data}  # project overrides home
-    return {
+    data = {**home_data, **proj_data}
+    result = {
         "scan_dirs": [str(Path(d).expanduser()) for d in data.get("scan_dirs", [])],
         "exclude": data.get("exclude", _DEFAULT_EXCLUDE),
         "port": data.get("port", 8888),
         "openrouter_api_key": data.get("openrouter_api_key"),
         "deepseek_api_key": data.get("deepseek_api_key"),
         "kimi_api_key": data.get("kimi_api_key"),
+        "gemini_api_key": data.get("gemini_api_key"),
+        "doubao_api_key": data.get("doubao_api_key"),
+        "doubao_access_key": data.get("doubao_access_key"),
+        "doubao_secret_key": data.get("doubao_secret_key"),
         "extra_projects": [str(Path(d).expanduser()) for d in data.get("extra_projects", [])],
         "excluded_paths": [str(Path(d).expanduser()) for d in data.get("excluded_paths", [])],
         "base_services": data.get("base_services", []),
@@ -52,6 +73,14 @@ def load_global_config(config_path: Optional[Path] = None) -> dict:
         "notification_sound": data.get("notification_sound", "Pop"),
         "remote_hosts": data.get("remote_hosts", []),
     }
+    _config_cache = result
+    _config_cache_mtimes = current_mtimes
+    return result
+
+
+def invalidate_config_cache() -> None:
+    global _config_cache
+    _config_cache = None
 
 
 def _project_vibe_yaml() -> Path:

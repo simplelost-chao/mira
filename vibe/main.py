@@ -97,28 +97,33 @@ def _init_remote_hosts() -> None:
 
 def _remote_refresh_loop() -> None:
     """定期拉取远程主机项目和 pane 列表（300s 间隔）。"""
-    import asyncio as _aio
     _INTERVAL = 300
 
     async def _poll_once():
         for host in _remote_hosts:
-            projects = await host.fetch_projects()
-            _remote_cache[host.alias] = projects
-            panes = await host.fetch_panes()
-            _remote_panes_cache[host.alias] = panes
+            try:
+                projects = await host.fetch_projects()
+                _remote_cache[host.alias] = projects
+                panes = await host.fetch_panes()
+                _remote_panes_cache[host.alias] = panes
+            except Exception as e:
+                import logging as _rlog
+                _rlog.getLogger(__name__).warning("remote poll failed for %s: %s", host.alias, e)
 
+    import asyncio as _aio
     import logging as _rlog
     _logger = _rlog.getLogger(__name__)
-    # 首次立即拉取
+    loop = _aio.new_event_loop()
+    _aio.set_event_loop(loop)
     try:
-        _aio.run(_poll_once())
+        loop.run_until_complete(_poll_once())
     except Exception as e:
         _logger.warning("remote refresh initial poll failed: %s", e)
 
     while True:
         time.sleep(_INTERVAL)
         try:
-            _aio.run(_poll_once())
+            loop.run_until_complete(_poll_once())
         except Exception as e:
             _logger.warning("remote refresh poll failed: %s", e)
 
@@ -225,10 +230,12 @@ def _is_admin(request: Request) -> bool:
     return hmac.compare_digest(req_token, token)
 
 
-_DANGEROUS_PATTERNS = [
-    "rm -rf /", "rm -rf ~", ":(){ :|:& };:", "mkfs", "dd if=/dev/zero",
-    "> /dev/sd", "curl | bash", "wget | sh", "curl|bash", "wget|sh",
-    "chmod 777 /",
+_BLOCKED_PATTERNS = [
+    "rm ", "rmdir", "mv ", "cp ", "> /", ">> /",
+    "mkfs", "dd if=", ":(){ ", "sudo ", "chmod ", "chown ",
+    "curl | ", "wget | ", "curl|", "wget|", "|bash", "|sh",
+    "eval ", "exec ", "shutdown", "reboot", "halt", "kill -9",
+    "DROP TABLE", "DELETE FROM",
 ]
 
 _SHELL_TOOL = {
@@ -326,9 +333,10 @@ def _build_system_prompt(projects: list[dict]) -> str:
 
 def _run_shell(command: str, working_dir: str = "~") -> str:
     import subprocess, os
-    normalized = " ".join(command.split()).lower()
-    for pattern in _DANGEROUS_PATTERNS:
-        if pattern.lower() in normalized:
+    stripped = command.strip().lower()
+    # Block dangerous patterns
+    for pattern in _BLOCKED_PATTERNS:
+        if pattern.lower() in stripped:
             return f"[拒绝执行] 包含危险操作：{pattern}"
     cwd = os.path.expanduser(working_dir)
     try:
@@ -368,16 +376,22 @@ def _check_anomalies(projects: list[dict]) -> None:
             del _alerts[:-50]
 
 
+def _escape_applescript(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _send_os_notification(title: str, body: str, sound: str = "Pop") -> None:
     import subprocess
     try:
+        safe_title = _escape_applescript(title)
+        safe_body  = _escape_applescript(body)
+        safe_sound = _escape_applescript(sound)
         script = (
-            f'display notification "{body}" '
-            f'with title "{title}" '
-            f'sound name "{sound}"'
+            f'display notification "{safe_body}" '
+            f'with title "{safe_title}" '
+            f'sound name "{safe_sound}"'
         )
-        subprocess.run(["osascript", "-e", script], timeout=5,
-                       capture_output=True)
+        subprocess.run(["osascript", "-e", script], timeout=5, capture_output=True)
     except Exception:
         pass
 
@@ -783,7 +797,9 @@ def project_detail_page(request: Request, project_id: str):
     return HTMLResponse(render_detail_page(project_id, name, inline_data), headers=_NC)
 
 @api.get("/projects/{project_id}/overview", response_class=HTMLResponse)
-def project_overview_page(project_id: str, embed: bool = False):
+def project_overview_page(request: Request, project_id: str, embed: bool = False):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.overview_page import render_overview_page
     from vibe.models import ProjectInfo
 
@@ -1148,24 +1164,26 @@ def get_balance_activity(request: Request, force: bool = False):
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
 _auth_attempts: dict[str, list[float]] = {}
+_auth_lock = threading.Lock()
 _AUTH_WINDOW = 60.0  # 秒
 _AUTH_MAX = 5  # 每窗口最大尝试次数
 
 def _rate_limit_ok(ip: str) -> bool:
     now = time.time()
-    # 防止 dict 无限增长：超过 1000 个 IP 时清理过期条目
-    if len(_auth_attempts) > 1000:
-        expired = [k for k, v in _auth_attempts.items() if not v or now - v[-1] > _AUTH_WINDOW]
-        for k in expired:
-            del _auth_attempts[k]
-    attempts = _auth_attempts.get(ip, [])
-    attempts = [t for t in attempts if now - t < _AUTH_WINDOW]
-    if len(attempts) >= _AUTH_MAX:
+    with _auth_lock:
+        # 防止 dict 无限增长：超过 1000 个 IP 时清理过期条目
+        if len(_auth_attempts) > 1000:
+            expired = [k for k, v in _auth_attempts.items() if not v or now - v[-1] > _AUTH_WINDOW]
+            for k in expired:
+                del _auth_attempts[k]
+        attempts = _auth_attempts.get(ip, [])
+        attempts = [t for t in attempts if now - t < _AUTH_WINDOW]
+        if len(attempts) >= _AUTH_MAX:
+            _auth_attempts[ip] = attempts
+            return False
+        attempts.append(now)
         _auth_attempts[ip] = attempts
-        return False
-    attempts.append(now)
-    _auth_attempts[ip] = attempts
-    return True
+        return True
 
 # ── Auth endpoints ─────────────────────────────────────────────────────────────
 
@@ -1244,6 +1262,9 @@ def save_settings(request: Request, body: dict):
         if v:
             data["notification_sound"] = v
     cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+    # invalidate config cache so next call re-reads from disk
+    from .config import invalidate_config_cache
+    invalidate_config_cache()
     # invalidate balance cache with fresh config
     from .balance import fetch_all_balances
     from .config import load_global_config
@@ -1970,6 +1991,10 @@ async def chat_endpoint(request: Request, body: dict):
 @api.websocket("/ws/status")
 async def ws_service_status(websocket: WebSocket):
     """Push service status every 30s. Sends full snapshot on connect, then diffs."""
+    token = websocket.query_params.get("token", "")
+    if not _check_token(token):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     prev: dict = {}
     try:
