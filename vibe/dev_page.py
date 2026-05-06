@@ -1556,71 +1556,61 @@ function _saveSnapshot() {
   if (output && output.innerHTML) _paneSnapshots[_currentTarget] = output.innerHTML;
 }
 
-async function _openTabSwitcher() {
+function _openTabSwitcher() {
   _saveSnapshot();
   var overlay = document.getElementById('tab-switcher');
   if (!overlay) return;
-  // If already open, close
   if (overlay.classList.contains('open')) { _closeTabSwitcher(); return; }
-  try {
-    var res = await fetch('/api/dev/panes', { headers: _authHeaders() });
-    if (!res.ok) return;
-    var panes = await res.json();
-    var html = '';
-    var dotColors = { idle:'var(--green)', running:'var(--green)', confirm:'var(--orange)', error:'var(--red)', done:'var(--green)' };
-    for (var i = 0; i < panes.length; i++) {
-      var p = panes[i];
-      var isCurrent = (_currentTarget === p.target);
-      var st = _paneState[p.target] || 'inactive';
-      var dotColor = dotColors[st] || 'var(--muted)';
-      var name = (p.label || p.target).replace(/^.*\//, '');
-      var snap = _paneSnapshots[p.target];
-      var previewHtml = snap
-        ? '<div class="tab-card-preview"><div class="tab-card-preview-inner">' + snap + '</div></div>'
-        : '<div class="tab-card-empty">暂无预览</div>';
-      html += '<div class="tab-card' + (isCurrent ? ' active' : '') + '"'
-        + ' data-target="' + escHtml(p.target) + '"'
-        + ' data-cmd="' + escHtml(p.command || '') + '"'
-        + ' style="transition-delay:' + (i * 40) + 'ms">'
-        + '<div class="tab-card-header">'
-        + '<span class="tab-card-dot" style="background:' + dotColor + '"></span>'
-        + '<span class="tab-card-name">' + escHtml(name) + '</span>'
-        + '<button class="tab-card-close" onclick="event.stopPropagation();_killTabCard(this)" title="关闭">&times;</button>'
-        + '</div>'
-        + previewHtml
-        + '</div>';
-    }
-    overlay.innerHTML = '<div class="tab-grid">' + html + '</div>';
-    overlay.classList.add('open');
-    // Trigger stagger animation
-    requestAnimationFrame(function() {
-      overlay.classList.add('visible');
-      overlay.querySelectorAll('.tab-card').forEach(function(c) { c.classList.add('show'); });
+  // Build from cached sidebar data (no API call)
+  var rows = document.querySelectorAll('.term-pane-row');
+  if (!rows.length) return;
+  var html = '';
+  var dotColors = { idle:'var(--green)', running:'var(--green)', confirm:'var(--orange)', error:'var(--red)', done:'var(--green)' };
+  var i = 0;
+  rows.forEach(function(row) {
+    var target = row.dataset.target;
+    var cmd = row.dataset.cmd || '';
+    var isCurrent = (_currentTarget === target);
+    var st = _paneState[target] || 'inactive';
+    var dotColor = dotColors[st] || 'var(--muted)';
+    var nameEl = row.querySelector('.term-pane-name-text');
+    var name = (nameEl ? nameEl.textContent : target).replace(/^.*\//, '');
+    var snap = _paneSnapshots[target];
+    var previewHtml = snap
+      ? '<div class="tab-card-preview"><div class="tab-card-preview-inner">' + snap + '</div></div>'
+      : '<div class="tab-card-empty">暂无预览</div>';
+    html += '<div class="tab-card' + (isCurrent ? ' active' : '') + ' show"'
+      + ' data-target="' + escHtml(target) + '"'
+      + ' data-cmd="' + escHtml(cmd) + '">'
+      + '<div class="tab-card-header">'
+      + '<span class="tab-card-dot" style="background:' + dotColor + '"></span>'
+      + '<span class="tab-card-name">' + escHtml(name) + '</span>'
+      + '<button class="tab-card-close" onclick="event.stopPropagation();_killTabCard(this)" title="关闭">&times;</button>'
+      + '</div>'
+      + previewHtml
+      + '</div>';
+    i++;
+  });
+  overlay.innerHTML = '<div class="tab-grid">' + html + '</div>';
+  overlay.classList.add('open');
+  requestAnimationFrame(function() { overlay.classList.add('visible'); });
+  // 3D scroll
+  overlay.addEventListener('scroll', _tabScrollRAF);
+  // Click backdrop to close
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay || e.target.classList.contains('tab-grid')) _closeTabSwitcher();
+  });
+  // Click card to select
+  overlay.querySelectorAll('.tab-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      var t = card.dataset.target, cmd = card.dataset.cmd;
+      _closeTabSwitcher();
+      selectPane(t, cmd);
     });
-    // 3D scroll
-    overlay.addEventListener('scroll', _tabScrollRAF);
-    // Click backdrop to close
-    overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) _closeTabSwitcher();
-    });
-    // Click card to select
-    overlay.querySelectorAll('.tab-card').forEach(function(card) {
-      card.addEventListener('click', function() {
-        var t = card.dataset.target, cmd = card.dataset.cmd;
-        card.style.transform = 'perspective(800px) scale(1.03)';
-        card.style.transition = 'transform .15s';
-        setTimeout(function() {
-          _closeTabSwitcher();
-          selectPane(t, cmd);
-        }, 150);
-      });
-    });
-    // Initial 3D positioning
-    _updateTabPerspective();
-    // Scroll active card into view
-    var activeCard = overlay.querySelector('.tab-card.active');
-    if (activeCard) activeCard.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  } catch(e) { console.warn('tab switcher:', e); }
+  });
+  _updateTabPerspective();
+  var activeCard = overlay.querySelector('.tab-card.active');
+  if (activeCard) activeCard.scrollIntoView({ block: 'center', behavior: 'instant' });
 }
 
 var _tabRAF = null;
