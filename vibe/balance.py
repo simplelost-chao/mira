@@ -9,6 +9,10 @@ import threading
 import urllib.request
 import urllib.error
 import json
+import hmac
+import hashlib
+import datetime
+import urllib.parse
 from typing import Optional
 
 # ── Provider registry ──────────────────────────────────────────────────────────
@@ -36,6 +40,24 @@ PROVIDERS = [
         "config_key": "kimi_api_key",
         "url": "https://api.moonshot.cn/v1/users/me/balance",
         "parse": "_parse_kimi",
+    },
+    {
+        "id": "gemini",
+        "name": "Gemini",
+        "config_key": "gemini_api_key",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models",
+        "auth_type": "query_key",
+        "parse": "_parse_gemini",
+        "optional_balance": True,
+    },
+    {
+        "id": "doubao",
+        "name": "豆包",
+        "config_key": "doubao_access_key",   # 火山引擎 AK（余额查询）
+        "config_key_alt": "doubao_api_key",  # ARK API key（兜底，只显示已配置）
+        "secret_key": "doubao_secret_key",
+        "parse": "_parse_doubao",
+        "optional_balance": True,
     },
 ]
 
@@ -89,17 +111,104 @@ def _parse_kimi(data: dict) -> dict:
     }
 
 
+def _parse_gemini(data: dict) -> dict:
+    # Response is a model list — just confirms key is valid; no balance concept
+    return {
+        "balance": None,
+        "used": None,
+        "currency": "USD",
+        "unit": "$",
+        "label": "免费",
+    }
+
+
+def _parse_doubao(data: dict) -> dict:
+    # QueryBalanceAcct response: {"Result": {"AvailableBalance": "77.01", "CashBalance": "83.01", ...}}
+    result = data.get("Result", {})
+    available = result.get("AvailableBalance")
+    cash = result.get("CashBalance")
+    freeze = result.get("FreezeAmount")
+    return {
+        "balance": float(available) if available else None,
+        "topped": float(cash) if cash else None,
+        "granted": float(freeze) if freeze else None,
+        "used": None,
+        "currency": "CNY",
+        "unit": "¥",
+    }
+
+
 _PARSERS = {
     "_parse_openrouter": _parse_openrouter,
     "_parse_deepseek": _parse_deepseek,
     "_parse_kimi": _parse_kimi,
+    "_parse_gemini": _parse_gemini,
+    "_parse_doubao": _parse_doubao,
 }
 
 
 # ── HTTP fetch ─────────────────────────────────────────────────────────────────
 
-def _fetch(url: str, api_key: str, timeout: float = 8.0) -> Optional[dict]:
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+def _volcengine_balance(access_key: str, secret_key: str, timeout: float = 8.0) -> Optional[dict]:
+    """Query 火山引擎 account balance via QueryBalanceAcct (HMAC-SHA256 signed)."""
+    host = "open.volcengineapi.com"
+    service = "billing"
+    region = "cn-north-1"
+    method = "GET"
+    path = "/"
+    query_params = {"Action": "QueryBalanceAcct", "Version": "2022-01-01"}
+
+    now = datetime.datetime.utcnow()
+    date_str = now.strftime("%Y%m%d")
+    datetime_str = now.strftime("%Y%m%dT%H%M%SZ")
+
+    canonical_query = "&".join(
+        f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
+        for k, v in sorted(query_params.items())
+    )
+    canonical_headers = f"host:{host}\nx-date:{datetime_str}\n"
+    signed_headers = "host;x-date"
+    payload_hash = hashlib.sha256(b"").hexdigest()
+    canonical_request = "\n".join([method, path, canonical_query,
+                                    canonical_headers, signed_headers, payload_hash])
+
+    credential_scope = f"{date_str}/{region}/{service}/request"
+    string_to_sign = "\n".join([
+        "HMAC-SHA256", datetime_str, credential_scope,
+        hashlib.sha256(canonical_request.encode()).hexdigest(),
+    ])
+
+    def _hmac(key: bytes, data: str) -> bytes:
+        return hmac.new(key, data.encode(), hashlib.sha256).digest()
+
+    signing_key = _hmac(_hmac(_hmac(_hmac(secret_key.encode(), date_str), region), service), "request")
+    signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+
+    authorization = (
+        f"HMAC-SHA256 Credential={access_key}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, Signature={signature}"
+    )
+
+    url = f"https://{host}/?{canonical_query}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": authorization,
+        "X-Date": datetime_str,
+        "Host": host,
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except Exception:
+        return None
+
+
+def _fetch(url: str, api_key: str, timeout: float = 8.0, auth_type: str = "bearer") -> Optional[dict]:
+    if auth_type == "query_key":
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}key={api_key}"
+        req = urllib.request.Request(url)
+    else:
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
@@ -170,26 +279,48 @@ def fetch_all_balances(config: dict, force: bool = False) -> list[dict]:
 
     results = []
     for p in PROVIDERS:
+        pid = p["id"]
+
+        # ── 豆包：优先用 AK+SK 查真实余额，兜底用 api_key 显示已配置 ──
+        if pid == "doubao":
+            ak = config.get("doubao_access_key", "").strip()
+            sk = config.get("doubao_secret_key", "").strip()
+            api_key = config.get("doubao_api_key", "").strip()
+            if not ak and not api_key:
+                continue  # 什么都没配置，跳过
+            if ak and sk:
+                raw = _volcengine_balance(ak, sk)
+                if raw is not None:
+                    parsed = _parse_doubao(raw)
+                    results.append({"id": pid, "name": p["name"], "error": False, **parsed})
+                else:
+                    results.append({"id": pid, "name": p["name"], "error": True})
+            else:
+                # 只有 ARK api key，无法查余额，显示已配置
+                results.append({
+                    "id": pid, "name": p["name"], "error": False,
+                    "balance": None, "label": "已配置", "currency": "CNY", "unit": "¥",
+                })
+            continue
+
+        # ── 普通 provider ──
         key = config.get(p["config_key"])
         if not key:
-            continue  # not configured → skip
+            continue
 
-        raw = _fetch(p["url"], key)
+        raw = _fetch(p["url"], key, auth_type=p.get("auth_type", "bearer"))
         if raw is None:
-            results.append({
-                "id": p["id"],
-                "name": p["name"],
-                "error": True,
-            })
+            if p.get("optional_balance"):
+                results.append({
+                    "id": pid, "name": p["name"], "error": False,
+                    "balance": None, "label": "已配置", "currency": "CNY", "unit": "¥",
+                })
+            else:
+                results.append({"id": pid, "name": p["name"], "error": True})
             continue
 
         parsed = _PARSERS[p["parse"]](raw)
-        results.append({
-            "id": p["id"],
-            "name": p["name"],
-            "error": False,
-            **parsed,
-        })
+        results.append({"id": pid, "name": p["name"], "error": False, **parsed})
 
     with _cache_lock:
         _cache = results

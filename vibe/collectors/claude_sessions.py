@@ -20,10 +20,17 @@ def _session_touches_project(jsonl_path: Path, project_path: str, scan_lines: in
     """Return True if any tool_use in the session accesses files under project_path.
 
     Matches by:
-    1. Exact path prefix (case-insensitive)
-    2. Project folder name as path segment (handles old/different base dirs)
-    3. Any alias name segments (handles renamed projects)
+    1. File lives in the Claude project folder that corresponds to this project path
+       (covers renamed/moved projects whose sessions were migrated to the right folder)
+    2. Exact path prefix (case-insensitive)
+    3. Project folder name as path segment (handles old/different base dirs)
+    4. Any alias name segments (handles renamed projects)
     """
+    # Fast path: session file is directly in this project's Claude folder
+    expected_folder = "-" + project_path.replace("/", "-").lstrip("-")
+    if jsonl_path.parent.name == expected_folder:
+        return True
+
     project_id = project_path.rstrip("/").split("/")[-1]
     segments = {f"/{project_id}/"}
     for a in (aliases or []):
@@ -127,127 +134,37 @@ def _sum_tokens(jsonl_path: Path) -> dict:
 
 
 def collect_claude_activity(project_path: str, aliases: list[str] | None = None) -> dict:
-    global _cache, _file_cache
+    """Return Claude session activity for a project, queried from history_db.
 
-    if not CLAUDE_DIR.exists():
+    Falls back to empty dict if DB has no data for this project.
+    """
+    from vibe.history_db import get_project_activity
+
+    # Claude folder for this project path
+    encoded = '-' + project_path.replace('/', '-').lstrip('-')
+    folder_prefix = str(CLAUDE_DIR / encoded)
+
+    project_id = project_path.rstrip('/').split('/')[-1]
+    extra_ids = list(aliases or [])
+
+    result = get_project_activity(project_id, folder_prefix, extra_ids)
+    if not result:
         return {}
 
-    # Build matching list using per-file mtime cache
-    all_files = _all_jsonl_files()
-    matching = []
-    for f in all_files:
-        try:
-            mtime = f.stat().st_mtime
-        except OSError:
-            continue
-        key = (str(f), mtime, project_path)
-        if key not in _file_cache:
-            # 防止缓存无限增长
-            if len(_file_cache) > _FILE_CACHE_MAX:
-                _file_cache.clear()
-            _file_cache[key] = _session_touches_project(f, project_path, aliases=aliases)
-        if _file_cache[key]:
-            matching.append(f)
+    # Todos still require reading the most recent JSONL file directly
+    session_folder = CLAUDE_DIR / encoded
+    todos: list[dict] = []
+    if session_folder.exists():
+        candidates = sorted(session_folder.glob('*.jsonl'), key=lambda f: f.stat().st_mtime)
+        if candidates:
+            todos = _latest_todos(candidates[-1])
 
-    matching.sort(key=lambda f: f.stat().st_mtime)
-
-    # Check if cached result is still valid (same files + same mtimes)
-    fingerprint = frozenset((str(f), f.stat().st_mtime) for f in matching)
-    if project_path in _cache:
-        cached_fp, cached_result = _cache[project_path]
-        if cached_fp == fingerprint:
-            return cached_result
-
-    if not matching:
-        _cache[project_path] = (fingerprint, {})
-        return {}
-
-    now = datetime.now()
-    cutoff_7d = now - timedelta(days=7)
-    cutoff_30d = now - timedelta(days=30)
-    last_mtime: datetime | None = None
-    count_7d = count_30d = 0
-    tok = {"input": 0, "output": 0, "cache_creation": 0, "cache_read": 0}
-    active_secs = 0.0
-    # per-day session counts for last 15 days (index 0 = 14 days ago, 14 = today)
-    day_counts: dict[str, int] = {}
-
-    GAP_THRESHOLD = 30 * 60  # gaps < 30min count as active time
-
-    for f in matching:
-        mtime = datetime.fromtimestamp(f.stat().st_mtime)
-        if mtime > cutoff_30d:
-            count_30d += 1
-        if mtime > cutoff_7d:
-            count_7d += 1
-        if last_mtime is None or mtime > last_mtime:
-            last_mtime = mtime
-
-            # active time: sum inter-message gaps < 30min within this session
-        timestamps = []
-        try:
-            with open(f, encoding="utf-8", errors="replace") as fh:
-                for line in fh:
-                    try:
-                        d = json.loads(line)
-                        ts = d.get("timestamp")
-                        if ts:
-                            timestamps.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
-                    except Exception:
-                        continue
-        except Exception:
-            pass
-        timestamps.sort()
-        session_active = 0.0
-        for i in range(1, len(timestamps)):
-            gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
-            if gap < GAP_THRESHOLD:
-                active_secs += gap
-                session_active += gap
-                # attribute this gap to the day of the earlier timestamp (local time)
-                day_key = timestamps[i - 1].astimezone().strftime("%Y-%m-%d")
-                day_counts[day_key] = day_counts.get(day_key, 0) + gap / 3600
-
-        t = _sum_tokens(f)
-        for k in tok:
-            tok[k] += t[k]
-
-    cost = (
-        tok["input"]          * _PRICE_INPUT +
-        tok["output"]         * _PRICE_OUTPUT +
-        tok["cache_creation"] * _PRICE_CACHE_WRITE +
-        tok["cache_read"]     * _PRICE_CACHE_READ
-    )
-
-    # Build 15-day spark array: active hours per day (float, 12h = full)
-    spark_15d = [
-        round(day_counts.get((now - timedelta(days=14 - i)).strftime("%Y-%m-%d"), 0.0), 2)
-        for i in range(15)
-    ]
-
-    todos = _latest_todos(matching[-1])
-    summary = {"completed": 0, "in_progress": 0, "pending": 0}
+    summary: dict[str, int] = {"completed": 0, "in_progress": 0, "pending": 0}
     for t in todos:
         s = t.get("status", "pending")
         if s in summary:
             summary[s] += 1
 
-    result = {
-        "last_session": last_mtime.isoformat() if last_mtime else None,
-        "session_count_7d": count_7d,
-        "session_count_30d": count_30d,
-        "todos": todos,
-        "todo_summary": summary,
-        "input_tokens": tok["input"],
-        "output_tokens": tok["output"],
-        "cache_creation_tokens": tok["cache_creation"],
-        "cache_read_tokens": tok["cache_read"],
-        "estimated_cost_usd": round(cost, 4),
-        "active_hours": round(active_secs / 3600, 1),
-        "session_spark_15d": spark_15d,
-    }
-    # 防止缓存无限增长
-    if len(_cache) > _CACHE_MAX:
-        _cache.clear()
-    _cache[project_path] = (fingerprint, result)
+    result['todos'] = todos
+    result['todo_summary'] = summary
     return result
