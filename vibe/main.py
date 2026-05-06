@@ -1023,6 +1023,58 @@ def _detect_used_by(port: int, projects: list[dict]) -> list[str]:
     return found
 
 
+@api.get("/api/claude-usage")
+def claude_usage(request: Request):
+    """Get Claude Code usage limits via Anthropic API rate-limit headers."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    import json as _json
+    creds_path = Path.home() / ".claude" / ".credentials.json"
+    if not creds_path.exists():
+        return {"error": "no_credentials", "message": "~/.claude/.credentials.json not found"}
+    try:
+        creds = _json.loads(creds_path.read_text())
+        token = creds["claudeAiOauth"]["accessToken"]
+        sub_type = creds["claudeAiOauth"].get("subscriptionType", "unknown")
+    except (KeyError, _json.JSONDecodeError):
+        return {"error": "invalid_credentials", "message": "Cannot parse credentials"}
+    import httpx
+    try:
+        resp = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={"model": "claude-haiku-4-5", "max_tokens": 1,
+                  "messages": [{"role": "user", "content": "1"}]},
+            timeout=15,
+        )
+    except Exception:
+        return {"error": "api_error", "message": "Failed to reach Anthropic API"}
+    h = resp.headers
+    def _ts(key):
+        v = h.get(key)
+        return int(v) if v else None
+    def _fl(key):
+        v = h.get(key)
+        return float(v) if v else None
+    return {
+        "subscription": sub_type,
+        "status": h.get("anthropic-ratelimit-unified-status", "unknown"),
+        "session": {
+            "utilization": _fl("anthropic-ratelimit-unified-5h-utilization"),
+            "resets_at": _ts("anthropic-ratelimit-unified-5h-reset"),
+        },
+        "weekly": {
+            "utilization": _fl("anthropic-ratelimit-unified-7d-utilization"),
+            "resets_at": _ts("anthropic-ratelimit-unified-7d-reset"),
+        },
+        "overage_status": h.get("anthropic-ratelimit-unified-overage-status"),
+    }
+
+
 @api.get("/api/base-services")
 def list_base_services(request: Request):
     """Check status of host-level infrastructure services defined in vibe.yaml."""

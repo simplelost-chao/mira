@@ -1493,6 +1493,17 @@ body {
 }
 .infra-card:hover { border-color: rgba(255,255,255,.15); }
 .infra-card.running { border-left: 3px solid var(--green); }
+/* Claude usage bars */
+.cu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.cu-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
+.cu-label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.cu-meta { font-size: 10px; color: var(--sub); margin-bottom: 8px; }
+.cu-bar-bg { height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
+.cu-bar { height: 100%; border-radius: 4px; transition: width .3s; }
+.cu-bar.low { background: var(--green); }
+.cu-bar.mid { background: var(--orange); }
+.cu-bar.high { background: var(--red); }
+.cu-pct { float: right; font-size: 11px; font-weight: 600; color: var(--sub); }
 .infra-card.stopped { border-left: 3px solid rgba(255,255,255,.08); }
 .infra-icon {
   width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
@@ -1958,6 +1969,11 @@ body {
     <div class="infra-grid" id="infra-grid"></div>
   </div>
 
+  <div id="claude-usage-section" style="display:none;margin-bottom:24px">
+    <div class="infra-section-title">Claude Code 用量</div>
+    <div id="claude-usage-content"></div>
+  </div>
+
   <div class="filter-bar">
     <button class="filter-btn" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
     <button class="filter-btn active" id="filter-active" onclick="setFilter('active', this)">Active <span class="filter-count" id="count-active">0</span></button>
@@ -2093,7 +2109,7 @@ async function doGateLogin() {
     _adminToken = token; _isAdmin = true;
     localStorage.setItem('mira-admin-token', token);
     _revealApp();
-    loadProjects(); loadInfraServices(); connectStatusWs(); loadBalance();
+    loadProjects(); loadInfraServices(); loadClaudeUsage(); connectStatusWs(); loadBalance();
   } catch(_) { errEl.style.display = 'block'; }
 }
 
@@ -3562,6 +3578,45 @@ async function restartInfraSvc(name) {
   if (btn) { btn.textContent = '↺ 重启'; btn.disabled = false; }
   // Refresh status after 15s
   setTimeout(loadInfraServices, 15000);
+}
+
+// ─── Claude Usage ────────────────────────────────────────────────────────────
+async function loadClaudeUsage() {
+  try {
+    const res = await fetch('/api/claude-usage', {headers: _adminHeaders()});
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.error) return;
+    const section = document.getElementById('claude-usage-section');
+    const content = document.getElementById('claude-usage-content');
+    if (!section || !content) return;
+    section.style.display = '';
+
+    function bar(label, data) {
+      if (!data || data.utilization == null) return '';
+      const pct = Math.round(data.utilization * 100);
+      const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
+      let resetStr = '';
+      if (data.resets_at) {
+        const diff = data.resets_at * 1000 - Date.now();
+        if (diff > 0) {
+          const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+          resetStr = h > 0 ? `${h}h ${m}m 后重置` : `${m}m 后重置`;
+        }
+      }
+      return `<div class="cu-item">
+        <div class="cu-label">${label}<span class="cu-pct">${pct}%</span></div>
+        <div class="cu-meta">${resetStr}</div>
+        <div class="cu-bar-bg"><div class="cu-bar ${cls}" style="width:${pct}%"></div></div>
+      </div>`;
+    }
+
+    content.innerHTML = '<div class="cu-grid">'
+      + bar('当前会话 (5h)', d.session)
+      + bar('本周用量 (7d)', d.weekly)
+      + '</div>';
+  } catch(e) {}
+  setTimeout(loadClaudeUsage, 120000);
 }
 
 // ─── Navigation delegation ────────────────────────────────────────────────────
