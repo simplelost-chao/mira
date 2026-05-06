@@ -273,6 +273,10 @@ def render_dev_page() -> str:
       border: none; border-top: 1px solid rgba(255,255,255,.1);
       margin: 2px 0;
     }
+    .term-link {
+      color: var(--accent); text-decoration: underline;
+      word-break: break-all;
+    }
 
     /* ── Mobile input bar ── */
     .mobile-input-bar {
@@ -1176,6 +1180,8 @@ function _ansiToHtml(raw) {
     }
     return line;
   }).join('\n');
+  // Phase 4: make URLs clickable (https://... outside of existing <a> tags)
+  html = html.replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener" class="term-link">$1</a>');
   return html;
 }
 
