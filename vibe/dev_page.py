@@ -583,6 +583,52 @@ def render_dev_page() -> str:
     text-shadow: 0 0 8px rgba(255,0,85,.6);
     box-shadow: 0 0 16px rgba(255,0,85,.2);
   }
+  /* ── pixel-cyber 移动版样式 ── */
+  [data-theme="pixel-cyber"] .term-detail-header {
+    background: rgba(2,12,26,.98);
+    border-bottom: 1px solid rgba(0,212,255,.3);
+    box-shadow: 0 1px 12px rgba(0,212,255,.15);
+  }
+  [data-theme="pixel-cyber"] .term-detail-back,
+  [data-theme="pixel-cyber"] .term-switch-btn {
+    border-color: rgba(0,212,255,.35);
+    color: #00d4ff;
+  }
+  [data-theme="pixel-cyber"] .term-detail-title { color: #00d4ff; text-shadow: 0 0 8px rgba(0,212,255,.5); }
+  [data-theme="pixel-cyber"] .pane-switcher {
+    background: rgba(2,12,26,.98);
+    border-bottom: 1px solid rgba(0,212,255,.25);
+  }
+  [data-theme="pixel-cyber"] .pane-switcher-item { border-bottom-color: rgba(0,212,255,.1); }
+  [data-theme="pixel-cyber"] .pane-switcher-item.current { background: rgba(0,212,255,.08); }
+  [data-theme="pixel-cyber"] .pane-switcher-name { color: #00d4ff; }
+  [data-theme="pixel-cyber"] .mobile-term-output.visible {
+    background: #020c1a;
+    color: rgba(0,212,255,.9);
+  }
+  [data-theme="pixel-cyber"] .mobile-input-bar {
+    background: rgba(2,12,26,.98);
+    border-top: 1px solid rgba(0,212,255,.3);
+    box-shadow: 0 -1px 12px rgba(0,212,255,.12);
+  }
+  [data-theme="pixel-cyber"] .mobile-keys-row { border-bottom-color: rgba(0,212,255,.12); }
+  [data-theme="pixel-cyber"] .mobile-key-btn {
+    background: rgba(0,212,255,.06);
+    border-color: rgba(0,212,255,.25);
+    color: #00d4ff;
+  }
+  [data-theme="pixel-cyber"] .mobile-key-btn:active {
+    background: rgba(0,212,255,.2);
+    border-color: #00d4ff;
+  }
+  [data-theme="pixel-cyber"] .mobile-cmd-input {
+    background: rgba(0,212,255,.04);
+    border-color: rgba(0,212,255,.3);
+    color: #e0f7ff;
+  }
+  [data-theme="pixel-cyber"] .mobile-cmd-input:focus { border-color: #00d4ff; box-shadow: 0 0 8px rgba(0,212,255,.2); }
+  [data-theme="pixel-cyber"] .mobile-send-btn { background: #00d4ff; color: #020c1a; }
+  [data-theme="pixel-cyber"] .mobile-attach-btn { border-color: rgba(0,212,255,.3); color: #00d4ff; }
 """
 
     page_js = r"""
