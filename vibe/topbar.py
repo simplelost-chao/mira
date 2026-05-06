@@ -106,20 +106,25 @@ def topbar_css() -> str:
         "  .topbar-spacer { flex: 1; }\n"
         "  /* Claude usage indicator in topbar */\n"
         "  .topbar-usage {\n"
-        "    display: inline-flex; align-items: center; gap: 4px;\n"
-        "    font-size: 10px; color: var(--sub); cursor: default; white-space: nowrap;\n"
-        "    font-variant-numeric: tabular-nums;\n"
+        "    display: inline-flex; align-items: center; gap: 6px;\n"
+        "    cursor: default;\n"
         "  }\n"
-        "  .topbar-usage-dot {\n"
-        "    width: 6px; height: 6px; border-radius: 50%;\n"
+        "  .topbar-ring {\n"
+        "    position: relative; width: 28px; height: 28px;\n"
         "  }\n"
-        "  .topbar-usage-dot.low { background: var(--green); }\n"
-        "  .topbar-usage-dot.mid { background: var(--orange); }\n"
-        "  .topbar-usage-dot.high { background: var(--red); }\n"
-        "  .topbar-usage-pct { font-weight: 600; }\n"
-        "  .topbar-usage-pct.high { color: var(--red); }\n"
-        "  .topbar-usage-pct.mid { color: var(--orange); }\n"
-        "  .topbar-usage-sep { color: var(--muted); }\n"
+        "  .topbar-ring svg { transform: rotate(-90deg); }\n"
+        "  .topbar-ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 3; }\n"
+        "  .topbar-ring-fg { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset .5s; }\n"
+        "  .topbar-ring-fg.low { stroke: var(--green); }\n"
+        "  .topbar-ring-fg.mid { stroke: var(--orange); }\n"
+        "  .topbar-ring-fg.high { stroke: var(--red); }\n"
+        "  .topbar-ring-text {\n"
+        "    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;\n"
+        "    font-size: 8px; font-weight: 700; font-family: var(--mono);\n"
+        "    font-variant-numeric: tabular-nums; color: var(--sub);\n"
+        "  }\n"
+        "  .topbar-ring-text.high { color: var(--red); }\n"
+        "  .topbar-ring-text.mid { color: var(--orange); }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
         "    color: var(--sub); font-size: 12px; text-decoration: none;\n"
@@ -293,24 +298,19 @@ async function _loadTopbarUsage() {
     if (d.error) return;
     const el = document.getElementById('topbar-usage');
     if (!el) return;
-    function _dot(data) {
-      if (!data || data.utilization == null) return null;
-      const pct = Math.round(data.utilization * 100);
-      const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-      return { pct, cls };
+    function _ring(label, data) {
+      if (!data || data.utilization == null) return '';
+      var pct = Math.round(data.utilization * 100);
+      var cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
+      var r = 11, c = 2 * Math.PI * r, off = c * (1 - data.utilization);
+      return '<div class="topbar-ring" title="' + label + ' ' + pct + '%">'
+        + '<svg width="28" height="28" viewBox="0 0 28 28">'
+        + '<circle class="topbar-ring-bg" cx="14" cy="14" r="' + r + '"/>'
+        + '<circle class="topbar-ring-fg ' + cls + '" cx="14" cy="14" r="' + r + '" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"/>'
+        + '</svg><div class="topbar-ring-text ' + cls + '">' + pct + '</div></div>';
     }
-    const s = _dot(d.session), w = _dot(d.weekly);
-    if (!s && !w) return;
-    let parts = [];
-    if (s) parts.push(`<span class="topbar-usage-dot ${s.cls}"></span><span class="topbar-usage-pct ${s.cls}">${s.pct}%</span>`);
-    if (s && w) parts.push('<span class="topbar-usage-sep">/</span>');
-    if (w) parts.push(`<span class="topbar-usage-dot ${w.cls}"></span><span class="topbar-usage-pct ${w.cls}">${w.pct}%</span>`);
-    el.innerHTML = parts.join('');
-    el.style.display = 'inline-flex';
-    let tip = [];
-    if (s) tip.push('会话 ' + s.pct + '%');
-    if (w) tip.push('周 ' + w.pct + '%');
-    el.title = 'Claude: ' + tip.join(' · ');
+    var html = _ring('会话', d.session) + _ring('周', d.weekly);
+    if (html) { el.innerHTML = html; el.style.display = 'inline-flex'; }
   } catch(e) {}
   setTimeout(_loadTopbarUsage, 120000);
 }
