@@ -283,20 +283,18 @@ body {
 }
 .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
 .topbar-usage {
-  display: grid; grid-template-columns: auto auto 1fr; gap: 2px 6px;
+  display: inline-flex; align-items: center; gap: 4px;
   font-size: 10px; color: var(--sub); cursor: default; white-space: nowrap;
-  align-items: center; font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums;
 }
-.topbar-usage-name { text-align: right; color: var(--muted); }
-.topbar-usage-pct { text-align: right; min-width: 26px; font-weight: 600; }
-.topbar-usage-bar { width: 52px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
-.topbar-usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }
-.topbar-usage-fill.low { background: var(--green); }
-.topbar-usage-fill.mid { background: var(--orange); }
-.topbar-usage-fill.high { background: var(--red); }
+.topbar-usage-dot { width: 6px; height: 6px; border-radius: 50%; }
+.topbar-usage-dot.low { background: var(--green); }
+.topbar-usage-dot.mid { background: var(--orange); }
+.topbar-usage-dot.high { background: var(--red); }
+.topbar-usage-pct { font-weight: 600; }
 .topbar-usage-pct.high { color: var(--red); }
 .topbar-usage-pct.mid { color: var(--orange); }
-@media (max-width: 900px) { .topbar-usage-bar { width: 40px; } .topbar-usage-name { display: none; } }
+.topbar-usage-sep { color: var(--muted); }
 .refresh-btn {
   background: rgba(var(--accent-rgb),0.15);
   border: 1px solid var(--accent);
@@ -3632,19 +3630,28 @@ async function loadClaudeUsage() {
       + bar('本周用量 (7d)', d.weekly)
       + '</div>';
 
-    // Update topbar indicator (two bars: session + weekly)
+    // Update topbar indicator (compact dots)
     const tb = document.getElementById('topbar-usage');
     if (tb) {
-      function tbBar(label, data) {
-        if (!data || data.utilization == null) return '';
+      function _dot(data) {
+        if (!data || data.utilization == null) return null;
         const pct = Math.round(data.utilization * 100);
         const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-        return `<span class="topbar-usage-name">${label}</span>`
-          + `<span class="topbar-usage-pct ${cls}">${pct}%</span>`
-          + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
+        return { pct, cls };
       }
-      const html = tbBar('会话', d.session) + tbBar('周', d.weekly);
-      if (html) { tb.innerHTML = html; tb.style.display = 'flex'; }
+      const s = _dot(d.session), w = _dot(d.weekly);
+      if (s || w) {
+        let parts = [];
+        if (s) parts.push(`<span class="topbar-usage-dot ${s.cls}"></span><span class="topbar-usage-pct ${s.cls}">${s.pct}%</span>`);
+        if (s && w) parts.push('<span class="topbar-usage-sep">/</span>');
+        if (w) parts.push(`<span class="topbar-usage-dot ${w.cls}"></span><span class="topbar-usage-pct ${w.cls}">${w.pct}%</span>`);
+        tb.innerHTML = parts.join('');
+        tb.style.display = 'inline-flex';
+        let tip = [];
+        if (s) tip.push('会话 ' + s.pct + '%');
+        if (w) tip.push('周 ' + w.pct + '%');
+        tb.title = 'Claude: ' + tip.join(' · ');
+      }
     }
 
     // Hide the card section (topbar is enough)

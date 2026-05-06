@@ -106,24 +106,20 @@ def topbar_css() -> str:
         "  .topbar-spacer { flex: 1; }\n"
         "  /* Claude usage indicator in topbar */\n"
         "  .topbar-usage {\n"
-        "    display: grid; grid-template-columns: auto auto 1fr; gap: 2px 6px;\n"
+        "    display: inline-flex; align-items: center; gap: 4px;\n"
         "    font-size: 10px; color: var(--sub); cursor: default; white-space: nowrap;\n"
-        "    align-items: center; font-variant-numeric: tabular-nums;\n"
+        "    font-variant-numeric: tabular-nums;\n"
         "  }\n"
-        "  .topbar-usage-name { text-align: right; color: var(--muted); }\n"
-        "  .topbar-usage-pct { text-align: right; min-width: 26px; font-weight: 600; }\n"
-        "  .topbar-usage-bar {\n"
-        "    width: 52px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden;\n"
+        "  .topbar-usage-dot {\n"
+        "    width: 6px; height: 6px; border-radius: 50%;\n"
         "  }\n"
-        "  .topbar-usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }\n"
-        "  .topbar-usage-fill.low { background: var(--green); }\n"
-        "  .topbar-usage-fill.mid { background: var(--orange); }\n"
-        "  .topbar-usage-fill.high { background: var(--red); }\n"
+        "  .topbar-usage-dot.low { background: var(--green); }\n"
+        "  .topbar-usage-dot.mid { background: var(--orange); }\n"
+        "  .topbar-usage-dot.high { background: var(--red); }\n"
+        "  .topbar-usage-pct { font-weight: 600; }\n"
         "  .topbar-usage-pct.high { color: var(--red); }\n"
         "  .topbar-usage-pct.mid { color: var(--orange); }\n"
-        "  @media (max-width: 900px) {\n"
-        "    .topbar-usage-bar { width: 40px; } .topbar-usage-name { display: none; }\n"
-        "  }\n"
+        "  .topbar-usage-sep { color: var(--muted); }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
         "    color: var(--sub); font-size: 12px; text-decoration: none;\n"
@@ -297,16 +293,24 @@ async function _loadTopbarUsage() {
     if (d.error) return;
     const el = document.getElementById('topbar-usage');
     if (!el) return;
-    function _tb(label, data) {
-      if (!data || data.utilization == null) return '';
+    function _dot(data) {
+      if (!data || data.utilization == null) return null;
       const pct = Math.round(data.utilization * 100);
       const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-      return `<span class="topbar-usage-name">${label}</span>`
-        + `<span class="topbar-usage-pct ${cls}">${pct}%</span>`
-        + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
+      return { pct, cls };
     }
-    const html = _tb('会话', d.session) + _tb('周', d.weekly);
-    if (html) { el.innerHTML = html; el.style.display = 'flex'; }
+    const s = _dot(d.session), w = _dot(d.weekly);
+    if (!s && !w) return;
+    let parts = [];
+    if (s) parts.push(`<span class="topbar-usage-dot ${s.cls}"></span><span class="topbar-usage-pct ${s.cls}">${s.pct}%</span>`);
+    if (s && w) parts.push('<span class="topbar-usage-sep">/</span>');
+    if (w) parts.push(`<span class="topbar-usage-dot ${w.cls}"></span><span class="topbar-usage-pct ${w.cls}">${w.pct}%</span>`);
+    el.innerHTML = parts.join('');
+    el.style.display = 'inline-flex';
+    let tip = [];
+    if (s) tip.push('会话 ' + s.pct + '%');
+    if (w) tip.push('周 ' + w.pct + '%');
+    el.title = 'Claude: ' + tip.join(' · ');
   } catch(e) {}
   setTimeout(_loadTopbarUsage, 120000);
 }
