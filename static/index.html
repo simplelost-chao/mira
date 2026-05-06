@@ -3519,14 +3519,14 @@ const _INFRA_ICONS = {
 
 async function loadInfraServices() {
   try {
-    const res = await fetch('/api/base-services', {headers: _adminHeaders()});
+    const res = await fetch('/api/base-services', {headers: _authHeaders()});
     if (!res.ok) return;
     const data = await res.json();
     if (!Array.isArray(data)) return;
     allBaseServices = data;
     renderCards(); // re-render project cards to show deps
     renderInfraSection(allBaseServices);
-  } catch(e) {}
+  } catch(e) { console.error('loadInfraServices error:', e); }
 }
 
 function renderInfraSection(services) {
@@ -3583,7 +3583,7 @@ async function restartInfraSvc(name) {
 // ─── Claude Usage ────────────────────────────────────────────────────────────
 async function loadClaudeUsage() {
   try {
-    const res = await fetch('/api/claude-usage', {headers: _adminHeaders()});
+    const res = await fetch('/api/claude-usage', {headers: _authHeaders()});
     if (!res.ok) return;
     const d = await res.json();
     if (d.error) return;
