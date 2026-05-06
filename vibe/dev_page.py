@@ -23,7 +23,7 @@ def render_dev_page() -> str:
   .term-sidebar {
     width: 200px; border-right: 1px solid var(--border);
     display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
-    background: var(--panel);
+    background: var(--panel); position: relative;
   }
   .term-sidebar-header {
     padding: 10px 14px 10px 14px;
@@ -521,16 +521,25 @@ def render_dev_page() -> str:
   [data-theme="pixel-cyber"] .term-pane-row:hover { background: rgba(0,212,255,.05); }
   [data-theme="pixel-cyber"] .term-toolbar {
     border-bottom: 1px solid rgba(0,212,255,.25);
-    box-shadow: 0 2px 10px rgba(0,212,255,.12);
+    border-top: 1px solid rgba(0,212,255,.5);
+    box-shadow: 0 2px 10px rgba(0,212,255,.12), 0 -1px 12px rgba(0,212,255,.2);
     background: rgba(2,12,26,.98);
   }
-  /* CRT 扫描线（青色调） */
+  /* iframe 区域：网格底纹 */
+  [data-theme="pixel-cyber"] .term-iframe-wrap {
+    background-image:
+      linear-gradient(rgba(0,212,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,.055) 1px, transparent 1px);
+    background-size: 8px 8px;
+  }
+  /* CRT 扫描线（青色调）叠在网格上 */
   [data-theme="pixel-cyber"] .term-iframe-wrap::after {
     content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 3px,
-      rgba(0,212,255,.018) 3px, rgba(0,212,255,.018) 4px
-    );
+    background:
+      repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0,212,255,.028) 3px, rgba(0,212,255,.028) 4px
+      );
   }
   [data-theme="pixel-cyber"] #ttyd-frame { background: #020c1a; }
   [data-theme="pixel-cyber"] .term-group-count {
@@ -540,12 +549,37 @@ def render_dev_page() -> str:
   [data-theme="pixel-cyber"] .term-host-badge { border: 1px solid rgba(0,212,255,.5); color: #00d4ff; }
   /* placeholder 区域赛博风格 */
   [data-theme="pixel-cyber"] .term-placeholder {
-    background: radial-gradient(ellipse at center, rgba(0,212,255,.04) 0%, transparent 70%);
+    background:
+      radial-gradient(ellipse at center, rgba(0,212,255,.06) 0%, transparent 65%),
+      linear-gradient(rgba(0,212,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,.04) 1px, transparent 1px);
+    background-size: auto, 8px 8px, 8px 8px;
   }
   [data-theme="pixel-cyber"] .term-placeholder-btn {
     border-color: rgba(0,212,255,.4);
     color: #00d4ff;
     text-shadow: 0 0 8px rgba(0,212,255,.5);
+    box-shadow: 0 0 12px rgba(0,212,255,.15), inset 0 0 8px rgba(0,212,255,.05);
+  }
+  [data-theme="pixel-cyber"] .term-placeholder-btn:hover {
+    border-color: #00d4ff;
+    box-shadow: 0 0 20px rgba(0,212,255,.35), inset 0 0 12px rgba(0,212,255,.1);
+  }
+  /* 激活 pane 名称：打字机光标闪烁 */
+  [data-theme="pixel-cyber"] .term-pane-row.active .term-pane-name-text::after {
+    content: '_';
+    animation: cyber-blink .8s step-end infinite;
+    color: #ff0055;
+    margin-left: 1px;
+  }
+  @keyframes cyber-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  /* 侧边栏顶部发光条 */
+  [data-theme="pixel-cyber"] .term-sidebar::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, #00d4ff, #ff0055, #00d4ff, transparent);
+    box-shadow: 0 0 8px rgba(0,212,255,.6);
+    z-index: 1;
   }
   [data-theme="pixel-cyber"] .term-placeholder-btn:hover {
     border-color: #ff0055;
