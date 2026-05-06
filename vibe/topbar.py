@@ -145,9 +145,7 @@ def topbar_css() -> str:
         "    font-family: var(--mono); transition: all .15s; align-items: center;\n"
         "  }\n"
         "  .topbar-detail-btn:hover { border-color: var(--accent); color: var(--accent); }\n"
-        "  @media (max-width: 900px) {\n"
-        "    .topbar-detail-btn { display: inline-flex; }\n"
-        "  }\n"
+        "  /* topbar-detail-btn: always hidden by default, JS shows in detail mode */\n"
         "  /* ── Skin cards (used inside settings overlay) ── */\n"
         "  .skin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }\n"
         "  .skin-card { border: 1px solid var(--border); border-radius: 7px; padding: 8px; cursor: pointer; transition: border-color .15s; }\n"
@@ -189,21 +187,21 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
         parts.append(f'  <a class="topbar-back" href="{back_url}">← 返回</a>')
     if not hide_dev:
         parts.append('  <a class="topbar-btn" href="/dev" title="进入开发模式" style="text-decoration:none">Dev</a>')
+    if not hide_dev:
+        parts.append('  <a class="topbar-btn" href="/" title="MIRA 对话" style="text-decoration:none">⌘</a>')
     parts += [
-        '  <a class="topbar-btn" href="/" title="MIRA 对话" style="text-decoration:none">⌘</a>',
         '  <button class="topbar-btn" onclick="openSettings()" title="设置">',
         '    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">',
         '      <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
         '    </svg>',
         '  </button>',
-        *(
-            [
-                '  <button class="topbar-detail-btn" onclick="showPlaceholder()" title="返回列表">← 列表</button>',
-                '  <button class="topbar-detail-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>',
-            ] if hide_dev else []
-        ),
-        '</div>',
     ]
+    if hide_dev:
+        parts += [
+            '  <button class="topbar-detail-btn" onclick="showPlaceholder()" title="返回列表">← 列表</button>',
+            '  <button class="topbar-detail-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>',
+        ]
+    parts.append('</div>')
     return "\n".join(parts)
 
 
