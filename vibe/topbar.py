@@ -78,7 +78,7 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "    --ansi-0:#3a3f4b; --ansi-4:#4e9eff; --ansi-5:#c792ea; --ansi-6:#56b6c2;\n"
         "    --ansi-7:#ededed; --ansi-8:#5d5d5d; --ansi-12:#82aaff; --ansi-13:#d9a0f5; --ansi-14:#89ddff; --ansi-15:#ffffff;\n"
         "  }\n"
-        "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; }\n"
+        "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-top: 52px; }\n"
     )
 
 
@@ -87,7 +87,7 @@ def topbar_css() -> str:
     return (
         "  /* ── Topbar ── */\n"
         "  .topbar {\n"
-        "    position: sticky; top: 0; z-index: 100;\n"
+        "    position: fixed; top: 0; left: 0; right: 0; z-index: 100;\n"
         "    background: var(--panel); border-bottom: 1px solid var(--border);\n"
         "    backdrop-filter: blur(12px);\n"
         "    display: flex; align-items: center; gap: 12px; padding: 0 20px; height: 52px;\n"

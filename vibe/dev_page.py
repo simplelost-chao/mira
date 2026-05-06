@@ -13,6 +13,7 @@ def render_dev_page() -> str:
 
   /* ── Main layout ── */
   .dev-page {
+    margin-top: 52px;
     height: calc(var(--app-h) - 52px);
     display: flex;
     overflow: hidden;
@@ -203,8 +204,6 @@ def render_dev_page() -> str:
   /* ── Mobile ── */
   @media (max-width: 900px) {
     .term-detail-header { display: none !important; }
-    .topbar { position: fixed; top: 0; left: 0; right: 0; }
-    .dev-page { margin-top: 52px; height: calc(var(--app-h) - 52px); }
     .dev-page.detail-open { height: calc(var(--app-h, 100dvh) - 52px); }
     .term-sidebar { width: 100%; flex: 1; border-right: none; }
     .term-sidebar-header { padding: 14px 16px 10px; font-size: 11px; letter-spacing: .5px; text-transform: none; font-weight: 700; }
