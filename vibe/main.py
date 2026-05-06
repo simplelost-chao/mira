@@ -2055,8 +2055,8 @@ _TTYD_THEME_INJECT = """<script id="mira-ttyd-theme">
 var T={
   'default':{
     bg:'#080c14',fg:'#eef1f7',cu:'#4f46e5',ca:'#080c14',sel:'rgba(79,70,229,.3)',
-    k:'#3a3f4b',r:'#e06c75',g:'#3fb950',y:'#d29922',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#eef1f7',
-    bk:'#4a5060',br:'#e06c75',bg2:'#3fb950',by:'#e5a650',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
+    k:'#0e1420',r:'#e06c75',g:'#3fb950',y:'#d29922',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#eef1f7',
+    bk:'#2a3040',br:'#e06c75',bg2:'#3fb950',by:'#e5a650',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
     cursorStyle:'block',cursorBlink:false,fontSize:14},
   'claude-light':{
     bg:'#f5f3ef',fg:'#1a1a1a',cu:'#da7756',ca:'#ffffff',sel:'rgba(218,119,86,.25)',
@@ -2065,18 +2065,18 @@ var T={
     cursorStyle:'bar',cursorBlink:true,fontSize:14},
   'claude-dark':{
     bg:'#131313',fg:'#ededed',cu:'#09B83E',ca:'#131313',sel:'rgba(9,184,62,.25)',
-    k:'#3a3f4b',r:'#ef4444',g:'#4caf50',y:'#d4a84b',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#ededed',
-    bk:'#5d5d5d',br:'#ef4444',bg2:'#4caf50',by:'#e5a84b',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
+    k:'#1a1a1a',r:'#ef4444',g:'#4caf50',y:'#d4a84b',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#ededed',
+    bk:'#3a3a3a',br:'#ef4444',bg2:'#4caf50',by:'#e5a84b',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
     cursorStyle:'block',cursorBlink:false,fontSize:14},
   'neon-pixel':{
     bg:'#0a0a0a',fg:'#e0e0ff',cu:'#ff00ff',ca:'#0a0a0a',sel:'rgba(0,255,0,.2)',
-    k:'#282840',r:'#ff0040',g:'#00ff00',y:'#ffff00',b:'#00ccff',m:'#ff00ff',c:'#00ffff',w:'#e0e0ff',
-    bk:'#505070',br:'#ff0040',bg2:'#00ff00',by:'#ff8800',bb:'#00ccff',bm:'#ff00ff',bc:'#00ffff',bw:'#ffffff',
+    k:'#0e0e1a',r:'#ff0040',g:'#00ff00',y:'#ffff00',b:'#00ccff',m:'#ff00ff',c:'#00ffff',w:'#e0e0ff',
+    bk:'#2a2a40',br:'#ff0040',bg2:'#00ff00',by:'#ff8800',bb:'#00ccff',bm:'#ff00ff',bc:'#00ffff',bw:'#ffffff',
     cursorStyle:'block',cursorBlink:true,fontSize:14},
   'pixel-cyber':{
     bg:'#020c1a',fg:'#eef8ff',cu:'#ff0055',ca:'#020c1a',sel:'rgba(0,212,255,.2)',
-    k:'#0a1e2e',r:'#ff3355',g:'#00ff88',y:'#ffaa00',b:'#00d4ff',m:'#a855f7',c:'#00d4ff',w:'#eef8ff',
-    bk:'#3a6880',br:'#ff3355',bg2:'#00ff88',by:'#ffaa00',bb:'#00d4ff',bm:'#a855f7',bc:'#00d4ff',bw:'#ffffff',
+    k:'#04111f',r:'#ff3355',g:'#00ff88',y:'#ffaa00',b:'#00d4ff',m:'#a855f7',c:'#00d4ff',w:'#eef8ff',
+    bk:'#1a3a50',br:'#ff3355',bg2:'#00ff88',by:'#ffaa00',bb:'#00d4ff',bm:'#a855f7',bc:'#00d4ff',bw:'#ffffff',
     cursorStyle:'block',cursorBlink:true,fontSize:14}
 };
 /* Per-skin CSS injected into the iframe body */
