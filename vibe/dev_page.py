@@ -1134,19 +1134,28 @@ function _ansiToHtml(raw) {
     return l;
   }).join('\n');
   // 2.5. Rejoin URLs split across lines by terminal wrapping
-  //      (tmux wraps at terminal width, breaking long URLs into multiple lines)
+  //      Claude login URLs can span 4-5 lines. Strategy: find a line containing
+  //      "https://" and keep appending subsequent non-empty continuation lines
+  //      that look like URL fragments (start with a URL-safe char, no leading spaces)
   var _lines = text.split('\n');
   var _joined = [];
+  var _inUrl = false;
   for (var _k = 0; _k < _lines.length; _k++) {
     var _pl = _lines[_k].replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '');
-    if (_joined.length > 0) {
-      var _prevPl = _joined[_joined.length - 1].replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '');
-      if (/https?:\/\//.test(_prevPl) && /\S$/.test(_prevPl) && /^\S/.test(_pl)) {
-        _joined[_joined.length - 1] += _lines[_k];
+    if (_inUrl) {
+      // continuation: non-empty, starts with URL-safe char (not a space or prompt char)
+      if (_pl && /^[A-Za-z0-9%&=?_\-+.\/;:@]/.test(_pl)) {
+        _joined[_joined.length - 1] += _pl;
         continue;
       }
+      _inUrl = false;
     }
-    _joined.push(_lines[_k]);
+    if (/https?:\/\//.test(_pl) && _pl.length > 30) {
+      _joined.push(_pl);
+      _inUrl = true;
+    } else {
+      _joined.push(_lines[_k]);
+    }
   }
   text = _joined.join('\n');
   // 3. Collapse consecutive blank lines and trim trailing blanks
@@ -1722,6 +1731,7 @@ init();
     <div class="mobile-input-bar" id="mobile-input-bar">
       <div class="mobile-keys-row" id="mobile-keys-row">
         <button class="mobile-key-btn" data-key="Ctrl+C">⌃C</button>
+        <button class="mobile-key-btn" data-key="Esc">Esc</button>
         <button class="mobile-key-btn" data-key="Up">↑</button>
         <button class="mobile-key-btn" data-key="Down">↓</button>
         <button class="mobile-key-btn" data-key="1">1</button>
