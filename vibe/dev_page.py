@@ -1133,31 +1133,34 @@ function _ansiToHtml(raw) {
     if (plain.length > 4 && /^[\u2500-\u257F]+$/.test(plain)) return '\x00HR\x00';
     return l;
   }).join('\n');
-  // 2.5. Rejoin URLs split across lines by terminal wrapping
-  //      Claude login URLs can span 4-5 lines. Strategy: find a line containing
-  //      "https://" and keep appending subsequent non-empty continuation lines
-  //      that look like URL fragments (start with a URL-safe char, no leading spaces)
-  var _lines = text.split('\n');
-  var _joined = [];
-  var _inUrl = false;
-  for (var _k = 0; _k < _lines.length; _k++) {
-    var _pl = _lines[_k].replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '');
-    if (_inUrl) {
-      // continuation: non-empty, starts with URL-safe char (not a space or prompt char)
-      if (_pl && /^[A-Za-z0-9%&=?_\-+.\/;:@]/.test(_pl)) {
-        _joined[_joined.length - 1] += _pl;
-        continue;
+  // 2.5. Extract and rejoin URLs split across lines by terminal wrapping.
+  //      Scan raw text char by char: when we hit "https://", collect all URL-safe
+  //      chars while skipping newlines, spaces, and SGR escape codes.
+  var _out = '', _i = 0;
+  while (_i < text.length) {
+    var _hi = text.indexOf('https://', _i);
+    if (_hi === -1) { _out += text.slice(_i); break; }
+    _out += text.slice(_i, _hi);
+    // Scan forward collecting URL chars, skipping \n, \r, spaces, SGR codes
+    var _url = '', _j = _hi, _blanks = 0;
+    while (_j < text.length) {
+      var _ch = text[_j];
+      if (_ch === '\x1b' && text[_j+1] === '[') {
+        // skip SGR sequence
+        var _m = text.indexOf('m', _j + 2);
+        if (_m !== -1) { _j = _m + 1; continue; }
       }
-      _inUrl = false;
+      if (_ch === '\n' || _ch === '\r') { _blanks++; _j++; if (_blanks > 3) break; continue; }
+      if (_ch === ' ' || _ch === '\t') { _j++; continue; }
+      // URL-safe characters
+      if (/[A-Za-z0-9%&=?_\-+.\/;:@~#!$'()*,]/.test(_ch)) {
+        _url += _ch; _blanks = 0; _j++;
+      } else { break; }
     }
-    if (/https?:\/\//.test(_pl) && _pl.length > 30) {
-      _joined.push(_pl);
-      _inUrl = true;
-    } else {
-      _joined.push(_lines[_k]);
-    }
+    _out += _url;
+    _i = _j;
   }
-  text = _joined.join('\n');
+  text = _out;
   // 3. Collapse consecutive blank lines and trim trailing blanks
   text = text.replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n');
   // Split on SGR sequences
