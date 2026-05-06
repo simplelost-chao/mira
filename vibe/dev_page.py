@@ -1365,16 +1365,17 @@ function _initMobileInput() {
 async function _sendMobileCmd() {
   var input = document.getElementById('mobile-cmd-input');
   var text = input.value;
-  if (!text) return;
   // Exit scroll mode first
   if (_inScrollMode) await _scrollTerminal('exit');
-  // Add to history (dedup, max 100)
-  _cmdHistory = _cmdHistory.filter(function(c) { return c !== text; });
-  _cmdHistory.push(text);
-  if (_cmdHistory.length > 100) _cmdHistory = _cmdHistory.slice(-100);
-  localStorage.setItem('mira-cmd-history', JSON.stringify(_cmdHistory));
-  _historyIdx = -1;
-  // Send: each line as separate command
+  if (text) {
+    // Add to history (dedup, max 100)
+    _cmdHistory = _cmdHistory.filter(function(c) { return c !== text; });
+    _cmdHistory.push(text);
+    if (_cmdHistory.length > 100) _cmdHistory = _cmdHistory.slice(-100);
+    localStorage.setItem('mira-cmd-history', JSON.stringify(_cmdHistory));
+    _historyIdx = -1;
+  }
+  // Send text + Enter (empty text = bare Enter for confirmations/selections)
   await _sendToTerminal(text + '\n');
   input.value = '';
   input.style.height = 'auto';
@@ -1712,7 +1713,6 @@ init();
         <button class="mobile-key-btn" data-key="3">3</button>
         <button class="mobile-key-btn" data-key="4">4</button>
         <button class="mobile-key-btn" data-key="5">5</button>
-        <button class="mobile-key-btn" onclick="openLoginModal()" style="margin-left:auto">🔑</button>
       </div>
       <div class="mobile-input-row">
         <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">📎</label>
