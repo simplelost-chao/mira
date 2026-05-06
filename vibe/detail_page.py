@@ -4,7 +4,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     from vibe.topbar import theme_vars_css, topbar_css, topbar_html, settings_overlay_html, topbar_js
     _theme_css   = theme_vars_css()
     _tb_css      = topbar_css()
-    _tb_html     = topbar_html()   # no title/back — detail page has its own subnav
+    _tb_html     = topbar_html(title=project_name)
     _overlays    = settings_overlay_html()
     _tb_js       = topbar_js()
     return f'''<!DOCTYPE html>

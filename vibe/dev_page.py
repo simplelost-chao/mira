@@ -912,12 +912,15 @@ async function selectPane(target, cmd) {
     document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = 'inline-flex'; });
   }
 
-  // Update mobile detail header title with project_name from the row
+  // Update title with project name
   const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"]`);
   const titleEl = document.getElementById('term-detail-title');
-  if (activeRow && titleEl) {
+  const pageTitle = document.querySelector('.topbar-page-title');
+  if (activeRow) {
     const txt = activeRow.querySelector('.term-pane-name-text');
-    titleEl.textContent = txt ? txt.textContent : target;
+    const name = txt ? txt.textContent : target;
+    if (titleEl) titleEl.textContent = name;
+    if (pageTitle && _isMobile) pageTitle.textContent = name;
   }
 
   // Desktop: tell tmux to switch focus (affects ttyd iframe).
@@ -1001,9 +1004,11 @@ function showPlaceholder() {
   document.getElementById('term-placeholder').style.display = '';
   document.getElementById('dev-page').classList.remove('detail-open');
   document.body.classList.remove('detail-locked');
-  // Restore topbar buttons
+  // Restore topbar buttons and title
   document.querySelectorAll('.topbar .topbar-btn').forEach(function(b) { b.style.display = ''; });
   document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = ''; });
+  var pt = document.querySelector('.topbar-page-title');
+  if (pt) pt.textContent = 'Dev';
 }
 
 // ── New window ────────────────────────────────────────────────────────────────
