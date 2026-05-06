@@ -622,7 +622,7 @@ def render_dev_page() -> str:
   [data-theme="pixel-cyber"] .pane-switcher-name { color: #00d4ff; }
   [data-theme="pixel-cyber"] .mobile-term-output.visible {
     background: #020c1a;
-    color: rgba(0,212,255,.9);
+    color: #eef8ff;
   }
   [data-theme="pixel-cyber"] .mobile-input-bar {
     background: rgba(2,12,26,.98);
