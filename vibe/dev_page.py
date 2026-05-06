@@ -129,7 +129,7 @@ def render_dev_page() -> str:
   }
   #ttyd-frame {
     border: none; display: none; background: var(--bg);
-    width: 100%; max-width: 100%; height: 100%;
+    position: absolute; inset: 0; width: 100%; height: 100%;
     overflow: hidden;
   }
   #ttyd-frame.visible { display: block; }
@@ -525,12 +525,12 @@ def render_dev_page() -> str:
     box-shadow: 0 2px 10px rgba(0,212,255,.12), 0 -1px 12px rgba(0,212,255,.2);
     background: rgba(2,12,26,.98);
   }
-  /* 全局格子底纹（与首页保持一致） */
+  /* 全局方格底纹 */
   [data-theme="pixel-cyber"] body {
     background-image:
-      linear-gradient(rgba(0,212,255,.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,.04) 1px, transparent 1px);
-    background-size: 8px 8px;
+      linear-gradient(rgba(0,212,255,.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,.12) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
   /* CRT 扫描线叠在格子上 */
   [data-theme="pixel-cyber"] .term-iframe-wrap::after {
