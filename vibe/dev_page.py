@@ -413,6 +413,146 @@ def render_dev_page() -> str:
 
   /* ── Prompt line highlight (Phase 3) ── */
   .term-line-prompt { background: rgba(var(--accent-rgb), 0.04); display: block; }
+
+  /* ── Skin-specific overrides ── */
+
+  /* claude-light: rgba(255,255,255,x) overlays are invisible on light bg */
+  [data-theme="claude-light"] .term-pane-row:hover { background: rgba(0,0,0,.04); }
+  [data-theme="claude-light"] .term-group-header:hover { background: rgba(0,0,0,.03); }
+  [data-theme="claude-light"] .term-group-header { border-bottom-color: rgba(0,0,0,.06); }
+  [data-theme="claude-light"] .term-group-count { background: rgba(0,0,0,.07); }
+  [data-theme="claude-light"] .mobile-key-btn { background: rgba(0,0,0,.06); }
+  [data-theme="claude-light"] .new-term-overlay { background: rgba(0,0,0,.45); }
+  [data-theme="claude-light"] .new-term-dialog { box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+  [data-theme="claude-light"] .new-term-dialog-close:hover { background: rgba(0,0,0,.06); }
+  [data-theme="claude-light"] .term-pane-kill:hover { background: rgba(220,38,38,.1); }
+  [data-theme="claude-light"] .term-sidebar-header { color: var(--accent); border-bottom: 1px solid rgba(0,0,0,.08); }
+  [data-theme="claude-light"] .term-group-name { color: var(--accent); }
+
+  /* ── neon-pixel: 霓虹发光 + CRT 扫描线 ── */
+  [data-theme="neon-pixel"] .term-sidebar {
+    border-right: 1px solid #00ff00;
+    box-shadow: 2px 0 16px rgba(0,255,0,.15), inset -1px 0 0 rgba(0,255,0,.3);
+  }
+  [data-theme="neon-pixel"] .term-sidebar-header {
+    border-bottom: 1px solid rgba(0,255,0,.4);
+    box-shadow: 0 1px 10px rgba(0,255,0,.15);
+    color: #00ff00;
+    letter-spacing: 2px;
+    text-shadow: 0 0 8px rgba(0,255,0,.8);
+  }
+  [data-theme="neon-pixel"] .term-group-header {
+    border-bottom: 1px solid rgba(0,255,0,.12);
+  }
+  [data-theme="neon-pixel"] .term-group-name {
+    color: rgba(0,255,0,.8);
+    letter-spacing: .5px;
+  }
+  [data-theme="neon-pixel"] .term-group-arrow { color: rgba(0,255,0,.5); }
+  [data-theme="neon-pixel"] .term-pane-dot.idle    { box-shadow: 0 0 5px var(--green); }
+  [data-theme="neon-pixel"] .term-pane-dot.running { box-shadow: 0 0 8px var(--green), 0 0 18px rgba(0,255,0,.5); }
+  [data-theme="neon-pixel"] .term-pane-dot.confirm { box-shadow: 0 0 8px var(--orange), 0 0 18px rgba(255,136,0,.5); }
+  [data-theme="neon-pixel"] .term-pane-dot.error   { box-shadow: 0 0 8px var(--red), 0 0 14px rgba(255,0,64,.5); }
+  [data-theme="neon-pixel"] .term-pane-row.active {
+    background: rgba(255,0,255,.1);
+    border-left-color: #ff00ff;
+    box-shadow: inset 3px 0 12px rgba(255,0,255,.3);
+  }
+  [data-theme="neon-pixel"] .term-pane-row.active .term-pane-name-text {
+    color: #ff00ff;
+    text-shadow: 0 0 8px rgba(255,0,255,.8);
+  }
+  [data-theme="neon-pixel"] .term-pane-row:hover { background: rgba(255,0,255,.05); }
+  [data-theme="neon-pixel"] .term-toolbar {
+    border-bottom: 1px solid rgba(0,255,0,.2);
+    box-shadow: 0 2px 8px rgba(0,255,0,.08);
+    background: rgba(10,10,10,.98);
+  }
+  /* CRT 扫描线 */
+  [data-theme="neon-pixel"] .term-iframe-wrap::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 3px,
+      rgba(0,255,0,.025) 3px, rgba(0,255,0,.025) 4px
+    );
+  }
+  [data-theme="neon-pixel"] #ttyd-frame { background: #0a0a0a; }
+  [data-theme="neon-pixel"] .term-group-count { background: rgba(255,0,255,.15); color: #ff00ff; border: 1px solid rgba(255,0,255,.3); }
+  [data-theme="neon-pixel"] .term-host-badge { border: 1px solid var(--accent); }
+
+  /* ── pixel-cyber: 赛博朋克青色 + 红色激活 ── */
+  [data-theme="pixel-cyber"] .term-sidebar {
+    border-right: 1px solid rgba(0,212,255,.5);
+    box-shadow: 2px 0 24px rgba(0,212,255,.2), inset -1px 0 0 rgba(0,212,255,.35);
+    /* 侧边栏内部微弱网格 */
+    background-image: linear-gradient(rgba(0,212,255,.025) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(0,212,255,.025) 1px, transparent 1px);
+    background-size: 12px 12px;
+  }
+  [data-theme="pixel-cyber"] .term-sidebar-header {
+    border-bottom: 1px solid rgba(0,212,255,.4);
+    box-shadow: 0 1px 12px rgba(0,212,255,.2);
+    color: #00d4ff;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(0,212,255,.7);
+  }
+  [data-theme="pixel-cyber"] .term-group-header {
+    border-bottom: 1px solid rgba(0,212,255,.1);
+  }
+  [data-theme="pixel-cyber"] .term-group-name {
+    color: rgba(0,212,255,.75);
+    letter-spacing: .5px;
+  }
+  [data-theme="pixel-cyber"] .term-group-arrow { color: rgba(0,212,255,.45); }
+  [data-theme="pixel-cyber"] .term-pane-dot.idle    { box-shadow: 0 0 5px var(--green); }
+  [data-theme="pixel-cyber"] .term-pane-dot.running { box-shadow: 0 0 8px var(--green), 0 0 18px rgba(0,255,136,.4); }
+  [data-theme="pixel-cyber"] .term-pane-dot.confirm { box-shadow: 0 0 8px var(--orange), 0 0 18px rgba(255,170,0,.4); }
+  [data-theme="pixel-cyber"] .term-pane-dot.error   { box-shadow: 0 0 8px var(--red), 0 0 14px rgba(255,51,85,.4); }
+  /* 激活 pane：红色边框 + 青色内阴影 */
+  [data-theme="pixel-cyber"] .term-pane-row.active {
+    background: rgba(255,0,85,.09);
+    border-left: 2px solid #ff0055;
+    box-shadow: inset 4px 0 16px rgba(0,212,255,.15), inset 0 0 30px rgba(255,0,85,.04);
+  }
+  [data-theme="pixel-cyber"] .term-pane-row.active .term-pane-name-text {
+    color: #ff0055;
+    text-shadow: 0 0 8px rgba(255,0,85,.8);
+  }
+  [data-theme="pixel-cyber"] .term-pane-row:hover { background: rgba(0,212,255,.05); }
+  [data-theme="pixel-cyber"] .term-toolbar {
+    border-bottom: 1px solid rgba(0,212,255,.25);
+    box-shadow: 0 2px 10px rgba(0,212,255,.12);
+    background: rgba(2,12,26,.98);
+  }
+  /* CRT 扫描线（青色调） */
+  [data-theme="pixel-cyber"] .term-iframe-wrap::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 3px,
+      rgba(0,212,255,.018) 3px, rgba(0,212,255,.018) 4px
+    );
+  }
+  [data-theme="pixel-cyber"] #ttyd-frame { background: #020c1a; }
+  [data-theme="pixel-cyber"] .term-group-count {
+    background: rgba(0,212,255,.12); color: #00d4ff;
+    border: 1px solid rgba(0,212,255,.3);
+  }
+  [data-theme="pixel-cyber"] .term-host-badge { border: 1px solid rgba(0,212,255,.5); color: #00d4ff; }
+  /* placeholder 区域赛博风格 */
+  [data-theme="pixel-cyber"] .term-placeholder {
+    background: radial-gradient(ellipse at center, rgba(0,212,255,.04) 0%, transparent 70%);
+  }
+  [data-theme="pixel-cyber"] .term-placeholder-btn {
+    border-color: rgba(0,212,255,.4);
+    color: #00d4ff;
+    text-shadow: 0 0 8px rgba(0,212,255,.5);
+  }
+  [data-theme="pixel-cyber"] .term-placeholder-btn:hover {
+    border-color: #ff0055;
+    color: #ff0055;
+    text-shadow: 0 0 8px rgba(255,0,85,.6);
+    box-shadow: 0 0 16px rgba(255,0,85,.2);
+  }
 """
 
     page_js = r"""
@@ -505,15 +645,7 @@ function _onStateChange(target, newState) {
 // ── Notifications ─────────────────────────────────────────────────────────────
 function _maybeNotify(target, state) {
   if (state === 'confirm') playNotificationSound();
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  const label = { confirm: '需要你确认操作', done: '任务完成了', error: '遇到了错误' }[state];
-  if (!label) return;
-  new Notification('Mira · ' + target, { body: label, silent: false });
 }
-document.addEventListener('click', function() {
-  if ('Notification' in window && Notification.permission === 'default')
-    Notification.requestPermission();
-}, { once: true });
 
 // ── Background polling (sidebar dots only) ────────────────────────────────────
 let _bgPollTimer = null;
@@ -760,6 +892,7 @@ function showTerminal() {
           }
         }, true);
       } catch(e) {}
+      _applyTtydTheme();
     });
   }
   frame.classList.add('visible');
@@ -1384,6 +1517,15 @@ function _initUpload() {
   });
 }
 
+// ── ttyd theme sync ───────────────────────────────────────────────────────────
+function _applyTtydTheme() {
+  var frame = document.getElementById('ttyd-frame');
+  if (!frame || !frame.contentWindow) return;
+  // The injected mira-ttyd-theme script inside the iframe handles everything;
+  // we just tell it the skin changed via postMessage.
+  try { frame.contentWindow.postMessage({ type: 'mira-theme' }, '*'); } catch(_) {}
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   await _initAuth();
@@ -1396,6 +1538,9 @@ async function init() {
     if (e.target.closest('.term-pane-kill')) return;
     selectPane(row.dataset.target, row.dataset.cmd);
   });
+  // Watch for skin changes and sync to ttyd iframe
+  new MutationObserver(function() { _applyTtydTheme(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   // Init mobile input bar + upload handlers
   _initMobileInput();
   _initUpload();
