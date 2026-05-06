@@ -2075,8 +2075,8 @@ var T={
     cursorStyle:'block',cursorBlink:true,fontSize:14},
   'pixel-cyber':{
     bg:'#020c1a',fg:'#eef8ff',cu:'#ff0055',ca:'#020c1a',sel:'rgba(0,212,255,.2)',
-    k:'#2a5570',r:'#ff3355',g:'#00ff88',y:'#ffaa00',b:'#00d4ff',m:'#a855f7',c:'#00d4ff',w:'#eef8ff',
-    bk:'#6bbad8',br:'#ff3355',bg2:'#00ff88',by:'#ffaa00',bb:'#00d4ff',bm:'#a855f7',bc:'#00d4ff',bw:'#ffffff',
+    k:'#0a1e2e',r:'#ff3355',g:'#00ff88',y:'#ffaa00',b:'#00d4ff',m:'#a855f7',c:'#00d4ff',w:'#eef8ff',
+    bk:'#3a6880',br:'#ff3355',bg2:'#00ff88',by:'#ffaa00',bb:'#00d4ff',bm:'#a855f7',bc:'#00d4ff',bw:'#ffffff',
     cursorStyle:'block',cursorBlink:true,fontSize:14}
 };
 /* Per-skin CSS injected into the iframe body */
