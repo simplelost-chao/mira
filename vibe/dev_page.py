@@ -1755,6 +1755,7 @@ init();
       <button class="term-detail-back" onclick="showPlaceholder()" title="返回列表">← 列表</button>
       <span class="term-detail-title" id="term-detail-title">终端</span>
       <button class="term-switch-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>
+      <button class="term-switch-btn" onclick="openSettings()" title="设置">⚙</button>
     </div>
     <!-- Mobile pane switcher dropdown -->
     <div class="pane-switcher" id="pane-switcher"></div>
