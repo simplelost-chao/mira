@@ -269,6 +269,11 @@ def render_dev_page() -> str:
       overscroll-behavior: contain;
     }
 
+    .term-sep {
+      border: none; border-top: 1px solid rgba(255,255,255,.1);
+      margin: 2px 0;
+    }
+
     /* ── Mobile input bar ── */
     .mobile-input-bar {
       display: flex; flex-direction: column; flex-shrink: 0;
@@ -1121,7 +1126,7 @@ function _ansiToHtml(raw) {
   text = text.split('\n').map(function(l) {
     l = l.replace(/[\s\x1b]+$/, '');
     var plain = l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
-    if (plain.length > 4 && /^[\u2500-\u257F]+$/.test(plain)) return '';
+    if (plain.length > 4 && /^[\u2500-\u257F]+$/.test(plain)) return '\x00HR\x00';
     return l;
   }).join('\n');
   // 3. Collapse consecutive blank lines and trim trailing blanks
@@ -1164,6 +1169,7 @@ function _ansiToHtml(raw) {
   }
   // Phase 3: highlight prompt lines (lines ending with $, %, >, ❯)
   html = html.split('\n').map(function(line) {
+    if (line === '\x00HR\x00') return '<hr class="term-sep">';
     var stripped = line.replace(/<[^>]*>/g, '').trim();
     if (/[$%>❯]\s*$/.test(stripped) && stripped.length > 0) {
       return '<span class="term-line-prompt">' + line + '</span>';
