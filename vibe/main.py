@@ -539,7 +539,7 @@ def _mask_projects(projects: list[dict]) -> list[dict]:
     import copy
     result = copy.deepcopy(projects)
     _COST_KEYS = {"estimated_cost_usd", "input_tokens", "output_tokens",
-                  "cache_read_tokens", "cache_write_tokens"}
+                  "cache_read_tokens", "cache_write_tokens", "cache_creation_tokens"}
     for p in result:
         act = p.get("claude_activity") or {}
         if any(k in act for k in _COST_KEYS):
@@ -555,6 +555,15 @@ def list_projects(request: Request):
     projects = get_all_projects_with_remote()
     return projects if _is_admin(request) else _mask_projects(projects)
 
+@api.get("/api/projects/{project_id}/refresh")
+def refresh_project(request: Request, project_id: str):
+    """Force refresh a single project and return updated data."""
+    projects = get_all_projects(force=True)
+    for p in projects:
+        if p["id"] == project_id:
+            return p if _is_admin(request) else _mask_projects([p])[0]
+    raise HTTPException(status_code=404, detail="Project not found")
+
 @api.get("/api/projects/{project_id:path}")
 def get_project(request: Request, project_id: str):
     projects = get_all_projects_with_remote()
@@ -562,10 +571,6 @@ def get_project(request: Request, project_id: str):
         if p["id"] == project_id:
             return p if _is_admin(request) else _mask_projects([p])[0]
     raise HTTPException(status_code=404, detail="Project not found")
-
-@api.get("/api/projects/{project_id}/refresh")
-def refresh_project(project_id: str):
-    return get_project(project_id)
 
 _NC = {"Cache-Control": "no-store, no-cache, must-revalidate"}
 
@@ -848,8 +853,10 @@ def _detect_used_by(port: int, projects: list[dict]) -> list[str]:
 
 
 @api.get("/api/base-services")
-def list_base_services():
+def list_base_services(request: Request):
     """Check status of host-level infrastructure services defined in vibe.yaml."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.config import load_global_config
     cfg = load_global_config()
     services = cfg.get("base_services") or []
@@ -983,8 +990,10 @@ def auth_check(request: Request):
 
 
 @api.get("/api/hosts")
-def list_hosts():
+def list_hosts(request: Request):
     """返回远程主机连接状态列表。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     return [h.status_dict() for h in _remote_hosts]
 
 
@@ -1632,7 +1641,9 @@ async def terminals_send(request: Request, target: str, body: dict):
 
 
 @api.get("/api/alerts")
-def get_alerts():
+def get_alerts(request: Request):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
     with _alerts_lock:
         current = list(_alerts)
         _alerts.clear()

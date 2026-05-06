@@ -12,7 +12,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{project_name} · Mira</title>
+<title>{project_name.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")} · Mira</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
@@ -487,7 +487,7 @@ function showTab(name) {{
 }}
 
 function escHtml(s) {{
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }}
 
 // ── ANSI renderer ─────────────────────────────────────────────────────────────
