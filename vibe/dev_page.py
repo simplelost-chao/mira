@@ -1706,6 +1706,7 @@ init();
         <button class="mobile-key-btn" data-key="3">3</button>
         <button class="mobile-key-btn" data-key="4">4</button>
         <button class="mobile-key-btn" data-key="5">5</button>
+        <button class="mobile-key-btn" onclick="openLoginModal()" style="margin-left:auto">🔑</button>
       </div>
       <div class="mobile-input-row">
         <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">📎</label>
