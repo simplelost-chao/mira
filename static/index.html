@@ -3661,7 +3661,15 @@ async function loadClaudeUsage() {
         var pct = Math.round(data.utilization * 100);
         var cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
         var r = 11, c = 2 * Math.PI * r, off = c * (1 - data.utilization);
-        return '<div class="topbar-ring" title="' + label + ' ' + pct + '%">'
+        var tip = label + ' ' + pct + '%';
+        if (data.resets_at) {
+          var diff = data.resets_at * 1000 - Date.now();
+          if (diff > 0) {
+            var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+            tip += ' · ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + '后重置';
+          }
+        }
+        return '<div class="topbar-ring" title="' + tip + '">'
           + '<svg width="28" height="28" viewBox="0 0 28 28">'
           + '<circle class="topbar-ring-bg" cx="14" cy="14" r="' + r + '"/>'
           + '<circle class="topbar-ring-fg ' + cls + '" cx="14" cy="14" r="' + r + '" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"/>'
