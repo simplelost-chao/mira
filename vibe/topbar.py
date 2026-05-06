@@ -141,13 +141,13 @@ def topbar_css() -> str:
         "  .topbar-btn svg { display: block; }\n"
         "  .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }\n"
         "  .topbar-detail-btn {\n"
-        "    display: none;\n"
-        "    background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);\n"
-        "    color: var(--sub); font-size: 13px; padding: 4px 10px; cursor: pointer;\n"
-        "    font-family: var(--mono); transition: all .15s; align-items: center;\n"
+        "    display: none; align-items: center; justify-content: center;\n"
+        "    width: 32px; height: 32px; background: none; border: 1px solid var(--border);\n"
+        "    border-radius: var(--radius-sm); color: var(--sub); cursor: pointer;\n"
+        "    transition: all .15s;\n"
         "  }\n"
+        "  .topbar-detail-btn svg { display: block; }\n"
         "  .topbar-detail-btn:hover { border-color: var(--accent); color: var(--accent); }\n"
-        "  /* topbar-detail-btn: always hidden by default, JS shows in detail mode */\n"
         "  /* ── Skin cards (used inside settings overlay) ── */\n"
         "  .skin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }\n"
         "  .skin-card { border: 1px solid var(--border); border-radius: 7px; padding: 8px; cursor: pointer; transition: border-color .15s; }\n"
@@ -201,8 +201,16 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
     ]
     if hide_dev:
         parts += [
-            '  <button class="topbar-detail-btn" onclick="showPlaceholder()" title="返回列表">← 列表</button>',
-            '  <button class="topbar-detail-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>',
+            '  <button class="topbar-detail-btn" onclick="showPlaceholder()" title="返回列表">'
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>'
+            '<line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'
+            '</svg></button>',
+            '  <button class="topbar-detail-btn" onclick="_togglePaneSwitcher()" title="切换终端">'
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>'
+            '<line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
+            '</svg></button>',
         ]
     parts.append('</div>')
     return "\n".join(parts)

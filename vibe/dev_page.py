@@ -912,13 +912,17 @@ async function selectPane(target, cmd) {
     document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = 'inline-flex'; });
   }
 
-  // Update title with project name
+  // Update title with project name (from group header, not pane label)
   const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"]`);
   const titleEl = document.getElementById('term-detail-title');
   const pageTitle = document.querySelector('.topbar-page-title');
   if (activeRow) {
-    const txt = activeRow.querySelector('.term-pane-name-text');
-    const name = txt ? txt.textContent : target;
+    var pid = activeRow.dataset.projectId;
+    var groupEl = pid ? document.querySelector('.term-group-name[data-group="' + CSS.escape(pid) + '"]') ||
+                        document.querySelector('[data-group="' + CSS.escape(pid) + '"] .term-group-name') : null;
+    var name = groupEl ? groupEl.textContent : (activeRow.querySelector('.term-pane-name-text')?.textContent || target);
+    // Strip path prefix: "node/argus" → "argus"
+    name = name.replace(/^.*\//, '');
     if (titleEl) titleEl.textContent = name;
     if (pageTitle && _isMobile) pageTitle.textContent = name;
   }
