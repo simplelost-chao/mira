@@ -376,24 +376,6 @@ def _check_anomalies(projects: list[dict]) -> None:
             del _alerts[:-50]
 
 
-def _escape_applescript(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _send_os_notification(title: str, body: str, sound: str = "Pop") -> None:
-    import subprocess
-    try:
-        safe_title = _escape_applescript(title)
-        safe_body  = _escape_applescript(body)
-        safe_sound = _escape_applescript(sound)
-        script = (
-            f'display notification "{safe_body}" '
-            f'with title "{safe_title}" '
-            f'sound name "{safe_sound}"'
-        )
-        subprocess.run(["osascript", "-e", script], timeout=5, capture_output=True)
-    except Exception:
-        pass
 
 
 def _auto_restart(name: str, cmd: str, port: int | None, sound: str) -> None:
@@ -409,15 +391,13 @@ def _auto_restart(name: str, cmd: str, port: int | None, sound: str) -> None:
                 ts = datetime.now().strftime("%H:%M")
                 with _alerts_lock:
                     _alerts.append(f"[{ts}] {name} 自动重启成功")
-                _send_os_notification("Mira 监控 ✅", f"{name} 自动重启成功", sound)
                 _base_svc_state[name] = True
                 return
         ts = datetime.now().strftime("%H:%M")
         with _alerts_lock:
             _alerts.append(f"[{ts}] {name} 自动重启后端口仍无响应")
-        _send_os_notification("Mira 监控 ❌", f"{name} 重启失败，请手动检查", sound)
     except Exception as e:
-        _send_os_notification("Mira 监控 ❌", f"{name} 重启出错: {e}", sound)
+        pass
 
 
 def _monitor_base_services_loop() -> None:
@@ -470,12 +450,10 @@ def _monitor_base_services_loop() -> None:
                         msg = f"{name} 服务已停止 – {detail}"
                     with _alerts_lock:
                         _alerts.append(f"[{ts}] {msg}")
-                    _send_os_notification("Mira 监控 ⚠️", msg, sound)
                 else:         # down → up
                     msg = f"{name} 服务已恢复"
                     with _alerts_lock:
                         _alerts.append(f"[{ts}] {msg}")
-                    _send_os_notification("Mira 监控 ✅", msg, sound)
         except Exception:
             pass
 
