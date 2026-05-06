@@ -525,14 +525,14 @@ def render_dev_page() -> str:
     box-shadow: 0 2px 10px rgba(0,212,255,.12), 0 -1px 12px rgba(0,212,255,.2);
     background: rgba(2,12,26,.98);
   }
-  /* iframe 区域：网格底纹 */
-  [data-theme="pixel-cyber"] .term-iframe-wrap {
+  /* 全局格子底纹（与首页保持一致） */
+  [data-theme="pixel-cyber"] body {
     background-image:
-      linear-gradient(rgba(0,212,255,.055) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,.055) 1px, transparent 1px);
+      linear-gradient(rgba(0,212,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,.04) 1px, transparent 1px);
     background-size: 8px 8px;
   }
-  /* CRT 扫描线（青色调）叠在网格上 */
+  /* CRT 扫描线叠在格子上 */
   [data-theme="pixel-cyber"] .term-iframe-wrap::after {
     content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
     background:
@@ -549,11 +549,7 @@ def render_dev_page() -> str:
   [data-theme="pixel-cyber"] .term-host-badge { border: 1px solid rgba(0,212,255,.5); color: #00d4ff; }
   /* placeholder 区域赛博风格 */
   [data-theme="pixel-cyber"] .term-placeholder {
-    background:
-      radial-gradient(ellipse at center, rgba(0,212,255,.06) 0%, transparent 65%),
-      linear-gradient(rgba(0,212,255,.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,212,255,.04) 1px, transparent 1px);
-    background-size: auto, 8px 8px, 8px 8px;
+    background: radial-gradient(ellipse at center, rgba(0,212,255,.06) 0%, transparent 65%);
   }
   [data-theme="pixel-cyber"] .term-placeholder-btn {
     border-color: rgba(0,212,255,.4);

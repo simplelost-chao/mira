@@ -3504,7 +3504,10 @@ const _INFRA_ICONS = {
 async function loadInfraServices() {
   try {
     const res = await fetch('/api/base-services');
-    allBaseServices = await res.json();
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data)) return;
+    allBaseServices = data;
     renderCards(); // re-render project cards to show deps
     renderInfraSection(allBaseServices);
   } catch(e) {}
