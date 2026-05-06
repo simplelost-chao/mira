@@ -282,6 +282,13 @@ body {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
+.topbar-usage { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--sub); cursor: default; white-space: nowrap; }
+.topbar-usage-bar { width: 48px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+.topbar-usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+.topbar-usage-fill.low { background: var(--green); }
+.topbar-usage-fill.mid { background: var(--orange); }
+.topbar-usage-fill.high { background: var(--red); }
+@media (max-width: 900px) { .topbar-usage-label { display: none; } .topbar-usage-bar { width: 32px; } }
 .refresh-btn {
   background: rgba(var(--accent-rgb),0.15);
   border: 1px solid var(--accent);
@@ -1936,6 +1943,7 @@ body {
 <div class="topbar">
   <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
+  <div class="topbar-usage" id="topbar-usage" style="display:none" title="Claude Code 用量"></div>
   <a class="topbar-btn" href="/stats" id="stats-nav-btn" title="开发统计" style="text-decoration:none">Stats</a>
   <a class="topbar-btn" href="/dev" title="进入开发模式" style="text-decoration:none">Dev</a>
   <button class="topbar-btn" id="chat-fab" onclick="toggleChat()" aria-label="打开 Mira 对话" style="position:relative">⌘<span id="anomaly-badge"></span></button>
@@ -3615,6 +3623,22 @@ async function loadClaudeUsage() {
       + bar('当前会话 (5h)', d.session)
       + bar('本周用量 (7d)', d.weekly)
       + '</div>';
+
+    // Update topbar indicator
+    const tb = document.getElementById('topbar-usage');
+    if (tb && d.weekly?.utilization != null) {
+      const pct = Math.round(d.weekly.utilization * 100);
+      const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
+      let reset = '';
+      if (d.weekly.resets_at) {
+        const h = Math.floor((d.weekly.resets_at * 1000 - Date.now()) / 3600000);
+        if (h > 0) reset = ` · ${h}h`;
+      }
+      tb.innerHTML = `<span class="topbar-usage-label">CC ${pct}%${reset}</span>`
+        + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
+      tb.style.display = 'flex';
+      tb.title = 'Claude Code: ' + pct + '% weekly' + reset;
+    }
   } catch(e) {}
   setTimeout(loadClaudeUsage, 120000);
 }
