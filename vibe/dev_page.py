@@ -1752,6 +1752,7 @@ init();
   <div class="term-main">
     <!-- Mobile-only header (back to list + project name) -->
     <div class="term-detail-header" id="term-detail-header">
+      <a class="term-switch-btn" href="/" title="主页" style="text-decoration:none">⌂</a>
       <button class="term-detail-back" onclick="showPlaceholder()" title="返回列表">← 列表</button>
       <span class="term-detail-title" id="term-detail-title">终端</span>
       <button class="term-switch-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>

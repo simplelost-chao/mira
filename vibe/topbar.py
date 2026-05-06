@@ -104,6 +104,22 @@ def topbar_css() -> str:
         "  .topbar-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }\n"
         "  .topbar-page-title { font-size: 12px; color: var(--sub); letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }\n"
         "  .topbar-spacer { flex: 1; }\n"
+        "  /* Claude usage indicator in topbar */\n"
+        "  .topbar-usage {\n"
+        "    display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--sub);\n"
+        "    cursor: default; white-space: nowrap;\n"
+        "  }\n"
+        "  .topbar-usage-bar {\n"
+        "    width: 48px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden;\n"
+        "  }\n"
+        "  .topbar-usage-fill { height: 100%; border-radius: 3px; transition: width .3s; }\n"
+        "  .topbar-usage-fill.low { background: var(--green); }\n"
+        "  .topbar-usage-fill.mid { background: var(--orange); }\n"
+        "  .topbar-usage-fill.high { background: var(--red); }\n"
+        "  @media (max-width: 900px) {\n"
+        "    .topbar-usage-label { display: none; }\n"
+        "    .topbar-usage-bar { width: 32px; }\n"
+        "  }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
         "    color: var(--sub); font-size: 12px; text-decoration: none;\n"
@@ -153,6 +169,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
             f'  <span class="topbar-page-title">{title}</span>',
         ]
     parts.append('  <div class="topbar-spacer"></div>')
+    parts.append('  <div class="topbar-usage" id="topbar-usage" style="display:none" title="Claude Code 用量"></div>')
     if back_url:
         parts.append(f'  <a class="topbar-back" href="{back_url}">← 返回</a>')
     if not hide_dev:
@@ -250,6 +267,35 @@ async function doLogin() {
     document.getElementById('login-error').style.display = '';
   }
 }
+
+// ── Topbar Claude usage indicator ──
+async function _loadTopbarUsage() {
+  try {
+    const res = await fetch('/api/claude-usage', {headers: _adminToken ? {'X-Admin-Token': _adminToken} : {}});
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.error) return;
+    const el = document.getElementById('topbar-usage');
+    if (!el) return;
+    const pct = d.weekly?.utilization != null ? Math.round(d.weekly.utilization * 100) : null;
+    if (pct === null) return;
+    const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
+    let reset = '';
+    if (d.weekly.resets_at) {
+      const diff = d.weekly.resets_at * 1000 - Date.now();
+      if (diff > 0) {
+        const h = Math.floor(diff / 3600000);
+        reset = h > 0 ? ` · ${h}h` : '';
+      }
+    }
+    el.innerHTML = `<span class="topbar-usage-label">CC ${pct}%${reset}</span>`
+      + `<div class="topbar-usage-bar"><div class="topbar-usage-fill ${cls}" style="width:${pct}%"></div></div>`;
+    el.style.display = 'flex';
+    el.title = `Claude Code: ${pct}% weekly${reset}`;
+  } catch(e) {}
+  setTimeout(_loadTopbarUsage, 120000);
+}
+if (_adminToken) _loadTopbarUsage();
 
 // Settings functions loaded from /static/settings.js (shared with homepage)
 """
