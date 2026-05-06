@@ -1698,19 +1698,14 @@ init();
     <!-- Mobile input bar: bypasses iframe input issues via tmux send-keys -->
     <div class="mobile-input-bar" id="mobile-input-bar">
       <div class="mobile-keys-row" id="mobile-keys-row">
-        <button class="mobile-key-btn" data-key="Tab">Tab</button>
         <button class="mobile-key-btn" data-key="Ctrl+C">⌃C</button>
-        <button class="mobile-key-btn" data-key="Ctrl+D">⌃D</button>
-        <button class="mobile-key-btn" data-key="Ctrl+Z">⌃Z</button>
-        <button class="mobile-key-btn" data-key="Esc">Esc</button>
         <button class="mobile-key-btn" data-key="Up">↑</button>
         <button class="mobile-key-btn" data-key="Down">↓</button>
-        <button class="mobile-key-btn" data-key="Ctrl+L">清屏</button>
-        <button class="mobile-key-btn" data-key="Ctrl+A">行首</button>
-        <button class="mobile-key-btn" data-key="Ctrl+E">行尾</button>
-        <button class="mobile-key-btn" data-key="Ctrl+U">删行</button>
-        <button class="mobile-key-btn" data-scroll="page-up">PgUp</button>
-        <button class="mobile-key-btn" data-scroll="page-down">PgDn</button>
+        <button class="mobile-key-btn" data-key="1">1</button>
+        <button class="mobile-key-btn" data-key="2">2</button>
+        <button class="mobile-key-btn" data-key="3">3</button>
+        <button class="mobile-key-btn" data-key="4">4</button>
+        <button class="mobile-key-btn" data-key="5">5</button>
       </div>
       <div class="mobile-input-row">
         <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">📎</label>
