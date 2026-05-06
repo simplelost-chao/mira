@@ -138,11 +138,15 @@ def topbar_css() -> str:
         "  }\n"
         "  .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }\n"
         "  .topbar-detail-btn {\n"
+        "    display: none;\n"
         "    background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);\n"
         "    color: var(--sub); font-size: 13px; padding: 4px 10px; cursor: pointer;\n"
-        "    font-family: var(--mono); transition: all .15s; display: inline-flex; align-items: center;\n"
+        "    font-family: var(--mono); transition: all .15s; align-items: center;\n"
         "  }\n"
         "  .topbar-detail-btn:hover { border-color: var(--accent); color: var(--accent); }\n"
+        "  @media (max-width: 900px) {\n"
+        "    .topbar-detail-btn { display: inline-flex; }\n"
+        "  }\n"
         "  /* ── Skin cards (used inside settings overlay) ── */\n"
         "  .skin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }\n"
         "  .skin-card { border: 1px solid var(--border); border-radius: 7px; padding: 8px; cursor: pointer; transition: border-color .15s; }\n"
@@ -191,10 +195,12 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
         '      <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
         '    </svg>',
         '  </button>',
-        '  <div class="topbar-detail-btns" style="display:none;gap:6px;align-items:center">',
-        '    <button class="topbar-detail-btn" onclick="showPlaceholder()" title="返回列表">← 列表</button>',
-        '    <button class="topbar-detail-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>',
-        '  </div>',
+        *(
+            [
+                '  <button class="topbar-detail-btn" onclick="showPlaceholder()" title="返回列表">← 列表</button>',
+                '  <button class="topbar-detail-btn" onclick="_togglePaneSwitcher()" title="切换终端">⇅</button>',
+            ] if hide_dev else []
+        ),
         '</div>',
     ]
     return "\n".join(parts)
