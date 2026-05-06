@@ -355,15 +355,17 @@ def render_dev_page() -> str:
   /* ── Desktop term toolbar (above iframe) ── */
   .term-toolbar {
     display: none; align-items: center; gap: 8px;
-    padding: 4px 12px; background: var(--panel);
+    padding: 4px 12px; background: var(--bg);
     border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   .term-toolbar.visible { display: flex; }
   .term-toolbar-btn {
-    background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    color: var(--sub); font-family: var(--mono); font-size: 12px;
-    padding: 3px 10px; cursor: pointer; transition: color .12s, border-color .12s;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; background: none; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--sub); cursor: pointer;
+    transition: color .12s, border-color .12s;
   }
+  .term-toolbar-btn svg { display: block; }
   .term-toolbar-btn:hover { color: var(--accent); border-color: var(--accent); }
   @media (max-width: 900px) {
     .term-toolbar { display: none !important; }
@@ -1761,9 +1763,17 @@ init();
     </div>
     <!-- Desktop toolbar (above iframe, visible when pane selected) -->
     <div class="term-toolbar" id="term-toolbar">
-      <label class="term-toolbar-btn" for="desktop-file-input">📎 上传文件</label>
+      <label class="term-toolbar-btn" for="desktop-file-input" title="上传文件">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </label>
       <input type="file" id="desktop-file-input" style="display:none">
-      <button class="term-toolbar-btn" onclick="_pasteFromClipboard()" title="从剪贴板粘贴图片">📋 粘贴</button>
+      <button class="term-toolbar-btn" onclick="_pasteFromClipboard()" title="粘贴图片">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+        </svg>
+      </button>
     </div>
     <div class="term-iframe-wrap" id="term-iframe-wrap">
       <div class="term-touch-overlay" id="term-touch-overlay"></div>
@@ -1786,7 +1796,11 @@ init();
         <button class="mobile-key-btn" data-key="5">5</button>
       </div>
       <div class="mobile-input-row">
-        <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">📎</label>
+        <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </label>
         <input type="file" id="mobile-file-input" style="display:none">
         <textarea class="mobile-cmd-input" id="mobile-cmd-input" rows="1"
           placeholder="输入命令…" autocomplete="off" autocorrect="off"
