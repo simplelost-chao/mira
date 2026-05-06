@@ -125,6 +125,15 @@ def topbar_css() -> str:
         "  }\n"
         "  .topbar-ring-text.high { color: var(--red); }\n"
         "  .topbar-ring-text.mid { color: var(--orange); }\n"
+        "  .topbar-usage-tip {\n"
+        "    display: none; position: absolute; top: 40px; right: 0; z-index: 200;\n"
+        "    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;\n"
+        "    padding: 8px 12px; font-size: 11px; color: var(--text); white-space: nowrap;\n"
+        "    box-shadow: 0 4px 16px rgba(0,0,0,.4); font-family: var(--mono);\n"
+        "  }\n"
+        "  .topbar-usage-tip.show { display: block; }\n"
+        "  .topbar-usage-tip div { margin-bottom: 3px; }\n"
+        "  .topbar-usage-tip div:last-child { margin-bottom: 0; }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
         "    color: var(--sub); font-size: 12px; text-decoration: none;\n"
@@ -307,27 +316,45 @@ async function _loadTopbarUsage() {
     if (d.error) return;
     const el = document.getElementById('topbar-usage');
     if (!el) return;
-    function _ring(label, data) {
+    function _ring(data) {
       if (!data || data.utilization == null) return '';
       var pct = Math.round(data.utilization * 100);
       var cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
       var r = 11, c = 2 * Math.PI * r, off = c * (1 - data.utilization);
-      var tip = label + ' ' + pct + '%';
-      if (data.resets_at) {
-        var diff = data.resets_at * 1000 - Date.now();
-        if (diff > 0) {
-          var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-          tip += ' · ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + '后重置';
-        }
-      }
-      return '<div class="topbar-ring" title="' + tip + '">'
+      return '<div class="topbar-ring">'
         + '<svg width="28" height="28" viewBox="0 0 28 28">'
         + '<circle class="topbar-ring-bg" cx="14" cy="14" r="' + r + '"/>'
         + '<circle class="topbar-ring-fg ' + cls + '" cx="14" cy="14" r="' + r + '" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"/>'
         + '</svg><div class="topbar-ring-text ' + cls + '">' + pct + '</div></div>';
     }
-    var html = _ring('会话', d.session) + _ring('周', d.weekly);
-    if (html) { el.innerHTML = html; el.style.display = 'inline-flex'; }
+    function _tipLine(label, data) {
+      if (!data || data.utilization == null) return '';
+      var pct = Math.round(data.utilization * 100);
+      var t = label + ' ' + pct + '%';
+      if (data.resets_at) {
+        var diff = data.resets_at * 1000 - Date.now();
+        if (diff > 0) {
+          var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+          t += ' · ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + '后重置';
+        }
+      }
+      return '<div>' + t + '</div>';
+    }
+    var html = _ring(d.session) + _ring(d.weekly)
+      + '<div class="topbar-usage-tip" id="topbar-usage-tip">'
+      + _tipLine('会话', d.session) + _tipLine('周', d.weekly) + '</div>';
+    el.innerHTML = html;
+    el.style.display = 'inline-flex';
+    el.style.position = 'relative';
+    el.onclick = function(e) {
+      e.stopPropagation();
+      var tip = document.getElementById('topbar-usage-tip');
+      if (tip) tip.classList.toggle('show');
+    };
+    document.addEventListener('click', function() {
+      var tip = document.getElementById('topbar-usage-tip');
+      if (tip) tip.classList.remove('show');
+    }, { once: false });
   } catch(e) {}
   setTimeout(_loadTopbarUsage, 120000);
 }
