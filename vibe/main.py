@@ -2147,7 +2147,6 @@ function setTheme(term,t){
   try{term.options.theme=th;}catch(e){try{term.setOption('theme',th);}catch(e2){}}
   try{term.options.cursorStyle=t.cursorStyle||'block';}catch(e){try{term.setOption('cursorStyle',t.cursorStyle||'block');}catch(e2){}}
   try{term.options.cursorBlink=!!t.cursorBlink;}catch(e){try{term.setOption('cursorBlink',!!t.cursorBlink);}catch(e2){}}
-  try{term.options.lineHeight=1.15;}catch(e){}
 }
 function apply(){
   var sk=skin();var t=T[sk]||T['default'];
