@@ -1991,8 +1991,9 @@ async def chat_endpoint(request: Request, body: dict):
 @api.websocket("/ws/status")
 async def ws_service_status(websocket: WebSocket):
     """Push service status every 30s. Sends full snapshot on connect, then diffs."""
-    token = websocket.query_params.get("token", "")
-    if not _check_token(token):
+    ws_token = websocket.query_params.get("token", "")
+    expected = _admin_token()
+    if expected and not hmac.compare_digest(ws_token, expected):
         await websocket.close(code=4401)
         return
     await websocket.accept()
