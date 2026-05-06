@@ -264,8 +264,8 @@ def render_dev_page() -> str:
       background: var(--bg); color: var(--text);
       font-family: var(--mono); font-size: 12px; line-height: 1.4;
       padding: 6px 8px; margin: 0;
-      overflow-y: auto; -webkit-overflow-scrolling: touch;
-      white-space: pre-wrap; word-break: break-all; overflow-wrap: break-word;
+      overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
       overscroll-behavior: contain;
     }
 
