@@ -6,11 +6,22 @@ A self-hosted project management dashboard that aggregates git status, running s
 
 ## Features
 
-- **Project overview** — git branch, recent commits, open issues, service health
-- **System architecture** — LLM-generated architecture diagrams and module maps  
-- **Dev terminal** — attach to tmux sessions, send commands, view ANSI-colored output
+- **Project overview** — git branch, recent commits, open issues, service health; cards sorted by most recent Claude session activity
+- **System architecture** — LLM-generated architecture diagrams and module maps
+- **Interactive terminal** — full PTY terminal via ttyd + tmux; panes grouped by project, kill-pane button, new-terminal dialog with project picker
+- **Mobile terminal** — WebSocket streaming with client-side ANSI rendering, dedicated input bar that bypasses iOS keyboard issues
+- **Terminal state detection** — automatically detects running / idle / awaiting-confirmation states
+- **Clipboard bridge** — Cmd+C via tmux buffer for HTTP environments
 - **Design docs** — plans, specs, and AI-generated summaries per project
-- **Multi-theme UI** — dark, neon-pixel, pixel-cyber skins
+- **Claude Code usage monitor** — real-time session + weekly usage ring charts in topbar, tap for reset countdown
+- **Safari-style tab switcher** — 3D card grid on mobile with terminal preview, tap to switch, swipe to close
+- **New project wizard** — AI-powered project brainstorming with DeepSeek/OpenRouter/Gemini, auto-generates logo + scaffold
+- **5 theme skins** — Default / Neon Pixel / Cyber Pixel / Claude Light / Claude Dark, with per-skin ANSI color tuning
+- **Settings panel** — API key management, notification sounds, flat/tree terminal list toggle
+- **Balance cards** — 2-column mobile layout, expandable with 30-day sparkline on desktop
+- **Mobile optimizations** — clickable URLs in terminal output, URL rejoining across line wraps, disconnect banner with reconnect, Esc/number shortcut keys
+- **Unified icon topbar** — consistent 32×32 SVG icon buttons across all pages
+- **Version badge** — current version displayed in the bottom-right corner
 - **Admin auth** — password-protected write operations and sensitive data views
 
 ## Requirements
@@ -18,21 +29,23 @@ A self-hosted project management dashboard that aggregates git status, running s
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - [tmux](https://github.com/tmux/tmux) — required for the dev terminal feature
+- [ttyd](https://github.com/tsl0922/ttyd) — required for the interactive PTY terminal
 
-Install tmux:
+Install dependencies:
 
 ```bash
 # macOS
-brew install tmux
+brew install tmux ttyd
 
 # Ubuntu / Debian
 sudo apt install tmux
+snap install ttyd --classic   # or build from source: github.com/tsl0922/ttyd
 
 # Arch
-sudo pacman -S tmux
+sudo pacman -S tmux ttyd
 ```
 
-Mira will start without tmux, but the terminal tab will be non-functional.
+Mira will start without tmux/ttyd, but the terminal tab will be non-functional.
 
 ---
 
@@ -240,6 +253,7 @@ vibe summarize                    # Generate AI summaries for all discovered pro
 
 - **Backend:** Python / FastAPI / uvicorn
 - **Frontend:** Vanilla JS + CSS (no build step)
+- **Terminal:** ttyd (PTY) + tmux + WebSocket streaming
 - **Data:** YAML config + SQLite cache
 - **AI summaries:** OpenRouter / DeepSeek / Kimi (all optional)
 
