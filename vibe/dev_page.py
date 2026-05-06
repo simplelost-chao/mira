@@ -1133,6 +1133,22 @@ function _ansiToHtml(raw) {
     if (plain.length > 4 && /^[\u2500-\u257F]+$/.test(plain)) return '\x00HR\x00';
     return l;
   }).join('\n');
+  // 2.5. Rejoin URLs split across lines by terminal wrapping
+  //      (tmux wraps at terminal width, breaking long URLs into multiple lines)
+  var _lines = text.split('\n');
+  var _joined = [];
+  for (var _k = 0; _k < _lines.length; _k++) {
+    var _pl = _lines[_k].replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '');
+    if (_joined.length > 0) {
+      var _prevPl = _joined[_joined.length - 1].replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+$/, '');
+      if (/https?:\/\//.test(_prevPl) && /\S$/.test(_prevPl) && /^\S/.test(_pl)) {
+        _joined[_joined.length - 1] += _lines[_k];
+        continue;
+      }
+    }
+    _joined.push(_lines[_k]);
+  }
+  text = _joined.join('\n');
   // 3. Collapse consecutive blank lines and trim trailing blanks
   text = text.replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n');
   // Split on SGR sequences
