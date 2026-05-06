@@ -220,9 +220,9 @@ def render_dev_page() -> str:
     /* Hide desktop term-detail-header by default; it only shows on mobile */
     .dev-page:not(.detail-open) .term-detail-header { display: none; }
 
-    /* When detail is open: hide non-essential topbar buttons, keep topbar visible */
-    body:has(.dev-page.detail-open) .topbar .topbar-btn { display: none !important; }
-    body:has(.dev-page.detail-open) .topbar .topbar-detail-btns { display: flex !important; }
+    /* Detail mode topbar: JS toggles .topbar-detail-mode on .topbar */
+    .topbar.topbar-detail-mode .topbar-btn { display: none !important; }
+    .topbar.topbar-detail-mode .topbar-detail-btns { display: flex !important; }
     .dev-page.detail-open { height: calc(var(--app-h, 100dvh) - 52px); }
 
     .dev-page { height: calc(var(--app-h) - 52px); }
@@ -926,7 +926,11 @@ async function selectPane(target, cmd) {
   rows.forEach(r => r.classList.toggle('active', r.dataset.target === target));
   document.getElementById('dev-page').classList.add('detail-open');
   // Lock body scroll on mobile to prevent iOS rubber-banding
-  if (_isMobile) document.body.classList.add('detail-locked');
+  if (_isMobile) {
+    document.body.classList.add('detail-locked');
+    var tb = document.querySelector('.topbar');
+    if (tb) tb.classList.add('topbar-detail-mode');
+  }
 
   // Update mobile detail header title with project_name from the row
   const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"]`);
@@ -1017,6 +1021,8 @@ function showPlaceholder() {
   document.getElementById('term-placeholder').style.display = '';
   document.getElementById('dev-page').classList.remove('detail-open');
   document.body.classList.remove('detail-locked');
+  var tb = document.querySelector('.topbar');
+  if (tb) tb.classList.remove('topbar-detail-mode');
 }
 
 // ── New window ────────────────────────────────────────────────────────────────
