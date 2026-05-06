@@ -3491,8 +3491,9 @@ function collectAnomalies(projects, wsSnapshot = {}) {
 
 function renderAnomalies() {
   const badge = document.getElementById('anomaly-badge');
+  if (!badge) return;
   if (anomalies.length === 0) {
-    badge.className = '';  // hide
+    badge.className = '';
   } else {
     badge.textContent = anomalies.length;
     badge.className = 'visible';
