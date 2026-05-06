@@ -2127,22 +2127,13 @@ var CSS_EXTRA={
     '.xterm-viewport::-webkit-scrollbar-track{background:#080c14}'
   ].join('')
 };
-/* Common xterm CSS applied to ALL skins */
-var CSS_COMMON=[
-  /* Breathing room: padding around terminal content */
-  '.xterm{padding:4px 8px}',
-  /* Slightly increase line height for readability */
-  '.xterm-screen{letter-spacing:0.3px}',
-  /* Smooth font rendering */
-  '.xterm canvas{-webkit-font-smoothing:antialiased}',
-].join('');
 var _term=null;
 function skin(){return localStorage.getItem('mira-skin')||'default';}
 function applyCSS(t,sk){
   var s=document.getElementById('mira-s');
   if(!s){s=document.createElement('style');s.id='mira-s';document.head.appendChild(s);}
   s.textContent='html,body,.xterm,.xterm-viewport{background:'+t.bg+'!important}'
-    +CSS_COMMON+(CSS_EXTRA[sk]||'');
+    +(CSS_EXTRA[sk]||'');
 }
 function mkTheme(t){
   return {background:t.bg,foreground:t.fg,cursor:t.cu,cursorAccent:t.ca,
@@ -2156,6 +2147,8 @@ function setTheme(term,t){
   try{term.options.theme=th;}catch(e){try{term.setOption('theme',th);}catch(e2){}}
   try{term.options.cursorStyle=t.cursorStyle||'block';}catch(e){try{term.setOption('cursorStyle',t.cursorStyle||'block');}catch(e2){}}
   try{term.options.cursorBlink=!!t.cursorBlink;}catch(e){try{term.setOption('cursorBlink',!!t.cursorBlink);}catch(e2){}}
+  try{term.options.lineHeight=1.15;}catch(e){}
+  try{term.options.letterSpacing=0.5;}catch(e){}
 }
 function apply(){
   var sk=skin();var t=T[sk]||T['default'];
