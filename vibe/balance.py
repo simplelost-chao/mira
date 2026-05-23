@@ -112,13 +112,21 @@ def _parse_kimi(data: dict) -> dict:
 
 
 def _parse_gemini(data: dict) -> dict:
-    # Response is a model list — just confirms key is valid; no balance concept
+    # Response is a model list — Gemini has no balance API.
+    # Count available models as a useful indicator.
+    models = data.get("models", [])
+    model_count = len(models)
+    # Check if any paid models are available (indicates paid tier)
+    has_paid = any("pro" in (m.get("name", "") or "").lower() or
+                   "ultra" in (m.get("name", "") or "").lower()
+                   for m in models)
     return {
         "balance": None,
         "used": None,
         "currency": "USD",
         "unit": "$",
-        "label": "免费",
+        "label": f"{model_count} 模型可用",
+        "note": "用量请查看 aistudio.google.com/usage",
     }
 
 
@@ -261,6 +269,101 @@ def fetch_openrouter_activity(config: dict, force: bool = False) -> list[dict]:
     return result
 
 
+# ── Balance snapshots (SQLite) ─────────────────────────────────────────────────
+
+import sqlite3
+from pathlib import Path
+
+_SNAP_DB = Path.home() / ".vibe-manager" / "balance_snapshots.db"
+_snap_lock = threading.Lock()
+
+
+def _snap_conn():
+    _SNAP_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_SNAP_DB), timeout=5)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshots (
+            provider TEXT NOT NULL,
+            date     TEXT NOT NULL,
+            balance  REAL,
+            ts       REAL NOT NULL,
+            PRIMARY KEY (provider, date, ts)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_snap_pd ON snapshots (provider, date)
+    """)
+    return conn
+
+
+def _record_snapshots(results: list[dict]):
+    """Record balance snapshots for providers that have a numeric balance."""
+    now = time.time()
+    today = datetime.date.today().isoformat()
+    rows = []
+    for r in results:
+        if r.get("error") or r.get("balance") is None:
+            continue
+        rows.append((r["id"], today, float(r["balance"]), now))
+    if not rows:
+        return
+    with _snap_lock:
+        conn = _snap_conn()
+        try:
+            conn.executemany(
+                "INSERT OR REPLACE INTO snapshots (provider, date, balance, ts) VALUES (?,?,?,?)",
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_balance_activity_all() -> dict[str, list[dict]]:
+    """Compute daily cost for each provider from balance snapshots.
+
+    For each day, cost = previous_day_balance - current_day_balance.
+    If balance *increased* (recharge), that day is marked as 0 cost.
+    Returns {provider_id: [{date, cost_usd}]} for last 30 days.
+    """
+    with _snap_lock:
+        try:
+            conn = _snap_conn()
+            cutoff = (datetime.date.today() - datetime.timedelta(days=35)).isoformat()
+            rows = conn.execute(
+                """SELECT provider, date, balance FROM snapshots
+                   WHERE date >= ?
+                   ORDER BY provider, date, ts DESC""",
+                (cutoff,),
+            ).fetchall()
+            conn.close()
+        except Exception:
+            return {}
+
+    # Group: provider → {date → latest balance}
+    prov_days: dict[str, dict[str, float]] = {}
+    for provider, date, balance in rows:
+        prov_days.setdefault(provider, {})
+        if date not in prov_days[provider]:  # first row = latest ts (ORDER BY ts DESC)
+            prov_days[provider][date] = balance
+
+    result = {}
+    for pid, day_map in prov_days.items():
+        dates = sorted(day_map.keys())
+        activity = []
+        for i in range(1, len(dates)):
+            prev_bal = day_map[dates[i - 1]]
+            curr_bal = day_map[dates[i]]
+            delta = prev_bal - curr_bal  # positive = spending
+            if delta < 0:
+                delta = 0  # balance increased → recharge, not spending
+            activity.append({"date": dates[i], "cost_usd": round(delta, 4)})
+        result[pid] = activity
+
+    return result
+
+
 # ── Cache ──────────────────────────────────────────────────────────────────────
 
 _cache: list[dict] = []
@@ -321,6 +424,12 @@ def fetch_all_balances(config: dict, force: bool = False) -> list[dict]:
 
         parsed = _PARSERS[p["parse"]](raw)
         results.append({"id": pid, "name": p["name"], "error": False, **parsed})
+
+    # Record snapshots for activity tracking
+    try:
+        _record_snapshots(results)
+    except Exception:
+        pass
 
     with _cache_lock:
         _cache = results

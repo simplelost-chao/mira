@@ -195,15 +195,54 @@ let _refImageBase64 = null;  // base64 of reference image
 let _refImageMime = null;
 // _adminToken is declared by topbar.js, reuse it here
 
-function _onRefImage(input) {
+function _compressImageForRef(file, maxDim, quality) {
+  maxDim = maxDim || 1568;
+  quality = quality || 0.8;
+  return new Promise(function(resolve) {
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') return resolve(file);
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var w = img.width, h = img.height;
+      var needsResize = (w > maxDim || h > maxDim);
+      if (!needsResize && file.size < 512 * 1024) return resolve(file);
+      if (needsResize) {
+        var ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      var formats = [['image/webp', quality], ['image/jpeg', quality], ['image/png', undefined]];
+      var pending = formats.length, results = [];
+      function _pick() {
+        if (--pending > 0) return;
+        results.sort(function(a,b) { return a.size - b.size; });
+        var best = results[0];
+        if (!needsResize && best.size >= file.size) return resolve(file);
+        var ext = best.type === 'image/webp' ? 'webp' : (best.type === 'image/png' ? 'png' : 'jpg');
+        resolve(new File([best], file.name.replace(/\.[^.]+$/, '.' + ext), {type: best.type}));
+      }
+      formats.forEach(function(fmt) {
+        canvas.toBlob(function(b) { if (b) results.push(b); _pick(); }, fmt[0], fmt[1]);
+      });
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+async function _onRefImage(input) {
   var file = input.files && input.files[0];
   if (!file) { _refImageBase64 = null; _refImageMime = null; return; }
+  file = await _compressImageForRef(file);
   _refImageMime = file.type || 'image/png';
   document.getElementById('ref-label').textContent = file.name;
   document.getElementById('ref-preview').textContent = (file.size / 1024).toFixed(0) + 'KB';
   var reader = new FileReader();
   reader.onload = function(e) {
-    _refImageBase64 = e.target.result.split(',')[1]; // strip data:...;base64,
+    _refImageBase64 = e.target.result.split(',')[1];
   };
   reader.readAsDataURL(file);
 }

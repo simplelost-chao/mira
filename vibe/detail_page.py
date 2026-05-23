@@ -20,14 +20,14 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 {_theme_css}
   html, body {{ height: 100vh; overflow: hidden; margin: 0; }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); padding-top: 92px; }}
   .content {{ overflow-y: auto; height: calc(100vh - 92px); }}
-  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); }}
 
 {_tb_css}
 
   /* ── subnav ── */
   .subnav {{
-    position: sticky; top: 52px; z-index: 99;
+    position: fixed; top: 52px; left: 0; right: 0; z-index: 99;
     background: var(--panel); border-bottom: 1px solid var(--border);
     backdrop-filter: blur(8px);
     display: flex; align-items: center; padding: 0 20px; height: 40px; gap: 0;

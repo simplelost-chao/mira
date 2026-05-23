@@ -104,36 +104,6 @@ def topbar_css() -> str:
         "  .topbar-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }\n"
         "  .topbar-page-title { font-size: 12px; color: var(--sub); letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }\n"
         "  .topbar-spacer { flex: 1; }\n"
-        "  /* Claude usage indicator in topbar */\n"
-        "  .topbar-usage {\n"
-        "    display: inline-flex; align-items: center; gap: 6px;\n"
-        "    cursor: default;\n"
-        "  }\n"
-        "  .topbar-ring {\n"
-        "    position: relative; width: 28px; height: 28px;\n"
-        "  }\n"
-        "  .topbar-ring svg { transform: rotate(-90deg); }\n"
-        "  .topbar-ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 3; }\n"
-        "  .topbar-ring-fg { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset .5s; }\n"
-        "  .topbar-ring-fg.low { stroke: var(--green); }\n"
-        "  .topbar-ring-fg.mid { stroke: var(--orange); }\n"
-        "  .topbar-ring-fg.high { stroke: var(--red); }\n"
-        "  .topbar-ring-text {\n"
-        "    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;\n"
-        "    font-size: 8px; font-weight: 700; font-family: var(--mono);\n"
-        "    font-variant-numeric: tabular-nums; color: var(--sub);\n"
-        "  }\n"
-        "  .topbar-ring-text.high { color: var(--red); }\n"
-        "  .topbar-ring-text.mid { color: var(--orange); }\n"
-        "  .topbar-usage-tip {\n"
-        "    display: none; position: absolute; top: 40px; right: 0; z-index: 200;\n"
-        "    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;\n"
-        "    padding: 8px 12px; font-size: 11px; color: var(--text); white-space: nowrap;\n"
-        "    box-shadow: 0 4px 16px rgba(0,0,0,.4); font-family: var(--mono);\n"
-        "  }\n"
-        "  .topbar-usage-tip.show { display: block; }\n"
-        "  .topbar-usage-tip div { margin-bottom: 3px; }\n"
-        "  .topbar-usage-tip div:last-child { margin-bottom: 0; }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
         "    color: var(--sub); font-size: 12px; text-decoration: none;\n"
@@ -193,7 +163,6 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
             f'  <span class="topbar-page-title">{title}</span>',
         ]
     parts.append('  <div class="topbar-spacer"></div>')
-    parts.append('  <div class="topbar-usage" id="topbar-usage" style="display:none" title="Claude Code 用量"></div>')
     if back_url:
         parts.append(f'  <a class="topbar-back" href="{back_url}">← 返回</a>')
     if not hide_dev:
@@ -270,10 +239,19 @@ function _authHeaders(extra) {
 
 async function _initAuth() {
   try {
-    const { admin } = await fetch('/api/auth/check', {headers: _authHeaders()}).then(r => r.json());
+    const { admin, auth_required } = await fetch('/api/auth/check', {headers: _authHeaders()}).then(r => r.json());
     _isAdmin = admin;
     if (!admin) { _adminToken = ''; localStorage.removeItem('mira-admin-token'); }
-  } catch(_) { _isAdmin = false; }
+    if (auth_required && !admin) {
+      openLoginModal();
+      return false;
+    }
+  } catch(_) {
+    _isAdmin = false;
+    openLoginModal();
+    return false;
+  }
+  return true;
 }
 
 let _loginCallback = null;
@@ -289,6 +267,12 @@ function closeLoginModal() {
   document.getElementById('login-overlay').style.display = 'none';
   _loginCallback = null;
 }
+function logout() {
+  _adminToken = '';
+  _isAdmin = false;
+  localStorage.removeItem('mira-admin-token');
+  location.reload();
+}
 async function doLogin() {
   const pw = document.getElementById('login-password').value;
   try {
@@ -296,73 +280,19 @@ async function doLogin() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({password: pw}),
     });
-    if (!res.ok) throw new Error('wrong');
+    if (!res.ok) throw new Error(res.status === 429 ? 'rate' : 'wrong');
     const { token } = await res.json();
     _adminToken = token; _isAdmin = true;
     localStorage.setItem('mira-admin-token', token);
     closeLoginModal();
     if (_loginCallback) { const fn = _loginCallback; _loginCallback = null; fn(); }
   } catch(e) {
-    document.getElementById('login-error').style.display = '';
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = e.message === 'rate' ? '请求过于频繁，请稍后再试' : '密码错误，请重试';
+    errEl.style.display = '';
   }
 }
 
-// ── Topbar Claude usage indicator ──
-async function _loadTopbarUsage() {
-  // Dev page manages its own usage display in the toolbar — skip topbar rings entirely
-  if (window._topbarUsageMode !== undefined) {
-    return;  // no retry — dev page handles everything
-  }
-  try {
-    const res = await fetch('/api/claude-usage', {headers: _adminToken ? {'X-Admin-Token': _adminToken} : {}});
-    if (!res.ok) return;
-    const d = await res.json();
-    if (d.error) return;
-    const el = document.getElementById('topbar-usage');
-    if (!el) return;
-    function _ring(data) {
-      if (!data || data.utilization == null) return '';
-      var pct = Math.round(data.utilization * 100);
-      var cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-      var r = 11, c = 2 * Math.PI * r, off = c * (1 - data.utilization);
-      return '<div class="topbar-ring">'
-        + '<svg width="28" height="28" viewBox="0 0 28 28">'
-        + '<circle class="topbar-ring-bg" cx="14" cy="14" r="' + r + '"/>'
-        + '<circle class="topbar-ring-fg ' + cls + '" cx="14" cy="14" r="' + r + '" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"/>'
-        + '</svg><div class="topbar-ring-text ' + cls + '">' + pct + '</div></div>';
-    }
-    function _tipLine(label, data) {
-      if (!data || data.utilization == null) return '';
-      var pct = Math.round(data.utilization * 100);
-      var t = label + ' ' + pct + '%';
-      if (data.resets_at) {
-        var diff = data.resets_at * 1000 - Date.now();
-        if (diff > 0) {
-          var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-          t += ' · ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + '后重置';
-        }
-      }
-      return '<div>' + t + '</div>';
-    }
-    var html = _ring(d.session) + _ring(d.weekly)
-      + '<div class="topbar-usage-tip" id="topbar-usage-tip">'
-      + _tipLine('会话', d.session) + _tipLine('周', d.weekly) + '</div>';
-    el.innerHTML = html;
-    el.style.display = 'inline-flex';
-    el.style.position = 'relative';
-    el.onclick = function(e) {
-      e.stopPropagation();
-      var tip = document.getElementById('topbar-usage-tip');
-      if (tip) tip.classList.toggle('show');
-    };
-    document.addEventListener('click', function() {
-      var tip = document.getElementById('topbar-usage-tip');
-      if (tip) tip.classList.remove('show');
-    }, { once: false });
-  } catch(e) {}
-  setTimeout(_loadTopbarUsage, 120000);
-}
-if (_adminToken) _loadTopbarUsage();
 
 // Settings functions loaded from /static/settings.js (shared with homepage)
 """

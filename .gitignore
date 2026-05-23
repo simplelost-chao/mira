@@ -10,3 +10,5 @@ vibe.yaml
 
 docs/
 .gstack/
+.playwright-mcp/
+*.png

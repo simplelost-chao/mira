@@ -1,10 +1,13 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import ipaddress
 import re
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 import uuid
 import typer
 import uvicorn
@@ -32,6 +35,30 @@ def _ttyd_bin() -> str:
 def _tmux_bin() -> str:
     return shutil.which("tmux") or "/opt/homebrew/bin/tmux"
 
+def _ttyd_auth_header() -> dict[str, str]:
+    from vibe.config import load_global_config
+    pwd = (load_global_config().get("admin_password") or "").strip()
+    if not pwd:
+        return {}
+    token = base64.b64encode(f"admin:{pwd}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
+
+def _ttyd_healthy(timeout: float = 1.0) -> bool:
+    """Return True when ttyd is reachable with Mira's configured auth."""
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{_TTYD_PORT}/terminal/",
+        headers=_ttyd_auth_header(),
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= resp.status < 400
+    except urllib.error.HTTPError as e:
+        # 401 means the port is occupied by ttyd, but not usable by Mira.
+        return 200 <= e.code < 400
+    except Exception:
+        return False
+
 def _start_ttyd() -> None:
     """Start ttyd subprocess. Uses admin_password as HTTP basic auth (admin:<pwd>).
 
@@ -42,6 +69,8 @@ def _start_ttyd() -> None:
     ttyd = _ttyd_bin()
     tmux = _tmux_bin()
     if not Path(ttyd).exists():
+        return
+    if _ttyd_healthy():
         return
 
     from vibe.config import load_global_config
@@ -54,15 +83,27 @@ def _start_ttyd() -> None:
     ]
     if pwd:
         cmd += ["--credential", f"admin:{pwd}"]
+    # Ensure mira tmux session exists before ttyd starts (ttyd only creates it on client connect)
+    subprocess.run([tmux, "new-session", "-d", "-s", "mira", "-c", str(Path.home())],
+                   capture_output=True)  # ignore error if already exists
+
     cmd += [tmux, "new-session", "-A", "-s", "mira", "-c", str(Path.home())]
 
     _ttyd_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def _watch_ttyd() -> None:
-    """Restart ttyd if it dies."""
+    """Restart ttyd if it dies or stops responding with Mira's configured auth."""
     while True:
         time.sleep(5)
         if _ttyd_proc and _ttyd_proc.poll() is not None:
+            _start_ttyd()
+        elif not _ttyd_healthy():
+            if _ttyd_proc and _ttyd_proc.poll() is None:
+                _ttyd_proc.terminate()
+                try:
+                    _ttyd_proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    _ttyd_proc.kill()
             _start_ttyd()
 
 
@@ -666,7 +707,7 @@ def refresh_project(request: Request, project_id: str):
             return p if _is_admin(request) else _mask_projects([p])[0]
     raise HTTPException(status_code=404, detail="Project not found")
 
-@api.get("/api/projects/{project_id:path}")
+@api.get("/api/projects/{project_id}")
 def get_project(request: Request, project_id: str):
     projects = get_all_projects_with_remote()
     for p in projects:
@@ -680,6 +721,12 @@ _NC = {"Cache-Control": "no-store, no-cache, must-revalidate"}
 def stats_page_route():
     from vibe.stats_page import render_stats_page
     return HTMLResponse(render_stats_page(), headers=_NC)
+
+
+@api.get("/sessions")
+def session_dashboard_route():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/stats", status_code=302)
 
 
 @api.get("/dev", response_class=HTMLResponse)
@@ -1450,14 +1497,24 @@ def get_balance(request: Request, force: bool = False):
 
 @api.get("/api/balance/activity")
 def get_balance_activity(request: Request, force: bool = False):
-    from .balance import fetch_openrouter_activity
+    from .balance import fetch_openrouter_activity, get_balance_activity_all
     from .config import load_global_config
-    data = fetch_openrouter_activity(load_global_config(), force=force)
+    # OpenRouter has its own precise activity API
+    or_data = fetch_openrouter_activity(load_global_config(), force=force)
+    # Other providers: computed from balance snapshots
+    snap_data = get_balance_activity_all()
+    # Merge: OpenRouter API data takes precedence over snapshot-based
+    result = dict(snap_data)
+    if or_data:
+        result["openrouter"] = or_data
     if _is_admin(request):
-        return {"openrouter": data}
-    # Non-admin: keep dates, zero amounts
-    masked = [{"date": r["date"], "cost_usd": 0} for r in (data or [])]
-    return {"openrouter": masked or None, "_masked": True}
+        return result
+    # Non-admin: mask amounts
+    masked = {}
+    for pid, rows in result.items():
+        masked[pid] = [{"date": r["date"], "cost_usd": 0} for r in (rows or [])]
+    masked["_masked"] = True
+    return masked
 
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
@@ -2145,6 +2202,51 @@ def history_sessions(request: Request, project_id: str = ""):
     return get_sessions(project_id)
 
 
+@api.get("/api/session/{session_id}/turns")
+def session_turns_view(request: Request, session_id: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.history_db import analyze_session_turns
+    return analyze_session_turns(session_id)
+
+
+@api.get("/api/top-sessions")
+def top_sessions_view(request: Request, sort: str = "cost", limit: int = 100):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    limit = max(1, min(limit, 500))
+    sort_by = "hours" if sort == "hours" else "cost"
+    from vibe.history_db import get_top_sessions
+    return get_top_sessions(sort_by=sort_by, limit=limit)
+
+
+@api.get("/api/top-codex-sessions")
+def top_codex_sessions_view(request: Request, sort: str = "cost", limit: int = 100):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    limit = max(1, min(limit, 500))
+    sort_by = "active_hours" if sort == "hours" else "estimated_cost_usd"
+    from vibe.collectors.codex_sessions import get_top_codex_sessions
+    return get_top_codex_sessions(sort_by=sort_by, limit=limit)
+
+
+@api.get("/api/codex-session/turns")
+def codex_session_turns_view(request: Request, path: str = ""):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    if not path:
+        raise HTTPException(status_code=400, detail="path required")
+    # Security: ensure the path doesn't escape CODEX_DIR
+    from vibe.collectors.codex_sessions import CODEX_DIR, analyze_codex_session_turns
+    try:
+        resolved = (CODEX_DIR / path).resolve()
+        if not str(resolved).startswith(str(CODEX_DIR.resolve())):
+            raise HTTPException(status_code=403, detail="禁止访问")
+    except Exception:
+        raise HTTPException(status_code=400, detail="无效路径")
+    return analyze_codex_session_turns(path)
+
+
 @api.get("/api/stats")
 def stats_view(request: Request, range: str = "30d"):  # noqa: A002
     if not _is_admin(request):
@@ -2476,6 +2578,8 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
     remote_host, real_target = _parse_target(target)
     if remote_host is not None:
         import websockets as _ws
+        import logging
+        logger = logging.getLogger(__name__)
         remote_ws_url = remote_host.url.replace("http://", "ws://").replace("https://", "wss://")
         remote_ws_url += f"/ws/terminal/{real_target}/stream"
         # token 通过 header 传输，不放在 URL 中（避免日志泄露）
@@ -2502,12 +2606,18 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
                         pass
 
                 await asyncio.gather(_remote_to_client(), _client_to_remote())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("remote terminal stream closed for %s via %s: %s", real_target, remote_host.alias, e)
+            try:
+                await ws.close(code=1011, reason="Remote terminal stream failed")
+            except Exception:
+                pass
         return
 
     from vibe.tmux_bridge import capture_pane
     prev_hash = ""
+    import logging
+    logger = logging.getLogger(__name__)
     try:
         while True:
             text = await asyncio.to_thread(capture_pane, target, 300, ansi=True)
@@ -2516,8 +2626,14 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
                 prev_hash = h
                 await ws.send_text(text)
             await asyncio.sleep(0.2)
-    except (WebSocketDisconnect, Exception):
+    except WebSocketDisconnect:
         pass
+    except Exception as e:
+        logger.warning("terminal stream closed for %s: %s", target, e)
+        try:
+            await ws.close(code=1011, reason="Terminal stream failed")
+        except Exception:
+            pass
 
 
 _UPLOAD_DIR = Path("/tmp/mira-uploads")
@@ -2844,18 +2960,33 @@ function setTheme(term,t){
   try{term.options.cursorStyle=t.cursorStyle||'block';}catch(e){try{term.setOption('cursorStyle',t.cursorStyle||'block');}catch(e2){}}
   try{term.options.cursorBlink=!!t.cursorBlink;}catch(e){try{term.setOption('cursorBlink',!!t.cursorBlink);}catch(e2){}}
 }
+function fitTerm(){
+  var term=_term||(window.term&&window.term.element?window.term:null);
+  if(term)_term=term;
+  try{if(window.fitAddon&&window.fitAddon.fit)window.fitAddon.fit();}catch(e){}
+  try{if(term&&term.fit)term.fit();}catch(e){}
+  try{window.dispatchEvent(new Event('resize'));}catch(e){}
+}
 function apply(){
   var sk=skin();var t=T[sk]||T['default'];
   applyCSS(t,sk);
-  if(_term){setTheme(_term,t);return;}
-  if(window.term&&window.term.element){_term=window.term;setTheme(_term,t);return;}
+  if(_term){setTheme(_term,t);setTimeout(fitTerm,0);return;}
+  if(window.term&&window.term.element){_term=window.term;setTheme(_term,t);setTimeout(fitTerm,0);return;}
   var n=0,id=setInterval(function(){
     if(window.term&&window.term.element){
-      clearInterval(id);_term=window.term;setTheme(_term,T[skin()]||T['default']);
+      clearInterval(id);_term=window.term;setTheme(_term,T[skin()]||T['default']);setTimeout(fitTerm,0);
     } else if(++n>100){clearInterval(id);}
   },150);
 }
-window.addEventListener('message',function(e){if(e.data&&e.data.type==='mira-theme')apply();});
+window.addEventListener('message',function(e){
+  if(!e.data)return;
+  if(e.data.type==='mira-theme')apply();
+  if(e.data.type==='mira-resize'){fitTerm();setTimeout(fitTerm,80);setTimeout(fitTerm,250);}
+});
+// Notify parent on mouseup so it can grab tmux buffer immediately
+document.addEventListener('mouseup',function(e){
+  if(e.button===0)try{window.parent.postMessage({type:'mira-mouseup'},'*');}catch(_){}
+},true);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);
 else apply();
 })();
@@ -2869,23 +3000,31 @@ async def ttyd_http_proxy(path: str, request: Request):
     from outside. The security boundary is Mira's login page.
     """
     import httpx
+    import base64
+    from vibe.config import load_global_config
+
     url = f"http://127.0.0.1:{_TTYD_PORT}/terminal/{path}"
     params = str(request.url.query)
     if params:
         url += "?" + params
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection", "authorization")}
+    pwd = (load_global_config().get("admin_password") or "").strip()
+    if pwd:
+        token = base64.b64encode(f"admin:{pwd}".encode()).decode()
+        headers["Authorization"] = f"Basic {token}"
     async with httpx.AsyncClient(trust_env=False) as client:
         try:
             resp = await client.request(
                 method=request.method,
                 url=url,
-                headers={k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")},
+                headers=headers,
                 content=await request.body(),
                 timeout=10,
             )
         except httpx.ConnectError:
             raise HTTPException(status_code=502, detail="ttyd 未运行")
     # Strip hop-by-hop and encoding headers (httpx decompresses; don't re-claim gzip)
-    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
+    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length", "www-authenticate"}
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
     content = resp.content
     # Inject theme script into the ttyd HTML page
@@ -2903,7 +3042,9 @@ async def ttyd_ws_proxy(websocket: WebSocket):
     """
     import websockets as _ws
     import base64
+    import logging
     from vibe.config import load_global_config
+    logger = logging.getLogger(__name__)
 
     # ttyd 自身的 basic auth (--credential) 已经是安全边界，
     # 这里不再做 Mira token 验证——ttyd 前端 JS 无法注入 query param。
@@ -2920,13 +3061,27 @@ async def ttyd_ws_proxy(websocket: WebSocket):
         async with _ws.connect(
             ttyd_url, subprotocols=["tty"],
             additional_headers=extra_headers,
+            proxy=None,
+            compression=None,
         ) as ttyd_ws:
             async def browser_to_ttyd():
                 try:
-                    async for msg in websocket.iter_bytes():
-                        await ttyd_ws.send(msg)
-                except Exception:
+                    while True:
+                        msg = await websocket.receive()
+                        msg_type = msg.get("type")
+                        if msg_type == "websocket.disconnect":
+                            break
+                        if msg_type != "websocket.receive":
+                            continue
+                        if msg.get("bytes") is not None:
+                            await ttyd_ws.send(msg["bytes"])
+                        elif msg.get("text") is not None:
+                            await ttyd_ws.send(msg["text"])
+                except WebSocketDisconnect:
                     pass
+                except Exception as e:
+                    logger.warning("browser->ttyd relay failed: %s", e)
+                    raise
 
             async def ttyd_to_browser():
                 try:
@@ -2935,12 +3090,23 @@ async def ttyd_ws_proxy(websocket: WebSocket):
                             await websocket.send_bytes(msg)
                         else:
                             await websocket.send_text(msg)
-                except Exception:
+                except WebSocketDisconnect:
                     pass
+                except Exception as e:
+                    logger.warning("ttyd->browser relay failed: %s", e)
+                    raise
 
-            await asyncio.gather(browser_to_ttyd(), ttyd_to_browser())
-    except Exception:
-        pass
+            t1 = asyncio.create_task(browser_to_ttyd())
+            t2 = asyncio.create_task(ttyd_to_browser())
+            done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                exc = task.exception()
+                if exc:
+                    raise exc
+    except Exception as e:
+        logger.warning("ttyd ws proxy closed: %s", e)
     finally:
         try:
             await websocket.close()
@@ -3031,6 +3197,9 @@ async def terminal_new_window(request: Request, body: dict):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    # Ensure mira session exists (may not if no ttyd client has connected yet)
+    subprocess.run([_TMUX_BIN, "new-session", "-d", "-s", "mira", "-c", str(Path.home())],
+                   env=_TMUX_ENV, capture_output=True)
     cwd = (body.get("cwd") or "").strip() or None
     cmd = [_TMUX_BIN, "new-window", "-t", "mira"]
     if cwd:
@@ -3041,6 +3210,13 @@ async def terminal_new_window(request: Request, body: dict):
     result = subprocess.run(cmd, env=_TMUX_ENV, capture_output=True, text=True)
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=result.stderr.strip())
+    # Immediately poll terminal monitor so the new pane appears in /api/dev/panes
+    # without waiting for the 2-second monitor cycle.
+    try:
+        from vibe.terminal_monitor import _poll_once as _tm_poll
+        _tm_poll()
+    except Exception:
+        pass
     return {"ok": True}
 
 

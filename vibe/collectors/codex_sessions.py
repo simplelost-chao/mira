@@ -344,3 +344,185 @@ def get_latest_codex_session_stats(project_path: str) -> dict | None:
         "reasoning_output_tokens": reasoning,
         "estimated_cost_usd": round(cost, 4),
     }
+
+
+def _get_first_user_message(jsonl_path: Path) -> str:
+    """Return the first user_message text from a Codex session file."""
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                    if d.get("type") == "event_msg":
+                        p = d.get("payload") or {}
+                        if p.get("type") == "user_message":
+                            msg = p.get("message", "")
+                            if msg:
+                                return msg[:200]
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return ""
+
+
+def get_top_codex_sessions(sort_by: str = "cost", limit: int = 100) -> list[dict]:
+    """Return top Codex sessions ranked by cost or active_hours."""
+    if not CODEX_DIR.exists():
+        return []
+
+    all_files = _all_jsonl_files()
+    sessions = []
+    GAP_THRESHOLD = 30 * 60
+
+    for f in all_files:
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue
+
+        key = (str(f), mtime)
+        if key not in _file_cwd_cache:
+            if len(_file_cwd_cache) > _FILE_CACHE_MAX:
+                _file_cwd_cache.clear()
+            _file_cwd_cache[key] = _get_session_cwd(f)
+        cwd = _file_cwd_cache[key] or ""
+
+        # Derive project name from cwd path
+        project_name = Path(cwd).name if cwd else "unknown"
+
+        parsed = _parse_session(f)
+        tokens = parsed["tokens"]
+        timestamps = parsed["timestamps"]
+
+        # Compute active hours
+        active_secs = 0.0
+        for i in range(1, len(timestamps)):
+            gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
+            if gap < GAP_THRESHOLD:
+                active_secs += gap
+
+        inp = tokens["input"]
+        out = tokens["output"]
+        cached = tokens["cached_input"]
+        reasoning = tokens["reasoning_output"]
+        non_cached = max(inp - cached, 0)
+        cost = (non_cached * _PRICE_INPUT + cached * _PRICE_CACHED_INPUT
+                + out * _PRICE_OUTPUT + reasoning * _PRICE_REASONING_OUTPUT)
+
+        if cost == 0 and active_secs == 0:
+            continue
+
+        date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+        first_msg = _get_first_user_message(f)
+
+        sessions.append({
+            "session_id":              str(f.relative_to(CODEX_DIR)),
+            "project_id":              cwd,
+            "project_name":            project_name,
+            "date":                    date_str,
+            "input_tokens":            inp,
+            "output_tokens":           out,
+            "cached_input_tokens":     cached,
+            "reasoning_output_tokens": reasoning,
+            "active_hours":            round(active_secs / 3600, 2),
+            "estimated_cost_usd":      round(cost, 4),
+            "first_message":           first_msg,
+        })
+
+    sessions.sort(key=lambda s: s[sort_by if sort_by == "active_hours" else "estimated_cost_usd"], reverse=True)
+    return sessions[:limit]
+
+
+_TRIVIAL_CODEX = __import__("re").compile(
+    r"^(yes|ok|好|继续|嗯|是|对|行|可以|没问题|好的|确认|continue|sure|go|"
+    r"proceed|y|yep|yeah|done|next|1|2|3|4|5|\.+|,+)$",
+    __import__("re").IGNORECASE,
+)
+
+
+def analyze_codex_session_turns(rel_path: str) -> list[dict]:
+    """Parse a Codex session JSONL and return per-turn cost breakdown."""
+    jsonl_path = CODEX_DIR / rel_path
+    if not jsonl_path.exists():
+        return []
+
+    turns: list[dict] = []
+    current_turn_id: Optional[str] = None
+    current_label: str = ""
+    last_cumulative: dict = {"input": 0, "output": 0, "cached": 0, "reasoning": 0}
+    turn_cumulative: dict = {"input": 0, "output": 0, "cached": 0, "reasoning": 0}
+    current_task_label: str = ""  # last non-trivial label (for inheritance)
+
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if d.get("type") != "event_msg":
+                    continue
+                p = d.get("payload") or {}
+                pt = p.get("type", "")
+
+                if pt == "task_started":
+                    current_turn_id = p.get("turn_id")
+                    current_label = ""
+                    turn_cumulative = dict(last_cumulative)
+
+                elif pt == "user_message":
+                    msg = (p.get("message") or "").strip()
+                    if msg:
+                        current_label = msg
+
+                elif pt == "token_count":
+                    info = p.get("info") or {}
+                    usage = info.get("total_token_usage") or {}
+                    if usage.get("input_tokens"):
+                        turn_cumulative = {
+                            "input":     usage.get("input_tokens", 0),
+                            "output":    usage.get("output_tokens", 0),
+                            "cached":    usage.get("cached_input_tokens", 0),
+                            "reasoning": usage.get("reasoning_output_tokens", 0),
+                        }
+
+                elif pt == "task_complete" and current_turn_id == p.get("turn_id"):
+                    # Delta tokens for this turn
+                    d_inp  = max(turn_cumulative["input"]     - last_cumulative["input"],     0)
+                    d_out  = max(turn_cumulative["output"]    - last_cumulative["output"],    0)
+                    d_cach = max(turn_cumulative["cached"]    - last_cumulative["cached"],    0)
+                    d_reas = max(turn_cumulative["reasoning"] - last_cumulative["reasoning"], 0)
+
+                    non_cached = max(d_inp - d_cach, 0)
+                    cost = (non_cached * _PRICE_INPUT + d_cach * _PRICE_CACHED_INPUT
+                            + d_out * _PRICE_OUTPUT + d_reas * _PRICE_REASONING_OUTPUT)
+
+                    label = current_label or "(无输入)"
+                    trivial = bool(_TRIVIAL_CODEX.match(label.strip()))
+                    if trivial:
+                        display_label = current_task_label or label
+                    else:
+                        display_label = label
+                        if label.strip():
+                            current_task_label = label
+
+                    if d_inp > 0 or d_out > 0:
+                        turns.append({
+                            "label":            display_label[:200],
+                            "raw_label":        label[:200],
+                            "input_tokens":     d_inp,
+                            "output_tokens":    d_out,
+                            "cached_input_tokens": d_cach,
+                            "reasoning_tokens": d_reas,
+                            "estimated_cost_usd": round(cost, 5),
+                        })
+
+                    last_cumulative = dict(turn_cumulative)
+                    current_turn_id = None
+
+    except Exception:
+        pass
+
+    turns.sort(key=lambda t: t["estimated_cost_usd"], reverse=True)
+    return turns[:30]

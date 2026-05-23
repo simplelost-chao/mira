@@ -73,7 +73,33 @@ def init_db() -> None:
             try:
                 conn.execute(f'ALTER TABLE daily_stats ADD COLUMN {col} {defn}')
             except sqlite3.OperationalError:
-                pass  # Column already exists
+                pass
+        # Migrate: change PK from session_id to (session_id, date)
+        try:
+            cur = conn.execute("SELECT sql FROM sqlite_master WHERE name='daily_stats' AND type='table'")
+            schema = cur.fetchone()[0]
+            if 'session_id              TEXT PRIMARY KEY' in schema:
+                conn.executescript("""
+                    ALTER TABLE daily_stats RENAME TO _daily_stats_old;
+                    CREATE TABLE daily_stats (
+                        session_id              TEXT NOT NULL,
+                        project_id              TEXT NOT NULL,
+                        date                    TEXT NOT NULL,
+                        messages                INTEGER DEFAULT 0,
+                        input_tokens            INTEGER DEFAULT 0,
+                        output_tokens           INTEGER DEFAULT 0,
+                        cache_creation_tokens   INTEGER DEFAULT 0,
+                        cache_read_tokens       INTEGER DEFAULT 0,
+                        active_hours            REAL    DEFAULT 0.0,
+                        PRIMARY KEY (session_id, date)
+                    );
+                    INSERT INTO daily_stats SELECT * FROM _daily_stats_old;
+                    DROP TABLE _daily_stats_old;
+                    CREATE INDEX IF NOT EXISTS daily_stats_project_date
+                        ON daily_stats(project_id, date);
+                """)
+        except Exception:
+            pass  # Column already exists
 
 
 def upsert_session(session_id: str, project_id: str, project_name: str, file_path: str) -> None:
@@ -214,7 +240,7 @@ def upsert_daily_stats(
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
 ) -> None:
-    """Insert or fully replace stats for one session (idempotent re-index)."""
+    """Insert or replace stats for one session + date (per-day granularity)."""
     with _conn() as conn:
         conn.execute(
             """
@@ -222,9 +248,8 @@ def upsert_daily_stats(
                 (session_id, project_id, date, messages, input_tokens, output_tokens,
                  active_hours, cache_creation_tokens, cache_read_tokens)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
+            ON CONFLICT(session_id, date) DO UPDATE SET
                 project_id              = excluded.project_id,
-                date                    = excluded.date,
                 messages                = excluded.messages,
                 input_tokens            = excluded.input_tokens,
                 output_tokens           = excluded.output_tokens,
@@ -658,11 +683,11 @@ def get_stats(range_days: int = 30) -> dict:
                             "sessions": r["sessions"] or 0}
                for r in hm_rows}
 
-    # ── Per-project daily cost: top 5 projects for trend chart ────────────────
-    top5_ids = [p["project_id"] for p in projects[:5]]
+    # ── Per-project daily breakdown: all projects ────────────────────────────
+    all_proj_ids = [p["project_id"] for p in projects]
     project_days: dict[str, list] = {}
-    if top5_ids:
-        placeholders = ",".join("?" * len(top5_ids))
+    if all_proj_ids:
+        placeholders = ",".join("?" * len(all_proj_ids))
         try:
             with _conn() as conn:
                 pd_rows = conn.execute(
@@ -676,21 +701,28 @@ def get_stats(range_days: int = 30) -> dict:
                     WHERE  project_id IN ({placeholders}) AND date >= ?
                     GROUP  BY project_id, date
                     """,
-                    top5_ids + [cutoff],
+                    all_proj_ids + [cutoff],
                 ).fetchall()
         except sqlite3.OperationalError:
             pd_rows = []
-        # Index by project_id → date → cost
+        # Index by project_id → date → {cost, tokens}
         for r in pd_rows:
             pid = r["project_id"]
+            inp = r["input_tokens"] or 0
+            out = r["output_tokens"] or 0
+            cw  = r["cache_creation_tokens"] or 0
+            cr  = r["cache_read_tokens"] or 0
             cost = round(
-                (r["input_tokens"] or 0)            * _PRICE_INPUT
-                + (r["output_tokens"] or 0)          * _PRICE_OUTPUT
-                + (r["cache_creation_tokens"] or 0)  * _PRICE_CACHE_WRITE
-                + (r["cache_read_tokens"] or 0)      * _PRICE_CACHE_READ,
-                4,
+                inp * _PRICE_INPUT + out * _PRICE_OUTPUT
+                + cw * _PRICE_CACHE_WRITE + cr * _PRICE_CACHE_READ, 4,
             )
-            project_days.setdefault(pid, {})[r["date"]] = cost
+            project_days.setdefault(pid, {})[r["date"]] = {
+                "cost": cost,
+                "input_tokens": inp,
+                "output_tokens": out,
+                "cache_creation_tokens": cw,
+                "cache_read_tokens": cr,
+            }
 
     return {
         "days": days,
@@ -709,3 +741,216 @@ def get_stats(range_days: int = 30) -> dict:
         "heatmap": heatmap,
         "project_days": project_days,
     }
+
+
+def get_top_sessions(sort_by: str = "cost", limit: int = 50) -> list[dict]:
+    """Return top sessions ranked by cost or active_hours, with first user message as task summary."""
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT ds.session_id,
+                       ds.project_id,
+                       COALESCE(s.project_name, ds.project_id) AS project_name,
+                       ds.date,
+                       ds.messages,
+                       ds.input_tokens,
+                       ds.output_tokens,
+                       COALESCE(ds.cache_creation_tokens, 0) AS cache_creation_tokens,
+                       COALESCE(ds.cache_read_tokens, 0)     AS cache_read_tokens,
+                       ds.active_hours,
+                       s.first_ts,
+                       s.last_ts
+                FROM   daily_stats ds
+                JOIN   sessions s ON s.id = ds.session_id
+                ORDER  BY ds.session_id
+                """,
+            ).fetchall()
+
+            if not rows:
+                return []
+
+            # Compute cost for each row and collect session ids
+            enriched = []
+            session_ids = []
+            for r in rows:
+                inp = r['input_tokens'] or 0
+                out = r['output_tokens'] or 0
+                cc  = r['cache_creation_tokens'] or 0
+                cr  = r['cache_read_tokens'] or 0
+                cost = (inp * _PRICE_INPUT + out * _PRICE_OUTPUT
+                        + cc * _PRICE_CACHE_WRITE + cr * _PRICE_CACHE_READ)
+                enriched.append({
+                    'session_id':             r['session_id'],
+                    'project_id':             r['project_id'],
+                    'project_name':           r['project_name'],
+                    'date':                   r['date'],
+                    'messages':               r['messages'] or 0,
+                    'input_tokens':           inp,
+                    'output_tokens':          out,
+                    'cache_creation_tokens':  cc,
+                    'cache_read_tokens':      cr,
+                    'active_hours':           round(r['active_hours'] or 0, 2),
+                    'estimated_cost_usd':     round(cost, 4),
+                    'first_ts':               r['first_ts'],
+                    'last_ts':                r['last_ts'],
+                })
+                session_ids.append(r['session_id'])
+
+            # Sort
+            if sort_by == "hours":
+                enriched.sort(key=lambda x: x['active_hours'], reverse=True)
+            else:
+                enriched.sort(key=lambda x: x['estimated_cost_usd'], reverse=True)
+
+            enriched = enriched[:limit]
+
+            # Fetch first user message for each top session
+            top_ids = [s['session_id'] for s in enriched]
+            placeholders = ','.join('?' * len(top_ids))
+            msg_rows = conn.execute(
+                f"""
+                SELECT session_id, content
+                FROM (
+                    SELECT session_id, content,
+                           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY id ASC) AS rn
+                    FROM   messages
+                    WHERE  role = 'user' AND session_id IN ({placeholders})
+                )
+                WHERE rn = 1
+                """,
+                top_ids,
+            ).fetchall()
+            first_msg = {r['session_id']: r['content'] for r in msg_rows}
+
+            for s in enriched:
+                msg = first_msg.get(s['session_id'], '')
+                # Truncate to first 120 chars, strip system prompts
+                if msg:
+                    msg = msg.strip().split('\n')[0][:120]
+                s['task_summary'] = msg
+
+            return enriched
+    except sqlite3.OperationalError:
+        return []
+
+
+# Trivial confirmation patterns — these inherit the label from the previous real task
+_TRIVIAL_RE = None
+def _is_trivial(text: str) -> bool:
+    import re
+    global _TRIVIAL_RE
+    if _TRIVIAL_RE is None:
+        pats = (r'^(yes|no|ok|okay|好|嗯|行|对|是|不|继续|continue|go\s+ahead|done|确认|知道了|好的|明白|继续做|'
+                r'proceed|sure|yep|nope|正确|没错|来吧|加油|试试|搞|干|做|再|然后|那|就这样|好吧|可以|帮我做|帮我|'
+                r'[\.,\?!！？。，、…]+)$')
+        _TRIVIAL_RE = re.compile(pats, re.IGNORECASE)
+    stripped = text.strip()
+    return len(stripped) < 20 and bool(_TRIVIAL_RE.match(stripped))
+
+
+def analyze_session_turns(session_id: str) -> list[dict]:
+    """Parse a session JSONL and return cost per task turn.
+
+    A turn starts at each real user text message (not tool_result).
+    Consecutive duplicate assistant usages are deduplicated.
+    Trivial confirmations inherit the label from the previous real task.
+    Returns top 30 turns by cost.
+    """
+    import json as _json
+
+    try:
+        with _conn() as conn:
+            row = conn.execute(
+                "SELECT file_path FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return []
+    if not row or not row['file_path']:
+        return []
+
+    try:
+        with open(row['file_path'], encoding='utf-8') as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+
+    turns: list[dict] = []
+    current_label: str = ""
+    current_task_label: str = ""
+    cur_inp = cur_out = cur_cw = cur_cr = 0
+    seen_usage_hashes: set = set()
+    turn_seq = 0
+
+    def _flush():
+        nonlocal cur_inp, cur_out, cur_cw, cur_cr
+        if cur_out == 0 and cur_cw == 0 and cur_cr == 0:
+            cur_inp = cur_out = cur_cw = cur_cr = 0
+            seen_usage_hashes.clear()
+            return
+        cost = cur_inp * _PRICE_INPUT + cur_out * _PRICE_OUTPUT + cur_cw * _PRICE_CACHE_WRITE + cur_cr * _PRICE_CACHE_READ
+        turns.append({
+            'seq':                   turn_seq,
+            'label':                 current_task_label or current_label or '(无标题)',
+            'raw_label':             current_label,
+            'input_tokens':          cur_inp,
+            'output_tokens':         cur_out,
+            'cache_creation_tokens': cur_cw,
+            'cache_read_tokens':     cur_cr,
+            'estimated_cost_usd':    round(cost, 4),
+        })
+        cur_inp = cur_out = cur_cw = cur_cr = 0
+        seen_usage_hashes.clear()
+
+    for raw in lines:
+        try:
+            d = _json.loads(raw)
+        except Exception:
+            continue
+
+        msg_type = d.get('type', '')
+
+        if msg_type == 'user':
+            msg = d.get('message', d)
+            content = msg.get('content', '')
+            text = ''
+            if isinstance(content, list):
+                if any(isinstance(c, dict) and c.get('type') == 'tool_result' for c in content):
+                    continue  # tool result, not a real user turn
+                text = ' '.join(
+                    c.get('text', '') for c in content
+                    if isinstance(c, dict) and c.get('type') == 'text'
+                ).strip()
+            elif isinstance(content, str):
+                text = content.strip()
+            if not text:
+                continue
+
+            _flush()
+            turn_seq += 1
+            current_label = text
+            if not _is_trivial(text):
+                current_task_label = text
+            # else: inherit current_task_label from before
+
+        elif msg_type == 'assistant':
+            usage = d.get('message', {}).get('usage') or d.get('usage') or {}
+            inp = usage.get('input_tokens', 0) or 0
+            out = usage.get('output_tokens', 0) or 0
+            cw  = usage.get('cache_creation_input_tokens', 0) or 0
+            cr  = usage.get('cache_read_input_tokens', 0) or 0
+            if inp == 0 and out == 0 and cw == 0 and cr == 0:
+                continue
+            h = f"{inp}:{out}:{cw}:{cr}"
+            if h in seen_usage_hashes:
+                continue
+            seen_usage_hashes.add(h)
+            cur_inp += inp
+            cur_out += out
+            cur_cw  += cw
+            cur_cr  += cr
+
+    _flush()
+
+    turns.sort(key=lambda t: t['estimated_cost_usd'], reverse=True)
+    return turns[:30]

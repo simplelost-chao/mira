@@ -136,17 +136,83 @@ def render_dev_page() -> str:
     flex: 1; position: relative; min-height: 0; overflow: hidden;
   }
   #ttyd-frame {
-    border: none; display: none; background: var(--bg);
+    border: none; display: block; visibility: hidden; pointer-events: none; background: var(--bg);
     position: absolute; inset: 0; width: 100%; height: 100%;
     overflow: hidden;
   }
-  #ttyd-frame.visible { display: block; }
+  #ttyd-frame.visible { visibility: visible; pointer-events: auto; }
   /* Touch overlay + scroll badge: mobile-only (hidden on desktop) */
   .term-touch-overlay { display: none; }
   .term-scroll-badge { display: none; }
   /* Mobile-only elements hidden on desktop */
   .mobile-term-output { display: none; }
   .mobile-input-bar { display: none; }
+  .dev-page.stream-mode .term-iframe-wrap {
+    display: none;
+  }
+  .dev-page.stream-mode .mobile-term-output.visible {
+    display: block; flex: 1; min-height: 0;
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 12px; line-height: 1.4;
+    padding: 8px 10px 16px; margin: 0;
+    overflow-x: hidden; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  }
+  .dev-page.stream-mode .mobile-input-bar {
+    display: flex; flex-direction: column; flex-shrink: 0;
+    padding: 0;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .dev-page.stream-mode .mobile-keys-row {
+    display: flex; gap: 6px; align-items: center;
+    padding: 8px 12px;
+    overflow-x: auto;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .dev-page.stream-mode .mobile-input-row {
+    display: flex; align-items: flex-end; gap: 8px;
+    padding: 10px 12px 12px;
+  }
+  .dev-page.stream-mode .mobile-cmd-input {
+    display: block; width: 100%; flex: 1;
+    min-height: 40px; max-height: 140px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: var(--mono); font-size: 16px;
+    padding: 9px 12px; outline: none; resize: none; line-height: 1.45;
+    overflow-y: auto;
+  }
+  .dev-page.stream-mode .mobile-key-btn,
+  .dev-page.stream-mode .mobile-num-sel,
+  .dev-page.stream-mode .mobile-attach-btn,
+  .dev-page.stream-mode .mobile-send-btn {
+    flex-shrink: 0;
+  }
+  .dev-page.stream-mode .mobile-key-btn {
+    background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    color: var(--sub); font-family: var(--mono); font-size: 12px;
+    padding: 4px 10px; border-radius: 4px; cursor: pointer;
+    white-space: nowrap; line-height: 1.2;
+  }
+  .dev-page.stream-mode .mobile-num-sel {
+    background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    color: var(--sub); font-family: var(--mono); font-size: 12px;
+    padding: 4px 6px; border-radius: 4px; appearance: none;
+  }
+  .dev-page.stream-mode .keys-sep {
+    width: 1px; height: 16px; background: var(--border); flex-shrink: 0;
+  }
+  .dev-page.stream-mode .mobile-attach-btn,
+  .dev-page.stream-mode .mobile-send-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
+  }
+  .dev-page.stream-mode .mobile-attach-btn {
+    background: none; border: 1px solid var(--border); color: var(--sub);
+  }
+  .dev-page.stream-mode .mobile-send-btn {
+    background: var(--accent); border: none; color: #fff; font-size: 18px;
+  }
 
   /* ── Empty-state new terminal button ── */
   .term-placeholder-btn {
@@ -385,15 +451,40 @@ def render_dev_page() -> str:
   .toolbar-spacer { flex: 1; }
   .toolbar-tokens {
     font-size: 11px; color: var(--sub); display: flex; align-items: center; gap: 12px;
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums; cursor: pointer; position: relative;
   }
+  .toolbar-tokens:hover { color: var(--text); }
   .toolbar-tokens .tok-item { display: flex; align-items: center; gap: 2px; }
   .toolbar-tokens .tok-icon { font-size: 10px; color: var(--muted); }
+  .toolbar-tokens .tok-up { color: #f59e0b; }
+  .toolbar-tokens .tok-down { color: #3b82f6; }
   .toolbar-tokens .tok-val { font-weight: 600; }
   .toolbar-tokens .tok-cost { color: var(--purple); font-weight: 700; }
   .tok-badge { font-size: 9px; font-weight: 700; letter-spacing: .5px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; }
   .tok-badge.claude { background: rgba(129,140,248,.15); color: #818cf8; }
   .tok-badge.codex { background: rgba(34,197,94,.15); color: #22c55e; }
+  .tok-warn { color: #f59e0b; font-size: 14px; cursor: help; animation: tok-pulse 2s ease-in-out infinite; margin-left: 2px; }
+  @keyframes tok-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .tok-dropdown { position: absolute; top: calc(100% + 8px); right: 0; z-index: 300;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 14px; min-width: 300px; max-width: 380px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); font-size: 12px; cursor: default; }
+  .tok-dropdown-title { font-size: 11px; color: var(--sub); margin-bottom: 10px;
+    display: flex; justify-content: space-between; align-items: center; }
+  .tok-dropdown-row { display: grid; grid-template-columns: 90px 1fr 52px; align-items: center;
+    gap: 8px; margin-bottom: 6px; }
+  .tok-dropdown-name { font-size: 11px; color: var(--text); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .tok-dropdown-bar { height: 6px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; display: flex; }
+  .tok-dropdown-bar > div { height: 100%; }
+  .tok-dropdown-cost { font-size: 11px; color: var(--sub); text-align: right;
+    font-family: var(--mono); white-space: nowrap; }
+  .tok-dropdown-total { font-size: 11px; color: var(--sub); text-align: right; margin-top: 8px;
+    padding-top: 6px; border-top: 1px solid var(--border); }
+  .tok-dropdown-legend { display: flex; gap: 10px; margin-top: 6px; font-size: 10px; color: var(--sub); }
+  .tok-dropdown-legend span { display: flex; align-items: center; gap: 3px; }
+  .tok-dropdown-dot { width: 6px; height: 6px; border-radius: 50%; }
   .toolbar-usage {
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 11px; font-variant-numeric: tabular-nums;
@@ -408,7 +499,7 @@ def render_dev_page() -> str:
       font-variant-numeric: tabular-nums;
       flex-shrink: 0;
     }
-    .mobile-token-bar.visible { display: flex; gap: 12px; align-items: center; }
+    .mobile-token-bar.visible { display: flex; gap: 12px; align-items: center; cursor: pointer; position: relative; }
     .mobile-token-bar .tok-item { display: flex; align-items: center; gap: 2px; }
     .mobile-token-bar .tok-icon { font-size: 10px; color: var(--muted); }
     .mobile-token-bar .tok-val { font-weight: 600; }
@@ -773,7 +864,10 @@ var _isMobile = window.matchMedia('(max-width: 900px)').matches;
       _debounceTimer = setTimeout(function() {
         document.documentElement.style.setProperty('--app-h', h + 'px');
         window.scrollTo(0, 0);
-      }, 150);
+        // Keep terminal output scrolled to bottom when keyboard changes
+        var output = document.getElementById('mobile-term-output');
+        if (output) output.scrollTop = output.scrollHeight;
+      }, 100);
     } else {
       document.documentElement.style.setProperty('--app-h', h + 'px');
       window.scrollTo(0, 0);
@@ -794,6 +888,7 @@ function escHtml(s) {
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let _currentTarget = null;
+let _currentIsRemote = false;
 const _groupCollapsed = {};
 const _paneToolMap = {};  // target -> tool type
 var _focusProjects = JSON.parse(localStorage.getItem('mira-focus-projects') || '[]');  // project_id -> bool
@@ -815,6 +910,7 @@ function _renderPaneRow(p, st) {
        data-target="${escHtml(p.target)}"
        data-cmd="${escHtml(p.command || '')}"
        data-project-id="${escHtml(_pid)}"
+       data-host="${escHtml(p._host || '')}"
        data-tool="${escHtml(p.tool || '')}">
     ${_badge}
     <div class="term-pane-info">
@@ -854,6 +950,15 @@ async function loadPanes(forceRebuild) {
     var _flatMode = !!localStorage.getItem('mira-dev-flat-list');
     let html = '';
 
+    const groups = new Map();
+    if (!_flatMode || _filterProject) {
+      for (const p of panes) {
+        const pid = p.project_id || '_ungrouped';
+        if (!groups.has(pid)) groups.set(pid, { name: p.project_name || p.project_id || '未分组', panes: [] });
+        groups.get(pid).panes.push(p);
+      }
+    }
+
     if (_flatMode) {
       // Flat list: no grouping
       for (const p of panes) {
@@ -862,13 +967,6 @@ async function loadPanes(forceRebuild) {
       }
     } else {
       // Group panes by project_id
-      const groups = new Map();
-      for (const p of panes) {
-        const pid = p.project_id || '_ungrouped';
-        if (!groups.has(pid)) groups.set(pid, { name: p.project_name || p.project_id || '未分组', panes: [] });
-        groups.get(pid).panes.push(p);
-      }
-
       // On first load with ?project=xxx, collapse all other groups
       if (_firstLoad && _filterProject) {
         for (const [pid] of groups) {
@@ -988,6 +1086,7 @@ async function killPane(killEl) {
 async function selectPane(target, cmd) {
   if (_isMobile) _saveSnapshot();  // save current pane's terminal output before switching
   _currentTarget = target;
+  _currentIsRemote = !!_paneHostMap[target];
   const rows = document.querySelectorAll('.term-pane-row');
   rows.forEach(r => r.classList.toggle('active', r.dataset.target === target));
   document.getElementById('dev-page').classList.add('detail-open');
@@ -1014,9 +1113,7 @@ async function selectPane(target, cmd) {
     if (pageTitle && _isMobile) pageTitle.textContent = name;
   }
 
-  // Desktop: tell tmux to switch focus (affects ttyd iframe).
-  // Mobile: skip — uses independent WebSocket stream, no shared state.
-  if (!_isMobile) {
+  if (!_isMobile && !_currentIsRemote) {
     try {
       var focusRes = await fetch('/api/terminal/focus', {
         method: 'POST',
@@ -1055,6 +1152,13 @@ function _setMobileTokens(html) {
   if (html) bar.insertAdjacentHTML('beforeend', html);
 }
 
+function _resizeTtydFrame() {
+  var frame = document.getElementById('ttyd-frame');
+  if (!frame || !frame.contentWindow) return;
+  try { frame.contentWindow.postMessage({ type: 'mira-resize' }, '*'); } catch(_) {}
+  try { frame.contentWindow.dispatchEvent(new Event('resize')); } catch(_) {}
+}
+
 async function _loadPaneTokens(target, tool) {
   var desktop = document.getElementById('toolbar-tokens');
   if (desktop) desktop.innerHTML = '';
@@ -1075,28 +1179,153 @@ async function _loadPaneTokens(target, tool) {
       return;
     }
     if (!hasTool) d.tool = tool;
-    var fT = function(t) { if (!t) return '—'; if (t>=1e6) return (t/1e6).toFixed(1)+'M'; if (t>=1e3) return (t/1e3).toFixed(0)+'k'; return String(t); };
+    var fT = function(t) { if (!t) return '—'; if (t>=1e9) return (t/1e9).toFixed(1)+'B'; if (t>=1e6) return (t/1e6).toFixed(1)+'M'; if (t>=1e3) return (t/1e3).toFixed(0)+'k'; return String(t); };
+    var fB = function(bytes) { if (bytes>=1e9) return (bytes/1e9).toFixed(1)+'GB'; if (bytes>=1e6) return (bytes/1e6).toFixed(0)+'MB'; if (bytes>=1e3) return (bytes/1e3).toFixed(0)+'KB'; return bytes+'B'; };
     var cost = d.estimated_cost_usd < 1 ? '$' + d.estimated_cost_usd.toFixed(2) : '$' + d.estimated_cost_usd.toFixed(1);
     var badge = d.tool === 'codex'
       ? '<span class="tok-badge codex">Codex</span>'
       : '<span class="tok-badge claude">Claude</span>';
+
+    // Calculate actual upload/download bytes (tokens * ~5 bytes for JSON encoding)
+    var BPT = 5; // bytes per token in HTTP body
+    var totalCtx = (d.input_tokens || 0) + (d.cache_read_tokens || d.cached_input_tokens || 0) + (d.cache_creation_tokens || 0);
+    var uploadBytes = totalCtx * BPT;
+    var downloadBytes = (d.output_tokens || 0) * BPT;
+    var msgs = d.messages || 0;
+    var avgCtx = msgs > 0 ? totalCtx / msgs : 0;
+
     var html = badge;
-    if (d.tool === 'codex') {
-      html +=
-        '<span class="tok-item" title="输入 tokens"><span class="tok-icon">↓</span><span class="tok-val">' + fT(d.input_tokens) + '</span></span>' +
-        '<span class="tok-item" title="输出 tokens"><span class="tok-icon">↑</span><span class="tok-val">' + fT(d.output_tokens) + '</span></span>' +
-        '<span class="tok-item" title="缓存输入 tokens"><span class="tok-icon">◆</span><span class="tok-val">' + fT(d.cached_input_tokens) + '</span></span>' +
-        '<span class="tok-item"><span class="tok-cost">' + cost + '</span></span>';
-    } else {
-      html +=
-        '<span class="tok-item" title="输入 tokens"><span class="tok-icon">↓</span><span class="tok-val">' + fT(d.input_tokens) + '</span></span>' +
-        '<span class="tok-item" title="输出 tokens"><span class="tok-icon">↑</span><span class="tok-val">' + fT(d.output_tokens) + '</span></span>' +
-        '<span class="tok-item" title="缓存读取 tokens"><span class="tok-icon">◆</span><span class="tok-val">' + fT(d.cache_read_tokens) + '</span></span>' +
-        '<span class="tok-item"><span class="tok-cost">' + cost + '</span></span>';
+    html += '<span class="tok-item" title="实际上行流量（含缓存重传）"><span class="tok-icon tok-up">▲</span><span class="tok-val">' + fB(uploadBytes) + '</span></span>';
+    html += '<span class="tok-item" title="下行流量"><span class="tok-icon tok-down">▼</span><span class="tok-val">' + fB(downloadBytes) + '</span></span>';
+    html += '<span class="tok-item"><span class="tok-cost">' + cost + '</span></span>';
+
+    // Warn if per-request context is large
+    if (msgs > 5 && avgCtx > 150000) {
+      html += '<span class="tok-warn" title="每请求上下文 ' + fT(avgCtx) + ' tokens ≈ ' + fB(avgCtx * BPT) + '，建议开新会话">⚠</span>';
     }
     if (desktop) desktop.innerHTML = html;
     _setMobileTokens(html);
   } catch(e) { /* non-fatal */ }
+}
+
+// ── Token dropdown: today's per-project breakdown ───────────────────────────
+var _tokDropdownData = null;  // cached data
+var _tokDropdownOpen = false;
+
+(function() {
+  function bind(el) {
+    if (!el) return;
+    el.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (_tokDropdownOpen) { _closeTokDropdown(); return; }
+      _openTokDropdown();
+    });
+  }
+  bind(document.getElementById('toolbar-tokens'));
+  bind(document.getElementById('mobile-token-bar'));
+  document.addEventListener('click', function() { _closeTokDropdown(); });
+})();
+
+function _closeTokDropdown() {
+  _tokDropdownOpen = false;
+  var dd = document.querySelector('.tok-dropdown');
+  if (dd) dd.remove();
+}
+
+async function _openTokDropdown() {
+  // Pick visible parent: desktop toolbar or mobile token bar
+  var parent = document.getElementById('toolbar-tokens');
+  if (!parent || parent.offsetParent === null) {
+    parent = document.getElementById('mobile-token-bar');
+  }
+  if (!parent) return;
+  _closeTokDropdown();
+  _tokDropdownOpen = true;
+
+  // Create placeholder
+  var dd = document.createElement('div');
+  dd.className = 'tok-dropdown';
+  // Mobile: position left-aligned, full width
+  var isMobile = parent.id === 'mobile-token-bar';
+  if (isMobile) { dd.style.left = '0'; dd.style.right = '0'; dd.style.minWidth = 'auto'; }
+  dd.innerHTML = '<div style="color:var(--sub);text-align:center;padding:8px">加载中…</div>';
+  dd.addEventListener('click', function(e) { e.stopPropagation(); });
+  parent.appendChild(dd);
+
+  try {
+    var res = await fetch('/api/stats?range=30d', { headers: _authHeaders() });
+    if (!res.ok) { dd.innerHTML = '<div style="color:var(--sub)">加载失败</div>'; return; }
+    var data = await res.json();
+    _renderTokDropdown(dd, data);
+  } catch(e) {
+    dd.innerHTML = '<div style="color:var(--sub)">加载失败</div>';
+  }
+}
+
+function _renderTokDropdown(dd, data) {
+  if (!_tokDropdownOpen) return;
+  var pd = data.project_days || {};
+  var nameMap = {};
+  (data.projects || []).forEach(function(p) { nameMap[p.project_id] = p.project_name || p.project_id; });
+
+  // Find today's date (local timezone, not UTC)
+  var _now = new Date();
+  var today = _now.getFullYear() + '-' + String(_now.getMonth()+1).padStart(2,'0') + '-' + String(_now.getDate()).padStart(2,'0');
+
+  var items = [];
+  Object.keys(pd).forEach(function(pid) {
+    var entry = pd[pid][today];
+    if (!entry) return;
+    var cost, inp, out, cw, cr;
+    if (typeof entry === 'number') { cost = entry; inp = out = cw = cr = 0; }
+    else { cost = entry.cost||0; inp = entry.input_tokens||0; out = entry.output_tokens||0; cw = entry.cache_creation_tokens||0; cr = entry.cache_read_tokens||0; }
+    if (cost > 0) items.push({ name: nameMap[pid]||pid, cost: cost, inp: inp, out: out, cw: cw, cr: cr });
+  });
+  items.sort(function(a,b) { return b.cost - a.cost; });
+
+  if (!items.length) {
+    dd.innerHTML = '<div class="tok-dropdown-title"><span>今日项目开销</span><span>' + today + '</span></div>' +
+      '<div style="color:var(--sub);text-align:center;padding:8px">暂无数据</div>';
+    return;
+  }
+
+  var fT = function(t) { if (!t) return '—'; if (t>=1e9) return (t/1e9).toFixed(1)+'B'; if (t>=1e6) return (t/1e6).toFixed(1)+'M'; if (t>=1e3) return (t/1e3).toFixed(0)+'k'; return String(t); };
+  var fC = function(v) { return v>=100?'$'+v.toFixed(0):v>=10?'$'+v.toFixed(1):'$'+v.toFixed(2); };
+  var maxCost = items[0].cost;
+  var TC = { inp:'#4e9eff', out:'#f0a050', cw:'#fbbf24', cr:'#5cd08a' };
+
+  var rows = items.map(function(it) {
+    var totTok = it.inp + it.out + it.cw + it.cr;
+    var segs = [{v:it.inp,c:TC.inp},{v:it.out,c:TC.out},{v:it.cw,c:TC.cw},{v:it.cr,c:TC.cr}]
+      .map(function(s){return '<div style="width:'+(s.v/(totTok||1)*100).toFixed(1)+'%;background:'+s.c+'"></div>';}).join('');
+    var tip = '输入:'+fT(it.inp)+' 输出:'+fT(it.out)+' 缓存写:'+fT(it.cw)+' 缓存读:'+fT(it.cr);
+    return '<div class="tok-dropdown-row">' +
+      '<div class="tok-dropdown-name" title="'+it.name+'">'+it.name+'</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+(it.cost/maxCost*100).toFixed(1)+'%;background:var(--accent);border-radius:3px;opacity:.7"></div></div>' +
+        (totTok ? '<div class="tok-dropdown-bar" style="margin-top:2px" title="'+tip+'">'+segs+'</div>' : '') +
+      '</div>' +
+      '<div class="tok-dropdown-cost">'+fC(it.cost)+'<div style="font-size:9px;color:var(--muted)">'+fT(totTok)+'</div></div></div>';
+  }).join('');
+
+  var total = items.reduce(function(s,it){return s+it.cost;},0);
+  var totalTok = items.reduce(function(s,it){return s+it.inp+it.out+it.cw+it.cr;},0);
+  // Estimate traffic: upload = (input + cache_read + cache_write) * 5 bytes, download = output * 5 bytes
+  var totalUp = items.reduce(function(s,it){return s+it.inp+it.cw+it.cr;},0) * 5;
+  var totalDown = items.reduce(function(s,it){return s+it.out;},0) * 5;
+  var fB = function(b) { if(b>=1e9) return (b/1e9).toFixed(1)+'GB'; if(b>=1e6) return (b/1e6).toFixed(0)+'MB'; return (b/1e3).toFixed(0)+'KB'; };
+
+  dd.innerHTML =
+    '<div class="tok-dropdown-title"><span>今日项目开销</span><span>' + today + '</span></div>' +
+    rows +
+    '<div class="tok-dropdown-total">合计 ' + fC(total) + ' · ' + fT(totalTok) + ' tokens</div>' +
+    '<div class="tok-dropdown-total" style="border-top:none;padding-top:0;margin-top:-4px;font-size:10px;color:var(--sub)">估算流量 <span style="color:#f59e0b">▲' + fB(totalUp) + '</span> <span style="color:#3b82f6">▼' + fB(totalDown) + '</span></div>' +
+    '<div class="tok-dropdown-legend">' +
+      '<span><span class="tok-dropdown-dot" style="background:#4e9eff"></span>输入</span>' +
+      '<span><span class="tok-dropdown-dot" style="background:#f0a050"></span>输出</span>' +
+      '<span><span class="tok-dropdown-dot" style="background:#fbbf24"></span>缓存写</span>' +
+      '<span><span class="tok-dropdown-dot" style="background:#5cd08a"></span>缓存读</span>' +
+    '</div>';
 }
 
 // ── Topbar usage: switch between Claude / Codex ──────────────────────────────
@@ -1165,7 +1394,7 @@ async function _copyTmuxBuffer() {
     if (!text) return;
     // Try modern clipboard API first, fall back to execCommand
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      try { await navigator.clipboard.writeText(text); return; } catch(e) {}
+      try { await navigator.clipboard.writeText(text); _showToast('已复制 ' + text.length + ' 字符', 1500); return; } catch(e) {}
     }
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -1174,6 +1403,7 @@ async function _copyTmuxBuffer() {
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
+    _showToast('已复制 ' + text.length + ' 字符', 1500);
   } catch(e) { console.warn('copy buffer:', e); }
 }
 
@@ -1182,16 +1412,24 @@ function showTerminal() {
   // Show desktop toolbar
   var toolbar = document.getElementById('term-toolbar');
   if (toolbar) toolbar.classList.add('visible');
+  var devPage = document.getElementById('dev-page');
 
-  if (_isMobile) {
-    // Mobile: show ANSI-rendered output + start WebSocket stream
+  if (_isMobile || _currentIsRemote) {
+    if (devPage) devPage.classList.add('stream-mode');
+    document.getElementById('ttyd-frame').classList.remove('visible');
     document.getElementById('mobile-term-output').classList.add('visible');
     document.getElementById('mobile-token-bar').classList.add('visible');
+    document.getElementById('mobile-input-bar').style.display = 'flex';
+    _startBufferPoll();
     if (_currentTarget) _connectTermWs(_currentTarget);
     return;
   }
 
-  // Desktop: load ttyd iframe
+  if (devPage) devPage.classList.remove('stream-mode');
+  _disconnectTermWs();
+  document.getElementById('mobile-term-output').classList.remove('visible');
+  document.getElementById('mobile-token-bar').classList.remove('visible');
+  document.getElementById('mobile-input-bar').style.display = '';
   const frame = document.getElementById('ttyd-frame');
   if (!frame.src) {
     frame.src = '/terminal/';
@@ -1210,17 +1448,27 @@ function showTerminal() {
     });
   }
   frame.classList.add('visible');
+  requestAnimationFrame(function() {
+    _resizeTtydFrame();
+    setTimeout(_resizeTtydFrame, 80);
+    setTimeout(_resizeTtydFrame, 250);
+  });
+  _startBufferPoll();
 }
 
 function showPlaceholder() {
+  _stopBufferPoll();
+  document.getElementById('dev-page').classList.remove('stream-mode');
   document.getElementById('ttyd-frame').classList.remove('visible');
   document.getElementById('mobile-term-output').classList.remove('visible');
   document.getElementById('mobile-token-bar').classList.remove('visible');
+  document.getElementById('mobile-input-bar').style.display = '';
   var toolbar = document.getElementById('term-toolbar');
   if (toolbar) toolbar.classList.remove('visible');
   var switcher = document.getElementById('pane-switcher');
   if (switcher) switcher.classList.remove('open');
   _disconnectTermWs();
+  _currentIsRemote = false;
   if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
   window._topbarUsageMode = 'claude';
   var _tbu = document.getElementById('topbar-usage');
@@ -1249,9 +1497,10 @@ async function newWindow(cwd) {
       headers: _authHeaders({'Content-Type': 'application/json'}),
       body: JSON.stringify({ cwd: cwd || null })
     });
-    // Poll until the new pane appears (tmux needs a moment)
-    for (var _attempt = 0; _attempt < 6; _attempt++) {
-      await new Promise(r => setTimeout(r, 500));
+    // Server triggers monitor poll before responding, so new pane should be
+    // available immediately. Retry a few times with short delay as fallback.
+    for (var _attempt = 0; _attempt < 4; _attempt++) {
+      if (_attempt > 0) await new Promise(r => setTimeout(r, 300));
       var res2 = await fetch('/api/dev/panes', { headers: _authHeaders() });
       if (!res2.ok) continue;
       var panes2 = await res2.json();
@@ -1262,7 +1511,6 @@ async function newWindow(cwd) {
         return;
       }
     }
-    // Fallback: just reload list
     await loadPanes(true);
   } catch(e) { console.warn('new-window:', e); }
 }
@@ -1493,6 +1741,10 @@ function _ansiToHtml(raw) {
 // ── Mobile WebSocket terminal stream ────────────────────────────────────────
 var _termWs = null;
 
+function _hasPaneTarget(target) {
+  return !!document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"]');
+}
+
 function _connectTermWs(target) {
   _disconnectTermWs();
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1516,11 +1768,19 @@ function _connectTermWs(target) {
   _termWs.onclose = function() {
     _termWs = null;
     _setWsDot(false);
-    // Auto-reconnect if still viewing this pane
-    if (_currentTarget === target && _isMobile &&
-        document.getElementById('dev-page').classList.contains('detail-open')) {
-      setTimeout(function() { _connectTermWs(target); }, 2000);
-    }
+    // Auto-reconnect if still viewing this pane in stream mode
+    if (_currentTarget !== target ||
+        !document.getElementById('dev-page').classList.contains('detail-open')) return;
+    setTimeout(async function() {
+      if (_currentTarget !== target) return;
+      try { await loadPanes(true); } catch(e) {}
+      if (!_hasPaneTarget(target)) {
+        _currentTarget = null;
+        showPlaceholder();
+        return;
+      }
+      _connectTermWs(target);
+    }, 2000);
   };
   _termWs.onopen = function() { _setWsDot(true); };
   _termWs.onerror = function() {};
@@ -1649,6 +1909,18 @@ function _initMobileInput() {
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   }
   input.addEventListener('input', autoResize);
+
+  // Mobile keyboard: scroll output to bottom and ensure input stays visible
+  if (_isMobile) {
+    input.addEventListener('focus', function() {
+      setTimeout(function() {
+        var output = document.getElementById('mobile-term-output');
+        if (output) output.scrollTop = output.scrollHeight;
+        // Force input into view on iOS
+        input.scrollIntoView({ block: 'end', behavior: 'smooth' });
+      }, 300);
+    });
+  }
 
   // Send on Enter (without Shift); Shift+Enter = newline
   input.addEventListener('keydown', function(e) {
@@ -1916,9 +2188,162 @@ function _showToast(msg, duration) {
   _toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration || 3000);
 }
 
+// ── Auto-copy: poll tmux buffer for changes ──────────────────────────────────
+// tmux mouse mode captures text selection into paste buffer.
+// We poll the buffer and auto-copy to system clipboard when it changes.
+var _bufferPollTimer = null;
+var _lastTmuxBuffer = '';
+
+function _startBufferPoll() {
+  if (_bufferPollTimer) return;
+  // Snapshot current buffer so we don't immediately copy old content
+  fetch('/api/terminal/buffer', { headers: _authHeaders() })
+    .then(function(r) { return r.ok ? r.json() : {}; })
+    .then(function(d) { _lastTmuxBuffer = (d.text || '').trim(); })
+    .catch(function() {});
+  _bufferPollTimer = setInterval(_checkBufferChange, 1500);
+}
+
+function _stopBufferPoll() {
+  if (_bufferPollTimer) { clearInterval(_bufferPollTimer); _bufferPollTimer = null; }
+}
+
+var _pendingCopyText = null;
+
+function _doCopy(text) {
+  var ok = false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      _showToast('已复制 ' + text.length + ' 字符', 1500);
+    }).catch(function() {
+      // clipboard API failed, try execCommand in next click
+      _execCopy(text);
+    });
+    return;
+  }
+  _execCopy(text);
+}
+
+function _execCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(ta);
+  ta.select();
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch(_) {}
+  document.body.removeChild(ta);
+  _showToast(ok ? '已复制 ' + text.length + ' 字符' : '复制失败', 1500);
+}
+
+function _showCopyToast(text) {
+  _pendingCopyText = text;
+  var preview = text.length > 50 ? text.substring(0, 47) + '…' : text;
+  preview = preview.replace(/\n/g, ' ↵ ');
+  // Remove existing copy-toast
+  var old = document.getElementById('copy-toast');
+  if (old) old.remove();
+  var toast = document.createElement('div');
+  toast.id = 'copy-toast';
+  toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:999;background:var(--panel,#1e293b);color:var(--text,#e2e8f0);border:1px solid var(--accent,#818cf8);border-radius:8px;padding:10px 16px;font-family:var(--mono);font-size:12px;cursor:pointer;max-width:80vw;box-shadow:0 4px 20px rgba(0,0,0,.4);display:flex;align-items:center;gap:10px;';
+  toast.innerHTML = '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + preview.replace(/</g,'&lt;') + '</span><span style="background:var(--accent,#818cf8);color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap">点击复制</span>';
+  toast.addEventListener('click', function() {
+    if (_pendingCopyText) _doCopy(_pendingCopyText);
+    toast.remove();
+  });
+  document.body.appendChild(toast);
+  setTimeout(function() { if (toast.parentNode) toast.remove(); }, 8000);
+}
+
+async function _checkBufferChange() {
+  try {
+    console.log('[mira-copy] 2. checking tmux buffer...');
+    var res = await fetch('/api/terminal/buffer', { headers: _authHeaders() });
+    if (!res.ok) { console.log('[mira-copy] 3. fetch failed:', res.status); return; }
+    var data = await res.json();
+    var text = (data.text || '').trim();
+    console.log('[mira-copy] 3. buffer text length:', text.length, 'lastBuffer length:', _lastTmuxBuffer.length);
+    if (!text || text.length < 2) { console.log('[mira-copy] 4. text too short, skip'); return; }
+    if (text === _lastTmuxBuffer) { console.log('[mira-copy] 4. same as last buffer, skip'); return; }
+    _lastTmuxBuffer = text;
+    console.log('[mira-copy] 4. NEW buffer detected, trying clipboard...');
+    var ok = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); ok = true; console.log('[mira-copy] 5. clipboard.writeText SUCCESS'); } catch(e) { console.log('[mira-copy] 5. clipboard.writeText FAILED:', e); }
+    }
+    if (ok) {
+      var preview = text.length > 50 ? text.substring(0, 47) + '…' : text;
+      _showToast('已复制: ' + preview.replace(/\n/g, ' ↵ '), 2000);
+    } else {
+      console.log('[mira-copy] 5. showing clickable toast');
+      _showCopyToast(text);
+    }
+  } catch(e) { console.warn('[mira-copy] ERROR:', e); }
+}
+
+// ── Image compression ────────────────────────────────────────────────────────
+function _compressImage(file, maxDim, quality) {
+  maxDim = maxDim || 1568;
+  quality = quality || 0.8;
+  return new Promise(function(resolve) {
+    // SVG / GIF: skip compression
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+      return resolve(file);
+    }
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var w = img.width, h = img.height;
+      var needsResize = (w > maxDim || h > maxDim);
+      // Already small enough → skip entirely
+      if (!needsResize && file.size < 512 * 1024) {
+        return resolve(file);
+      }
+      // Scale down to fit maxDim
+      if (needsResize) {
+        var ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      // Try WebP, JPEG, PNG — pick smallest
+      var formats = [
+        ['image/webp', quality],
+        ['image/jpeg', quality],
+        ['image/png', undefined]
+      ];
+      var pending = formats.length, results = [];
+      function _pickBest() {
+        if (--pending > 0) return;
+        results.sort(function(a, b) { return a.size - b.size; });
+        var best = results[0];
+        if (!needsResize && best.size >= file.size) {
+          console.log('[mira] compression skipped (original smaller): ' + (file.size/1024).toFixed(0) + 'KB');
+          return resolve(file);
+        }
+        var ext = best.type === 'image/webp' ? 'webp' : (best.type === 'image/png' ? 'png' : 'jpg');
+        var compressed = new File([best], file.name.replace(/\.[^.]+$/, '.' + ext), {type: best.type});
+        console.log('[mira] image compressed: ' + (file.size/1024).toFixed(0) + 'KB → ' + (compressed.size/1024).toFixed(0) + 'KB (' + w + 'x' + h + ' ' + ext + ')');
+        resolve(compressed);
+      }
+      formats.forEach(function(fmt) {
+        canvas.toBlob(function(b) { if (b) results.push(b); _pickBest(); }, fmt[0], fmt[1]);
+      });
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 // ── File upload ──────────────────────────────────────────────────────────────
 async function _uploadImage(file) {
   if (!file) return;
+  _showToast('压缩中…', 10000);
+  file = await _compressImage(file);
   _showToast('上传中…', 10000);
   var fd = new FormData();
   fd.append('file', file);
@@ -2100,6 +2525,14 @@ function _applyTtydTheme() {
   try { frame.contentWindow.postMessage({ type: 'mira-theme' }, '*'); } catch(_) {}
 }
 
+// ── Listen for mouseup from ttyd iframe (via postMessage) ────────────────────
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'mira-mouseup') {
+    console.log('[mira-copy] 1. mouseup received from iframe');
+    setTimeout(_checkBufferChange, 200);
+  }
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   await _initAuth();
@@ -2123,9 +2556,14 @@ async function init() {
   // Init mobile input bar + upload handlers
   _initMobileInput();
   _initUpload();
-  // ttyd iframe is loaded lazily on first pane click (avoids basic-auth dialog on page load)
+  // Preload ttyd iframe on desktop so it's ready when user clicks a pane
+  if (!_isMobile) {
+    var _preFrame = document.getElementById('ttyd-frame');
+    if (_preFrame && !_preFrame.src) _preFrame.src = '/terminal/';
+  }
   await loadPanes();
   setInterval(loadPanes, 5000);
+  _startBufferPoll();
 }
 init();
 """
@@ -2135,7 +2573,7 @@ init();
         '<html lang="zh">\n'
         "<head>\n"
         '<meta charset="utf-8">\n'
-        '<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-visual">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, interactive-widget=resizes-visual">\n'
         "<title>Dev · Mira</title>\n"
         "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>\n"
         '<link rel="stylesheet" href="/static/fonts/fonts.css">\n'

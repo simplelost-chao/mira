@@ -70,13 +70,33 @@ def _compute_session_stats(lines: list[str]) -> 'dict | None':
 
     Returns None if lines has no timestamps.
     """
+    result = _compute_session_stats_daily(lines)
+    if not result:
+        return None
+    # For backward compat: return the latest day's cumulative-looking dict
+    # But _stats_update_if_due now uses _daily version directly
+    return result
+
+
+def _compute_session_stats_daily(lines: list[str]) -> 'dict | None':
+    """Scan session and return per-day breakdown.
+
+    Returns dict with 'days': {date_str: {messages, input_tokens, ...}} and 'all_dates' list.
+    Returns None if no timestamps found.
+    """
     GAP_THRESHOLD = 30 * 60  # seconds
-    timestamps: list[datetime] = []
-    input_tokens = 0
-    output_tokens = 0
-    cache_creation_tokens = 0
-    cache_read_tokens = 0
-    message_count = 0
+
+    # Per-day accumulators
+    day_data: dict[str, dict] = {}  # date_str -> {messages, input_tokens, ...}
+
+    def _get_day(date_str: str) -> dict:
+        if date_str not in day_data:
+            day_data[date_str] = {
+                'messages': 0, 'input_tokens': 0, 'output_tokens': 0,
+                'cache_creation_tokens': 0, 'cache_read_tokens': 0,
+                'timestamps': [],
+            }
+        return day_data[date_str]
 
     for line in lines:
         if not line.strip():
@@ -86,14 +106,21 @@ def _compute_session_stats(lines: list[str]) -> 'dict | None':
         except json.JSONDecodeError:
             continue
 
-        # Collect timestamps for active-hours calculation
+        # Parse timestamp and determine which day this belongs to
         ts_str = obj.get('timestamp', '')
+        ts = None
         if ts_str:
             try:
                 ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
-                timestamps.append(ts)
             except (ValueError, AttributeError):
                 pass
+
+        if not ts:
+            continue
+
+        date_str = ts.astimezone().strftime('%Y-%m-%d')
+        day = _get_day(date_str)
+        day['timestamps'].append(ts)
 
         # Count text-bearing messages
         if obj.get('type') in ('user', 'assistant'):
@@ -108,36 +135,38 @@ def _compute_session_stats(lines: list[str]) -> 'dict | None':
                         has_text = True
                         break
             if has_text:
-                message_count += 1
+                day['messages'] += 1
 
         # Token usage from assistant messages
         usage = (obj.get('message') or {}).get('usage') or {}
         if usage.get('output_tokens'):
-            input_tokens += usage.get('input_tokens', 0)
-            output_tokens += usage.get('output_tokens', 0)
-            cache_creation_tokens += usage.get('cache_creation_input_tokens', 0)
-            cache_read_tokens     += usage.get('cache_read_input_tokens', 0)
+            day['input_tokens'] += usage.get('input_tokens', 0)
+            day['output_tokens'] += usage.get('output_tokens', 0)
+            day['cache_creation_tokens'] += usage.get('cache_creation_input_tokens', 0)
+            day['cache_read_tokens']     += usage.get('cache_read_input_tokens', 0)
 
-    if not timestamps:
+    if not day_data:
         return None
 
-    timestamps.sort()
-    active_secs = 0.0
-    for i in range(1, len(timestamps)):
-        gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
-        if gap < GAP_THRESHOLD:
-            active_secs += gap
+    # Compute active hours per day
+    for date_str, day in day_data.items():
+        tss = sorted(day['timestamps'])
+        active_secs = 0.0
+        for i in range(1, len(tss)):
+            gap = (tss[i] - tss[i - 1]).total_seconds()
+            if gap < GAP_THRESHOLD:
+                active_secs += gap
+        day['active_hours'] = round(active_secs / 3600, 4)
+        del day['timestamps']
 
-    date_str = timestamps[-1].astimezone().strftime('%Y-%m-%d')
-    return {
-        'date':                   date_str,
-        'messages':               message_count,
-        'input_tokens':           input_tokens,
-        'output_tokens':          output_tokens,
-        'cache_creation_tokens':  cache_creation_tokens,
-        'cache_read_tokens':      cache_read_tokens,
-        'active_hours':           round(active_secs / 3600, 4),
-    }
+    all_dates = sorted(day_data.keys())
+    # Return format compatible with old code (latest day as top-level)
+    latest = all_dates[-1]
+    result = dict(day_data[latest])
+    result['date'] = latest
+    result['days'] = day_data
+    result['all_dates'] = all_dates
+    return result
 
 
 def index_file(path: Path, session_id: str, project_id: str, project_name: str) -> None:
@@ -202,19 +231,20 @@ def _stats_update_if_due(session_id: str, project_id: str, lines: list[str], pat
         return
     try:
         stats = _compute_session_stats(lines)
-        if stats:
+        if stats and stats.get('days'):
             from vibe.history_db import upsert_daily_stats
-            upsert_daily_stats(
-                session_id=session_id,
-                project_id=project_id,
-                date=stats["date"],
-                messages=stats["messages"],
-                input_tokens=stats["input_tokens"],
-                output_tokens=stats["output_tokens"],
-                active_hours=stats["active_hours"],
-                cache_creation_tokens=stats["cache_creation_tokens"],
-                cache_read_tokens=stats["cache_read_tokens"],
-            )
+            for date_str, day in stats['days'].items():
+                upsert_daily_stats(
+                    session_id=session_id,
+                    project_id=project_id,
+                    date=date_str,
+                    messages=day['messages'],
+                    input_tokens=day['input_tokens'],
+                    output_tokens=day['output_tokens'],
+                    active_hours=day['active_hours'],
+                    cache_creation_tokens=day['cache_creation_tokens'],
+                    cache_read_tokens=day['cache_read_tokens'],
+                )
             _stats_last_updated[session_id] = now
     except Exception as e:
         logger.warning("upsert_daily_stats failed for %s: %s", path, e)

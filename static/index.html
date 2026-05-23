@@ -292,30 +292,6 @@ body {
 .topbar-icon-btn svg { display: block; }
 .topbar-dev-btn { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb),.08); }
 .topbar-dev-btn:hover { background: rgba(var(--accent-rgb),.18); }
-.topbar-usage { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
-.topbar-ring { position: relative; width: 28px; height: 28px; }
-.topbar-ring svg { transform: rotate(-90deg); }
-.topbar-ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 3; }
-.topbar-ring-fg { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset .5s; }
-.topbar-ring-fg.low { stroke: var(--green); }
-.topbar-ring-fg.mid { stroke: var(--orange); }
-.topbar-ring-fg.high { stroke: var(--red); }
-.topbar-ring-text {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: 8px; font-weight: 700; font-family: var(--mono);
-  font-variant-numeric: tabular-nums; color: var(--sub);
-}
-.topbar-ring-text.high { color: var(--red); }
-.topbar-ring-text.mid { color: var(--orange); }
-.topbar-usage-tip {
-  display: none; position: absolute; top: 40px; right: 0; z-index: 200;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 12px; font-size: 11px; color: var(--text); white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0,0,0,.4); font-family: var(--mono);
-}
-.topbar-usage-tip.show { display: block; }
-.topbar-usage-tip div { margin-bottom: 3px; }
-.topbar-usage-tip div:last-child { margin-bottom: 0; }
 .refresh-btn {
   background: rgba(var(--accent-rgb),0.15);
   border: 1px solid var(--accent);
@@ -1527,17 +1503,6 @@ body {
 }
 .infra-card:hover { border-color: rgba(255,255,255,.15); }
 .infra-card.running { border-left: 3px solid var(--green); }
-/* Claude usage bars */
-.cu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.cu-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
-.cu-label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-.cu-meta { font-size: 10px; color: var(--sub); margin-bottom: 8px; }
-.cu-bar-bg { height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
-.cu-bar { height: 100%; border-radius: 4px; transition: width .3s; }
-.cu-bar.low { background: var(--green); }
-.cu-bar.mid { background: var(--orange); }
-.cu-bar.high { background: var(--red); }
-.cu-pct { float: right; font-size: 11px; font-weight: 600; color: var(--sub); }
 .infra-card.stopped { border-left: 3px solid rgba(255,255,255,.08); }
 .infra-icon {
   width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
@@ -1579,8 +1544,7 @@ body {
     display: inline-flex; align-items: center; justify-content: center;
     height: 30px; padding: 0 8px; font-size: 17px;
   }
-  /* Hide stats link on mobile — accessible via /stats */
-  #stats-nav-btn { display: none !important; }
+  /* Stats link visible on mobile too */
 
   /* Main page padding */
   #panel-overview { padding: 0 12px 48px !important; }
@@ -1970,7 +1934,6 @@ body {
 <div class="topbar">
   <span class="topbar-title"><span class="logo-m">M</span><span class="logo-ira">IRA</span><span class="logo-cursor">_</span></span>
   <div class="topbar-spacer"></div>
-  <div class="topbar-usage" id="topbar-usage" style="display:none" title="Claude Code 用量"></div>
   <a class="topbar-icon-btn topbar-dev-btn" href="/dev" title="终端">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
@@ -2012,10 +1975,6 @@ body {
     <div class="infra-grid" id="infra-grid"></div>
   </div>
 
-  <div id="claude-usage-section" style="display:none;margin-bottom:24px">
-    <div class="infra-section-title">Claude Code 用量</div>
-    <div id="claude-usage-content"></div>
-  </div>
 
   <div class="filter-bar">
     <button class="filter-btn" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
@@ -2028,33 +1987,6 @@ body {
   <div class="project-grid" id="project-grid">
     <div class="loading-state">加载中...</div>
   </div>
-  <!-- GitHub Trending -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin:32px 0 12px">
-    <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-muted)">GitHub 热门</div>
-    <div style="display:flex;gap:6px" id="trending-filters">
-      <button onclick="loadTrending('daily',this)" class="trend-tab" data-period="daily">今日</button>
-      <button onclick="loadTrending('weekly',this)" class="trend-tab active" data-period="weekly">本周</button>
-      <button onclick="loadTrending('monthly',this)" class="trend-tab" data-period="monthly">本月</button>
-    </div>
-  </div>
-  <div id="trending-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-bottom:32px">
-    <div style="color:var(--text-muted);font-size:12px;padding:12px">加载中...</div>
-  </div>
-
-  <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text-muted);margin:32px 0 12px">全局面貌</div>
-  <table class="summary-table" id="summary-table">
-    <thead>
-      <tr>
-        <th>项目名称</th>
-        <th>状态</th>
-        <th>服务</th>
-        <th>域名</th>
-        <th>部署</th>
-        <th>进度</th>
-      </tr>
-    </thead>
-    <tbody id="summary-tbody"></tbody>
-  </table>
 </div>
 
 
@@ -2076,7 +2008,6 @@ body {
     </div>
     <div class="modal-tabs">
       <button class="modal-tab-btn active" id="mtab-summary" onclick="showModalTab('summary')"> 概览</button>
-      <button class="modal-tab-btn" id="mtab-overview" onclick="showModalTab('overview')"> 全局面貌</button>
       <button class="modal-tab-btn" id="mtab-design" onclick="showModalTab('design')"> 文档</button>
       <button class="modal-tab-btn" id="mtab-prompts" onclick="showModalTab('prompts')"> Prompts</button>
     </div>
@@ -2152,7 +2083,7 @@ async function doGateLogin() {
     _adminToken = token; _isAdmin = true;
     localStorage.setItem('mira-admin-token', token);
     _revealApp();
-    loadProjects(); loadInfraServices(); loadClaudeUsage(); connectStatusWs(); loadBalance();
+    loadProjects(); loadInfraServices(); connectStatusWs(); loadBalance();
   } catch(_) { errEl.style.display = 'block'; }
 }
 
@@ -2164,11 +2095,10 @@ function _updateAdminUI() {
 }
 
 function logout() {
-  _adminToken = ''; _isAdmin = false;
+  _adminToken = '';
+  _isAdmin = false;
   localStorage.removeItem('mira-admin-token');
-  _updateAdminUI();
-  loadProjects();
-  loadBalance();
+  location.reload();
 }
 
 let _loginCallback = null;
@@ -2391,7 +2321,6 @@ async function loadProjects() {
     renderHostFilterBar();
     renderCards();
     renderGlobal();
-    loadTrending('weekly', document.querySelector('.trend-tab[data-period="weekly"]'));
     anomalies = collectAnomalies(allProjects, wsStatusPrev.snapshot || {});
     renderAnomalies();
     updateFilterCounts();
@@ -2696,56 +2625,21 @@ const LANG_COLOR_MAP = {
   Scala:'#c22d40',Jupyter:'#DA5B0B',Vue:'#41b883',Svelte:'#ff3e00',
 };
 
-let _trendingCache = {};
-
-async function loadTrending(period = 'daily', btn) {
-  document.querySelectorAll('.trend-tab').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-
-  const grid = document.getElementById('trending-grid');
-  if (_trendingCache[period]) { renderTrending(_trendingCache[period]); return; }
-
-  grid.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px">加载中...</div>';
-
-  try {
-    const res = await fetch(`/api/trending?period=${period}`);
-    if (!res.ok) throw new Error(res.status);
-    const items = await res.json();
-    _trendingCache[period] = items || [];
-    renderTrending(_trendingCache[period]);
-  } catch(e) {
-    grid.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:12px">加载失败: ${e.message}</div>`;
-  }
-}
-
-function renderTrending(repos) {
-  const grid = document.getElementById('trending-grid');
-  if (!repos.length) { grid.innerHTML = '<div style="color:var(--text-muted);font-size:12px">暂无数据</div>'; return; }
-  grid.innerHTML = repos.map(r => {
-    const lang = r.language || '';
-    const dot = lang ? `<span class="trend-lang-dot" style="background:${LANG_COLOR_MAP[lang]||'#555'}"></span>` : '';
-    const desc = r.description ? r.description.slice(0,80) + (r.description.length>80?'…':'') : '暂无描述';
-    const stars = r.stargazers_count >= 1000 ? (r.stargazers_count/1000).toFixed(1)+'k' : r.stargazers_count;
-    return `<div class="trend-card" onclick="window.open('${r.html_url}','_blank')">
-      <div class="trend-card-title">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="var(--accent-light)"><path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/></svg>
-        ${escHtml(r.full_name)}
-      </div>
-      <div class="trend-card-desc">${escHtml(desc)}</div>
-      <div class="trend-card-meta">
-        ${lang ? `<span class="trend-card-lang">${dot}${escHtml(lang)}</span>` : ''}
-        <span>⭐ ${stars}</span>
-        <span>⑂ ${r.forks_count >= 1000 ? (r.forks_count/1000).toFixed(1)+'k' : r.forks_count}</span>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 // ─── Global Tab ───────────────────────────────────────────────────────────────
 function fmtNum(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
   return String(n);
+}
+function fmtCost(v, unit) {
+  unit = unit || '$';
+  if (v >= 1e6) return unit + (v / 1e6).toFixed(1) + 'M';
+  if (v >= 1e4) return unit + (v / 1e3).toFixed(1) + 'k';
+  if (v >= 1e3) return unit + (v / 1e3).toFixed(2) + 'k';
+  if (v >= 100) return unit + v.toFixed(0);
+  if (v >= 10)  return unit + v.toFixed(1);
+  return unit + v.toFixed(2);
 }
 
 function renderGlobal() {
@@ -2796,11 +2690,11 @@ function renderGlobal() {
       <div class="kpi-inner">
         <div class="kpi-stat"><span class="kpi-label">Codex 花费</span><span class="kpi-value kpi-green" id="kpi-codex-cost">…</span></div>
         <div class="kpi-vdiv"></div>
-        <div class="kpi-stat"><span class="kpi-label">输入</span><span class="kpi-value kpi-muted" id="kpi-codex-in">…</span></div>
+        <div class="kpi-stat"><span class="kpi-label">Cache 输入</span><span class="kpi-value kpi-green" id="kpi-codex-cache">…</span></div>
         <div class="kpi-vdiv"></div>
         <div class="kpi-stat"><span class="kpi-label">输出</span><span class="kpi-value kpi-green" id="kpi-codex-out">…</span></div>
         <div class="kpi-vdiv"></div>
-        <div class="kpi-stat"><span class="kpi-label">30天会话</span><span class="kpi-value kpi-green" id="kpi-codex-session">…</span></div>
+        <div class="kpi-stat"><span class="kpi-label">输入</span><span class="kpi-value kpi-muted" id="kpi-codex-in">…</span></div>
       </div>
     </div>`;
 
@@ -2810,7 +2704,7 @@ function renderGlobal() {
       if (!data) return;
       const t = data.totals || {};
       const el = id => document.getElementById(id);
-      if (el('kpi-cost'))    el('kpi-cost').textContent    = '$' + (t.estimated_cost_usd || 0).toFixed(0);
+      if (el('kpi-cost'))    el('kpi-cost').textContent    = fmtCost(t.estimated_cost_usd || 0);
       if (el('kpi-cache-r')) el('kpi-cache-r').textContent = fmtNum(t.cache_read_tokens || 0);
       if (el('kpi-out'))     el('kpi-out').textContent     = fmtNum(t.output_tokens || 0);
       if (el('kpi-in'))      el('kpi-in').textContent      = fmtNum(t.input_tokens || 0);
@@ -2821,58 +2715,12 @@ function renderGlobal() {
   fetch('/api/codex-stats', {headers: _authHeaders()}).then(r => r.ok ? r.json() : null).then(d => {
     if (!d || !d.session_count_30d) return;
     const el = id => document.getElementById(id);
-    if (el('kpi-codex-cost'))   el('kpi-codex-cost').textContent   = '$' + (d.estimated_cost_usd || 0).toFixed(0);
-    if (el('kpi-codex-in'))     el('kpi-codex-in').textContent     = fmtNum(d.input_tokens || 0);
+    if (el('kpi-codex-cost'))   el('kpi-codex-cost').textContent   = fmtCost(d.estimated_cost_usd || 0);
+    if (el('kpi-codex-cache'))  el('kpi-codex-cache').textContent  = fmtNum(d.cached_input_tokens || 0);
     if (el('kpi-codex-out'))    el('kpi-codex-out').textContent    = fmtNum(d.output_tokens || 0);
-    if (el('kpi-codex-session')) el('kpi-codex-session').textContent = d.session_count_30d || 0;
+    if (el('kpi-codex-in'))     el('kpi-codex-in').textContent     = fmtNum(d.input_tokens || 0);
   }).catch(() => {});
 
-  const tbody = document.getElementById('summary-tbody');
-  tbody.innerHTML = allProjects.map(p => {
-    const svc = p.service || {};
-    const plans = p.plans || {};
-    const features = p.features || [];
-    const implCount = features.filter(f => f.implemented).length;
-    const totalFeatures = features.length;
-    const svcCell = svc.port
-      ? `${svcDot(svc, p.id)} :${escHtml(String(svc.port))}`
-      : `${svcDot(null, p.id)} —`;
-
-    let progCell;
-    if (totalFeatures > 0) {
-      const pct = Math.round((implCount / totalFeatures) * 100);
-      progCell = `<div class="progress-wrap">
-        <div class="progress-bar" style="width:80px"><div class="progress-fill" style="width:${pct}%"></div></div>
-        <span class="progress-label">${implCount}/${totalFeatures}</span>
-      </div>`;
-    } else if (plans.total > 0) {
-      const pct = planPct(plans);
-      progCell = `<div class="progress-wrap">
-        <div class="progress-bar" style="width:80px"><div class="progress-fill" style="width:${pct}%;opacity:.4"></div></div>
-        <span class="progress-label" style="opacity:.5">${pct}%</span>
-      </div>`;
-    } else {
-      progCell = `<span style="color:var(--text-muted)">—</span>`;
-    }
-
-    const dLabel = deployLabel(p.deploy);
-    const domain = svc.public_domain;
-    const domainCell = domain
-      ? `<a href="https://${escHtml(domain)}" target="_blank" onclick="event.stopPropagation()"
-           style="color:var(--accent-light);font-family:monospace;font-size:12px;text-decoration:none"
-           onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'"
-         >${escHtml(domain)}</a>`
-      : `<span style="color:var(--text-muted)">—</span>`;
-
-    return `<tr data-project-id="${escHtml(p.id)}" style="cursor:pointer">
-      <td>${escHtml(p.name)}</td>
-      <td>${statusBadge(p.status)}</td>
-      <td style="display:flex;align-items:center;gap:6px">${svcCell}</td>
-      <td>${domainCell}</td>
-      <td style="font-size:12px">${dLabel || '<span style="color:var(--text-muted)">—</span>'}</td>
-      <td>${progCell}</td>
-    </tr>`;
-  }).join('');
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -3633,90 +3481,6 @@ async function restartInfraSvc(name) {
 }
 
 // ─── Claude Usage ────────────────────────────────────────────────────────────
-async function loadClaudeUsage() {
-  try {
-    const res = await fetch('/api/claude-usage', {headers: _authHeaders()});
-    if (!res.ok) return;
-    const d = await res.json();
-    if (d.error) return;
-    const section = document.getElementById('claude-usage-section');
-    const content = document.getElementById('claude-usage-content');
-    if (!section || !content) return;
-    section.style.display = '';
-
-    function bar(label, data) {
-      if (!data || data.utilization == null) return '';
-      const pct = Math.round(data.utilization * 100);
-      const cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-      let resetStr = '';
-      if (data.resets_at) {
-        const diff = data.resets_at * 1000 - Date.now();
-        if (diff > 0) {
-          const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-          resetStr = h > 0 ? `${h}h ${m}m 后重置` : `${m}m 后重置`;
-        }
-      }
-      return `<div class="cu-item">
-        <div class="cu-label">${label}<span class="cu-pct">${pct}%</span></div>
-        <div class="cu-meta">${resetStr}</div>
-        <div class="cu-bar-bg"><div class="cu-bar ${cls}" style="width:${pct}%"></div></div>
-      </div>`;
-    }
-
-    content.innerHTML = '<div class="cu-grid">'
-      + bar('当前会话 (5h)', d.session)
-      + bar('本周用量 (7d)', d.weekly)
-      + '</div>';
-
-    // Update topbar indicator (ring charts)
-    const tb = document.getElementById('topbar-usage');
-    if (tb) {
-      function _ring(data) {
-        if (!data || data.utilization == null) return '';
-        var pct = Math.round(data.utilization * 100);
-        var cls = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low';
-        var r = 11, c = 2 * Math.PI * r, off = c * (1 - data.utilization);
-        return '<div class="topbar-ring">'
-          + '<svg width="28" height="28" viewBox="0 0 28 28">'
-          + '<circle class="topbar-ring-bg" cx="14" cy="14" r="' + r + '"/>'
-          + '<circle class="topbar-ring-fg ' + cls + '" cx="14" cy="14" r="' + r + '" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"/>'
-          + '</svg><div class="topbar-ring-text ' + cls + '">' + pct + '</div></div>';
-      }
-      function _tipLine(label, data) {
-        if (!data || data.utilization == null) return '';
-        var pct = Math.round(data.utilization * 100);
-        var t = label + ' ' + pct + '%';
-        if (data.resets_at) {
-          var diff = data.resets_at * 1000 - Date.now();
-          if (diff > 0) {
-            var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-            t += ' · ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + '后重置';
-          }
-        }
-        return '<div>' + t + '</div>';
-      }
-      var html = _ring(d.session) + _ring(d.weekly)
-        + '<div class="topbar-usage-tip" id="topbar-usage-tip">'
-        + _tipLine('会话', d.session) + _tipLine('周', d.weekly) + '</div>';
-      tb.innerHTML = html;
-      tb.style.display = 'inline-flex';
-      tb.style.position = 'relative';
-      tb.onclick = function(e) {
-        e.stopPropagation();
-        var tip = document.getElementById('topbar-usage-tip');
-        if (tip) tip.classList.toggle('show');
-      };
-      document.addEventListener('click', function() {
-        var tip = document.getElementById('topbar-usage-tip');
-        if (tip) tip.classList.remove('show');
-      });
-    }
-
-    // Hide the card section (topbar is enough)
-    if (section) section.style.display = 'none';
-  } catch(e) {}
-  setTimeout(loadClaudeUsage, 120000);
-}
 
 // ─── Navigation delegation ────────────────────────────────────────────────────
 document.getElementById('project-grid').addEventListener('click', e => {
@@ -3726,12 +3490,6 @@ document.getElementById('project-grid').addEventListener('click', e => {
   window.location.href = '/projects/' + card.dataset.projectId;
 });
 
-document.getElementById('summary-tbody').addEventListener('click', e => {
-  const row = e.target.closest('[data-project-id]');
-  if (!row) return;
-  if (e.target.closest('a, button')) return;
-  window.location.href = '/projects/' + row.dataset.projectId;
-});
 
 // ─── Chat Agent ───────────────────────────────────────────────────────────────
 let chatHistory = [];
@@ -4008,7 +3766,6 @@ async function loadBalance(force = false) {
     ]);
     const { providers } = await balRes.json();
     const actPayload = await actRes.json();
-    const actData = actPayload.openrouter || null;
     const actMasked = !!actPayload._masked;
 
     if (!providers.length) { row.style.display = 'none'; return; }
@@ -4018,9 +3775,10 @@ async function loadBalance(force = false) {
     } else {
       row.style.display = 'grid';
     }
-    row.innerHTML = providers.map(p =>
-      renderBalanceCard(p, p.id === 'openrouter' ? {data: actData, masked: actMasked} : null)
-    ).join('');
+    row.innerHTML = providers.map(p => {
+      const actData = actPayload[p.id] || null;
+      return renderBalanceCard(p, actData ? {data: actData, masked: actMasked} : null);
+    }).join('');
     if (isMobile) {
       row.querySelectorAll('.balance-card.collapsed').forEach(function(c) {
         c.style.flex = '1 1 calc(50% - 4px)';
@@ -4050,7 +3808,7 @@ function renderActivityChart(title, data, unit, masked = false) {
   for (let i = 29; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
   }
   const byDay = {};
   data.forEach(r => { byDay[r.date] = r.cost_usd; });
@@ -4134,7 +3892,7 @@ function renderBalanceCard(p, activity = null) {
     const today = new Date();
     const days = Array.from({length: 30}, (_, i) => {
       const d = new Date(today); d.setDate(d.getDate() - (29 - i));
-      return d.toISOString().slice(0, 10);
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     });
     const byDay = {};
     activity.data.forEach(r => { byDay[r.date] = r.cost_usd; });
@@ -4143,10 +3901,10 @@ function renderBalanceCard(p, activity = null) {
     const total = values.reduce((a, b) => a + b, 0);
     bars = values.map((v, i) => {
       const h = v === 0 ? 2 : Math.max(3, Math.round((v / maxVal) * 32));
-      const tip = masked ? days[i] : `${days[i]}: $${v.toFixed(4)}`;
+      const tip = masked ? days[i] : `${days[i]}: ${u}${v.toFixed(4)}`;
       return `<span style="flex:1;min-width:0;height:${h}px;background:${v===0?'var(--border)':'var(--accent)'};border-radius:1px" title="${tip}"></span>`;
     }).join('');
-    totalStr = masked ? '$***' : `$${total.toFixed(2)}`;
+    totalStr = masked ? `${u}***` : `${u}${total.toFixed(2)}`;
   } else {
     bars = Array(30).fill(`<span style="flex:1;min-width:0;height:2px;background:var(--border);border-radius:1px"></span>`).join('');
     totalStr = '—';
@@ -4168,6 +3926,7 @@ function renderBalanceCard(p, activity = null) {
       ${stats || `<div class="balance-stat balance-stat-primary"><div class="balance-val">${escHtml(p.label || '—')}</div><div class="balance-lbl">${p.label ? '额度类型' : '暂无数据'}</div></div>`}
       <span class="balance-card-toggle">▼</span>
     </div>
+    ${p.note ? `<div style="font-size:10px;color:var(--text-muted);margin-top:4px">${escHtml(p.note)}</div>` : ''}
     ${sparkHtml}
   </div>`;
 }
@@ -4243,7 +4002,6 @@ _initAuth().then(ready => {
   if (!ready) return; // waiting at login gate
   loadProjects();
   loadInfraServices();
-  loadClaudeUsage();
   connectStatusWs();
   loadBalance();
 });
