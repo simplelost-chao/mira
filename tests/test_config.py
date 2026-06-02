@@ -32,3 +32,20 @@ def test_scan_dirs_tilde_expanded(tmp_path):
     (tmp_path / "vibe.yaml").write_text("scan_dirs:\n  - ~/projects\n")
     cfg = load_global_config(tmp_path / "vibe.yaml")
     assert not cfg["scan_dirs"][0].startswith("~")
+
+
+def test_load_global_config_deployments_default(tmp_path):
+    cfg = load_global_config(tmp_path / "nonexistent.yaml")
+    assert cfg["deployments"] == []
+
+
+def test_load_global_config_deployments_from_file(tmp_path):
+    (tmp_path / "vibe.yaml").write_text(
+        "deployments:\n"
+        "  - project: foo\n"
+        "    ports: [8080]\n"
+        "    depends_on: [Ollama]\n"
+    )
+    cfg = load_global_config(tmp_path / "vibe.yaml")
+    assert cfg["deployments"][0]["project"] == "foo"
+    assert cfg["deployments"][0]["ports"] == [8080]

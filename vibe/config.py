@@ -69,6 +69,7 @@ def load_global_config(config_path: Optional[Path] = None) -> dict:
         "extra_projects": [str(Path(d).expanduser()) for d in data.get("extra_projects", [])],
         "excluded_paths": [str(Path(d).expanduser()) for d in data.get("excluded_paths", [])],
         "base_services": data.get("base_services", []),
+        "deployments": data.get("deployments", []),
         "admin_password": data.get("admin_password"),
         "notification_sound": data.get("notification_sound", "Pop"),
         "remote_hosts": data.get("remote_hosts", []),
