@@ -282,3 +282,8 @@ def test_deploy_page_renders():
     assert 'id="port-table"' in body
     assert 'id="impact-table"' in body
     assert 'id="deploy-cards"' in body
+
+
+def test_topbar_has_deploy_link():
+    from vibe.topbar import topbar_html
+    assert '/deploy' in topbar_html(title="x")
