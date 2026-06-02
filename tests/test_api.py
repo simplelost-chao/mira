@@ -272,3 +272,13 @@ def test_deployments_add_duplicate_project():
         resp = client.post("/api/deployments", json={"project": "foo"},
                            headers={"X-Admin-Token": "any"})
     assert resp.status_code == 400
+
+
+def test_deploy_page_renders():
+    resp = client.get("/deploy")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert 'id="port-table"' in body
+    assert 'id="impact-table"' in body
+    assert 'id="deploy-cards"' in body

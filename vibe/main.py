@@ -781,6 +781,12 @@ def dev_page_route():
     return HTMLResponse(render_dev_page(), headers=_NC)
 
 
+@api.get("/deploy", response_class=HTMLResponse)
+def deploy_page_route():
+    from vibe.deploy_page import render_deploy_page
+    return HTMLResponse(render_deploy_page(), headers=_NC)
+
+
 @api.get("/new", response_class=HTMLResponse)
 def new_project_page(request: Request):
     from vibe.new_project_page import render_new_project_page
