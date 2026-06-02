@@ -247,15 +247,20 @@ def test_deployments_crud_roundtrip(tmp_path):
         return fake, (yaml.safe_load(fake.read_text()) or {})
 
     with patch("vibe.main._is_admin", return_value=True), \
-         patch("vibe.main._read_vibe_yaml", side_effect=fake_read), \
-         patch("vibe.main._write_vibe_yaml") as mock_write:
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        # POST writes through the REAL _write_vibe_yaml to the tmp file
         resp = client.post("/api/deployments",
                            json={"project": "foo", "ports": [8080], "depends_on": ["Ollama"]},
                            headers={"X-Admin-Token": "any"})
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-        written = mock_write.call_args[0][1]
-        assert written["deployments"][0]["project"] == "foo"
+
+    # Re-read the file from disk: the entry must have been persisted
+    import yaml
+    persisted = yaml.safe_load(fake.read_text())
+    assert persisted["deployments"][0]["project"] == "foo"
+    assert persisted["deployments"][0]["ports"] == [8080]
+    assert persisted["deployments"][0]["depends_on"] == ["Ollama"]
 
 
 def test_deployments_add_duplicate_project():
