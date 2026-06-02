@@ -231,3 +231,39 @@ def test_detail_page_has_dev_link():
     body = resp.text
     assert '/dev' in body
     assert 'tab-overview' in body
+
+
+def test_deployments_list_requires_admin():
+    resp = client.get("/api/deployments")
+    assert resp.status_code == 401
+
+
+def test_deployments_crud_roundtrip(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("base_services: []\ndeployments: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read), \
+         patch("vibe.main._write_vibe_yaml") as mock_write:
+        resp = client.post("/api/deployments",
+                           json={"project": "foo", "ports": [8080], "depends_on": ["Ollama"]},
+                           headers={"X-Admin-Token": "any"})
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        written = mock_write.call_args[0][1]
+        assert written["deployments"][0]["project"] == "foo"
+
+
+def test_deployments_add_duplicate_project():
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml",
+               return_value=(__import__("pathlib").Path("/tmp/x"),
+                             {"deployments": [{"project": "foo"}]})), \
+         patch("vibe.main._write_vibe_yaml"):
+        resp = client.post("/api/deployments", json={"project": "foo"},
+                           headers={"X-Admin-Token": "any"})
+    assert resp.status_code == 400

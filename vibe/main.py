@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 
 # ── ttyd subprocess management ─────────────────────────────────────────────────
 _TTYD_PORT = 7681
+_TTYD_CLIENT_OPTIONS = ("rendererType=canvas",)
 _ttyd_proc: subprocess.Popen | None = None
 
 def _ttyd_bin() -> str:
@@ -59,6 +60,46 @@ def _ttyd_healthy(timeout: float = 1.0) -> bool:
     except Exception:
         return False
 
+def _ttyd_listener_pids() -> list[str]:
+    proc = subprocess.run(
+        ["lsof", f"-tiTCP:{_TTYD_PORT}", "-sTCP:LISTEN"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        return []
+    return [pid.strip() for pid in proc.stdout.splitlines() if pid.strip()]
+
+def _ttyd_command(pid: str) -> str:
+    proc = subprocess.run(
+        ["ps", "-p", pid, "-o", "command="],
+        capture_output=True, text=True,
+    )
+    return proc.stdout.strip()
+
+def _ttyd_command_has_expected_options(cmd: str) -> bool:
+    return all(opt in cmd or opt.replace("=", " ") in cmd for opt in _TTYD_CLIENT_OPTIONS)
+
+def _ttyd_listener_has_expected_options() -> bool:
+    for pid in _ttyd_listener_pids():
+        cmd = _ttyd_command(pid)
+        if "ttyd" in cmd and _ttyd_command_has_expected_options(cmd):
+            return True
+    return False
+
+def _stop_stale_ttyd_listeners() -> None:
+    """Stop Mira's ttyd listener when it lacks required client options.
+
+    The tmux session is not killed; only the browser bridge is restarted.
+    """
+    for pid in _ttyd_listener_pids():
+        cmd = _ttyd_command(pid)
+        if "ttyd" not in cmd or _ttyd_command_has_expected_options(cmd):
+            continue
+        try:
+            subprocess.run(["kill", pid], capture_output=True)
+        except Exception:
+            pass
+
 def _start_ttyd() -> None:
     """Start ttyd subprocess. Uses admin_password as HTTP basic auth (admin:<pwd>).
 
@@ -71,7 +112,10 @@ def _start_ttyd() -> None:
     if not Path(ttyd).exists():
         return
     if _ttyd_healthy():
-        return
+        if _ttyd_listener_has_expected_options():
+            return
+        _stop_stale_ttyd_listeners()
+        time.sleep(0.3)
 
     from vibe.config import load_global_config
     pwd = (load_global_config().get("admin_password") or "").strip()
@@ -81,6 +125,8 @@ def _start_ttyd() -> None:
         "--writable",
         "--base-path", "/terminal",
     ]
+    for opt in _TTYD_CLIENT_OPTIONS:
+        cmd += ["--client-option", opt]
     if pwd:
         cmd += ["--credential", f"admin:{pwd}"]
     # Ensure mira tmux session exists before ttyd starts (ttyd only creates it on client connect)
@@ -1066,6 +1112,61 @@ def _parse_cloudflared_tunnels() -> dict[int, str]:
         return {}
 
 
+_TUNNEL_SERVICES_FILE = Path.home() / ".cloudflared" / "services.yml"
+_TUNNEL_SCRIPT = Path.home() / ".cloudflared" / "tunnel"
+
+
+def _load_tunnel_services() -> list[dict]:
+    """Read services.yml and return list of tunnel service dicts."""
+    import yaml as _yaml
+    if not _TUNNEL_SERVICES_FILE.exists():
+        return []
+    try:
+        data = _yaml.safe_load(_TUNNEL_SERVICES_FILE.read_text()) or {}
+        services = data.get("services", {})
+        result = []
+        for name, svc in services.items():
+            result.append({
+                "name": name,
+                "hostname": svc.get("hostname", ""),
+                "port": svc.get("port", 0),
+                "enabled": bool(svc.get("enabled", False)),
+            })
+        return result
+    except Exception:
+        return []
+
+
+@api.get("/api/tunnels")
+def list_tunnels(request: Request):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    services = _load_tunnel_services()
+    # check which ports are actually listening
+    for svc in services:
+        svc["is_running"] = _check_port(svc["port"]) if svc["port"] else False
+    return services
+
+
+@api.post("/api/tunnels/{name}/toggle")
+def toggle_tunnel(name: str, request: Request):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    import yaml as _yaml
+    if not _TUNNEL_SERVICES_FILE.exists():
+        raise HTTPException(status_code=404, detail="services.yml not found")
+    data = _yaml.safe_load(_TUNNEL_SERVICES_FILE.read_text()) or {}
+    services = data.get("services", {})
+    if name not in services:
+        raise HTTPException(status_code=404, detail=f"未找到 tunnel: {name}")
+    services[name]["enabled"] = not services[name].get("enabled", False)
+    _TUNNEL_SERVICES_FILE.write_text(
+        _yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True))
+    # regenerate config.yml
+    subprocess.run([str(_TUNNEL_SCRIPT), "generate"], capture_output=True)
+    return {"name": name, "enabled": services[name]["enabled"]}
+
+
 def _detect_used_by(port: int, projects: list[dict]) -> list[str]:
     """Scan project files to find which projects reference this port."""
     import re
@@ -1098,16 +1199,61 @@ def _detect_used_by(port: int, projects: list[dict]) -> list[str]:
     return found
 
 
+_oauth_cache: dict = {}  # {"token": str, "expires_at": float}
+
 def _get_claude_oauth_token() -> tuple[str, str] | None:
     """Return (access_token, subscription_type) or None.
 
     Tries in order:
     1. ~/.claude/.credentials.json  (old CLI auth)
     2. macOS Claude desktop app config.json (encrypted with Keychain key)
+    Auto-refreshes expired tokens using the stored refresh_token.
     """
     import json as _json, hashlib, ctypes, base64, subprocess as _sp, sys
 
-    # ── 方式1: 旧版 CLI 凭证文件 ──────────────────────────────────────────
+    # Return cached token if still valid (with 60s margin)
+    if _oauth_cache.get("token") and _oauth_cache.get("expires_at", 0) > time.time() + 60:
+        return _oauth_cache["token"], _oauth_cache.get("sub", "unknown")
+
+    # ── 方式1: macOS Keychain "Claude Code-credentials" (current Claude Code) ─
+    if sys.platform == "darwin":
+        try:
+            raw = _sp.check_output(
+                ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                stderr=_sp.DEVNULL,
+            ).strip().decode()
+            creds = _json.loads(raw)
+            oauth = creds.get("claudeAiOauth", {})
+            if oauth.get("accessToken"):
+                token = oauth["accessToken"]
+                sub = oauth.get("subscriptionType", "unknown")
+                expires_at = oauth.get("expiresAt", 0) / 1000
+                # Auto-refresh if expired
+                if expires_at < time.time() and oauth.get("refreshToken"):
+                    try:
+                        import httpx
+                        resp = httpx.post(
+                            "https://console.anthropic.com/v1/oauth/token",
+                            json={
+                                "grant_type": "refresh_token",
+                                "refresh_token": oauth["refreshToken"],
+                            },
+                            timeout=15,
+                        )
+                        if resp.status_code == 200:
+                            rd = resp.json()
+                            token = rd["access_token"]
+                            expires_at = time.time() + rd.get("expires_in", 28800)
+                    except Exception:
+                        pass
+                _oauth_cache["token"] = token
+                _oauth_cache["expires_at"] = expires_at
+                _oauth_cache["sub"] = sub
+                return token, sub
+        except Exception:
+            pass
+
+    # ── 方式2: 旧版 CLI 凭证文件 ──────────────────────────────────────────
     creds_path = Path.home() / ".claude" / ".credentials.json"
     if creds_path.exists():
         try:
@@ -1118,7 +1264,7 @@ def _get_claude_oauth_token() -> tuple[str, str] | None:
         except (KeyError, _json.JSONDecodeError):
             pass
 
-    # ── 方式2: macOS 桌面 App config.json (Electron safeStorage + Keychain) ─
+    # ── 方式3: macOS 桌面 App config.json (Electron safeStorage + Keychain) ─
     if sys.platform != "darwin":
         return None
     try:
@@ -1154,20 +1300,51 @@ def _get_claude_oauth_token() -> tuple[str, str] | None:
 
         token_cache = _json.loads(bytes(out[:out_len.value]).decode("utf-8"))
 
-        # 优先选择含 claude_code scope 的 token
-        token = None
+        # 找到含 claude_code scope 的 entry（含 token + refreshToken + expiresAt）
+        entry = None
+        entry_key = None
         for k, v in token_cache.items():
             if isinstance(v, dict) and v.get("token"):
                 if "claude_code" in k:
-                    token = v["token"]
+                    entry = v
+                    entry_key = k
                     break
-        if not token:
-            for v in token_cache.values():
+        if not entry:
+            for k, v in token_cache.items():
                 if isinstance(v, dict) and v.get("token"):
-                    token = v["token"]
+                    entry = v
+                    entry_key = k
                     break
-        if not token:
+        if not entry:
             return None
+
+        token = entry["token"]
+        expires_at = entry.get("expiresAt", 0) / 1000  # ms → seconds
+
+        # Token 过期且有 refreshToken → 自动刷新
+        if expires_at < time.time() and entry.get("refreshToken") and entry_key:
+            client_id = entry_key.split(":")[0]
+            try:
+                import httpx
+                resp = httpx.post(
+                    "https://console.anthropic.com/v1/oauth/token",
+                    json={
+                        "grant_type": "refresh_token",
+                        "refresh_token": entry["refreshToken"],
+                        "client_id": client_id,
+                    },
+                    timeout=15,
+                )
+                if resp.status_code == 200:
+                    rd = resp.json()
+                    token = rd["access_token"]
+                    expires_at = time.time() + rd.get("expires_in", 28800)
+            except Exception:
+                pass  # fall through with expired token
+
+        _oauth_cache["token"] = token
+        _oauth_cache["expires_at"] = expires_at
+        _oauth_cache["sub"] = "unknown"
         return token, "unknown"
     except Exception:
         return None
@@ -1175,48 +1352,136 @@ def _get_claude_oauth_token() -> tuple[str, str] | None:
 
 @api.get("/api/claude-usage")
 def claude_usage(request: Request):
-    """Get Claude Code usage limits via Anthropic API rate-limit headers."""
+    """Get Claude Code usage via Anthropic OAuth usage API."""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    result = _get_claude_oauth_token()
-    if not result:
+    creds = _get_claude_oauth_token()
+    if not creds:
         return {"error": "no_credentials", "message": "无法获取 Claude OAuth token"}
-    token, sub_type = result
+    token, sub_type = creds
     import httpx
+    from datetime import datetime as _dt
     try:
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
-            json={"model": "claude-haiku-4-5", "max_tokens": 1,
-                  "messages": [{"role": "user", "content": "1"}]},
+        resp = httpx.get(
+            "https://api.anthropic.com/api/oauth/usage",
+            headers={"Authorization": f"Bearer {token}"},
             timeout=15,
         )
+        if resp.status_code != 200:
+            return {"error": "api_error", "message": f"OAuth usage API returned {resp.status_code}"}
+        data = resp.json()
     except Exception:
-        return {"error": "api_error", "message": "Failed to reach Anthropic API"}
-    h = resp.headers
-    def _ts(key):
-        v = h.get(key)
-        return int(v) if v else None
-    def _fl(key):
-        v = h.get(key)
-        return float(v) if v else None
-    return {
+        return {"error": "api_error", "message": "Failed to reach Anthropic OAuth usage API"}
+
+    def _parse_window(win):
+        if not win:
+            return None
+        resets_at = win.get("resets_at")
+        ts = None
+        if resets_at:
+            try:
+                ts = int(_dt.fromisoformat(resets_at.replace("Z", "+00:00")).timestamp())
+            except Exception:
+                pass
+        return {
+            "utilization": (win.get("utilization") or 0) / 100.0,
+            "resets_at": ts,
+        }
+
+    result = {
         "subscription": sub_type,
-        "status": h.get("anthropic-ratelimit-unified-status", "unknown"),
-        "session": {
-            "utilization": _fl("anthropic-ratelimit-unified-5h-utilization"),
-            "resets_at": _ts("anthropic-ratelimit-unified-5h-reset"),
-        },
-        "weekly": {
-            "utilization": _fl("anthropic-ratelimit-unified-7d-utilization"),
-            "resets_at": _ts("anthropic-ratelimit-unified-7d-reset"),
-        },
-        "overage_status": h.get("anthropic-ratelimit-unified-overage-status"),
+        "session": _parse_window(data.get("five_hour")),
+        "weekly": _parse_window(data.get("seven_day")),
     }
+    # Per-model 7d breakdown
+    for key in ("seven_day_opus", "seven_day_sonnet"):
+        win = _parse_window(data.get(key))
+        if win:
+            result[key] = win
+    return result
+
+
+def _calc_local_7d_usage() -> dict:
+    """Aggregate token usage from Claude Code session JSONL files for the past 7 days."""
+    import json as _json
+    sessions_root = Path.home() / ".claude" / "projects"
+    if not sessions_root.exists():
+        return {}
+    cutoff = time.time() - 7 * 86400
+    totals = {"input": 0, "output": 0, "cache_read": 0, "cache_create": 0, "messages": 0}
+    model_totals: dict[str, dict] = {}
+    try:
+        for jsonl in sessions_root.rglob("*.jsonl"):
+            try:
+                if jsonl.stat().st_mtime < cutoff:
+                    continue
+            except OSError:
+                continue
+            try:
+                with open(jsonl, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        if '"usage"' not in line:
+                            continue
+                        try:
+                            entry = _json.loads(line)
+                        except _json.JSONDecodeError:
+                            continue
+                        msg = entry.get("message") or {}
+                        usage = msg.get("usage")
+                        if not usage or msg.get("role") != "assistant":
+                            continue
+                        inp = usage.get("input_tokens", 0)
+                        out = usage.get("output_tokens", 0)
+                        cr = usage.get("cache_read_input_tokens", 0)
+                        cc = usage.get("cache_creation_input_tokens", 0)
+                        totals["input"] += inp
+                        totals["output"] += out
+                        totals["cache_read"] += cr
+                        totals["cache_create"] += cc
+                        totals["messages"] += 1
+                        # per-model breakdown
+                        model = msg.get("model", "unknown")
+                        if model not in model_totals:
+                            model_totals[model] = {"input": 0, "output": 0, "cache_read": 0, "cache_create": 0, "msgs": 0}
+                        mt = model_totals[model]
+                        mt["input"] += inp
+                        mt["output"] += out
+                        mt["cache_read"] += cr
+                        mt["cache_create"] += cc
+                        mt["msgs"] += 1
+            except OSError:
+                continue
+    except Exception:
+        return {}
+    # Estimate cost (USD) per model
+    _PRICING = {
+        "claude-opus-4-6":   {"input": 15, "output": 75, "cache_read": 1.5, "cache_create": 18.75},
+        "claude-sonnet-4-6": {"input": 3, "output": 15, "cache_read": 0.30, "cache_create": 3.75},
+        "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4, "cache_read": 0.08, "cache_create": 1},
+    }
+    total_cost = 0.0
+    for model, mt in model_totals.items():
+        p = _PRICING.get(model, _PRICING.get("claude-sonnet-4-6", {}))
+        cost = (mt["input"] * p["input"] + mt["output"] * p["output"]
+                + mt["cache_read"] * p["cache_read"] + mt["cache_create"] * p["cache_create"]) / 1_000_000
+        mt["cost_usd"] = round(cost, 2)
+        total_cost += cost
+    totals["cost_usd"] = round(total_cost, 2)
+    totals["models"] = model_totals
+    return totals
+
+
+# Cache local 7d calculation (expensive to scan)
+_local_7d_cache: dict = {}
+_local_7d_cache_ts: float = 0.0
+
+def _calc_local_7d_usage_cached() -> dict:
+    global _local_7d_cache, _local_7d_cache_ts
+    if time.time() - _local_7d_cache_ts < 300:  # 5 min cache
+        return _local_7d_cache
+    _local_7d_cache = _calc_local_7d_usage()
+    _local_7d_cache_ts = time.time()
+    return _local_7d_cache
 
 
 @api.get("/api/codex-usage")
@@ -1681,6 +1946,90 @@ def delete_key(request: Request, key_id: str):
     if len(new_keys) == len(keys):
         raise HTTPException(status_code=404, detail="未找到该密钥")
     data["keys"] = new_keys
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
+
+
+# ── Deployments CRUD (集中部署文档) ──────────────────────────────────────────
+
+@api.get("/api/deployments")
+def list_deployments(request: Request):
+    """列出所有部署条目 + 静态检测结果。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from .config import load_global_config
+    from .deploy_check import find_port_conflicts, find_missing_dependencies, reverse_impact
+    cfg = load_global_config()
+    deployments = cfg.get("deployments", [])
+    base_services = cfg.get("base_services", [])
+    return {
+        "deployments": deployments,
+        "base_services": base_services,
+        "port_conflicts": find_port_conflicts(deployments, base_services),
+        "missing_deps": find_missing_dependencies(deployments, base_services),
+        "reverse_impact": reverse_impact(deployments, base_services),
+    }
+
+
+@api.post("/api/deployments")
+def add_deployment(request: Request, body: dict):
+    """新增部署条目;project 必填且唯一。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    project = (body.get("project") or "").strip()
+    if not project:
+        raise HTTPException(status_code=400, detail="project 为必填项")
+    cfg_path, data = _read_vibe_yaml()
+    deployments = data.get("deployments", [])
+    if any(d.get("project") == project for d in deployments):
+        raise HTTPException(status_code=400, detail="该项目已存在部署条目")
+    entry = {
+        "project": project,
+        "ports": body.get("ports") or [],
+        "depends_on": body.get("depends_on") or [],
+        "domain": (body.get("domain") or "").strip() or None,
+        "deploy": body.get("deploy") or None,
+        "notes": (body.get("notes") or ""),
+    }
+    deployments.append(entry)
+    data["deployments"] = deployments
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True, "project": project}
+
+
+@api.put("/api/deployments/{project}")
+def update_deployment(request: Request, project: str, body: dict):
+    """更新指定项目的部署条目。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    cfg_path, data = _read_vibe_yaml()
+    deployments = data.get("deployments", [])
+    target = next((d for d in deployments if d.get("project") == project), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="未找到该部署条目")
+    for field in ("ports", "depends_on", "deploy"):
+        if field in body:
+            target[field] = body[field]
+    if "domain" in body:
+        target["domain"] = (body["domain"] or "").strip() or None
+    if "notes" in body:
+        target["notes"] = body["notes"] or ""
+    data["deployments"] = deployments
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
+
+
+@api.delete("/api/deployments/{project}")
+def delete_deployment(request: Request, project: str):
+    """删除指定项目的部署条目。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    cfg_path, data = _read_vibe_yaml()
+    deployments = data.get("deployments", [])
+    new_list = [d for d in deployments if d.get("project") != project]
+    if len(new_list) == len(deployments):
+        raise HTTPException(status_code=404, detail="未找到该部署条目")
+    data["deployments"] = new_list
     _write_vibe_yaml(cfg_path, data)
     return {"ok": True}
 
@@ -2424,13 +2773,15 @@ async def dev_kill_pane(request: Request, target: str):
     import subprocess
     from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
     from vibe.terminal_monitor import unregister_pane
-    proc = subprocess.run(
-        [_TMUX_BIN, "kill-pane", "-t", target],
-        capture_output=True, text=True, env=_TMUX_ENV,
-    )
-    if proc.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"tmux kill-pane failed: {proc.stderr.strip()}")
-    unregister_pane(target)
+    def _do_kill():
+        proc = subprocess.run(
+            [_TMUX_BIN, "kill-pane", "-t", target],
+            capture_output=True, text=True, env=_TMUX_ENV,
+        )
+        if proc.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"tmux kill-pane failed: {proc.stderr.strip()}")
+        unregister_pane(target)
+    await asyncio.to_thread(_do_kill)
     return {"ok": True, "target": target}
 
 
@@ -2551,10 +2902,12 @@ async def terminals_output(request: Request, target: str, lines: int = 200):
             raise HTTPException(status_code=502, detail=f"远程主机 {remote_host.alias} 不可达")
         return result
     from vibe.tmux_bridge import capture_pane
-    try:
-        text = capture_pane(target, lines=lines)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    def _do_capture():
+        try:
+            return capture_pane(target, lines=lines)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    text = await asyncio.to_thread(_do_capture)
     return {"target": target, "output": text}
 
 
@@ -2696,10 +3049,12 @@ async def terminals_send(request: Request, target: str, body: dict):
             raise HTTPException(status_code=502, detail=f"远程主机 {remote_host.alias} 不可达")
         return result
     from vibe.tmux_bridge import send_keys
-    try:
-        send_keys(target, keys)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    def _do_send():
+        try:
+            send_keys(target, keys)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    await asyncio.to_thread(_do_send)
     return {"ok": True}
 
 
@@ -2992,6 +3347,16 @@ else apply();
 })();
 </script>"""  # end _TTYD_THEME_INJECT
 
+# Reusable httpx client for ttyd proxy (avoids per-request connection pool churn)
+import httpx as _httpx
+_ttyd_http_client: _httpx.AsyncClient | None = None
+
+def _get_ttyd_http_client() -> _httpx.AsyncClient:
+    global _ttyd_http_client
+    if _ttyd_http_client is None or _ttyd_http_client.is_closed:
+        _ttyd_http_client = _httpx.AsyncClient(trust_env=False, timeout=10)
+    return _ttyd_http_client
+
 @api.api_route("/terminal/{path:path}", methods=["GET", "POST", "HEAD"])
 async def ttyd_http_proxy(path: str, request: Request):
     """Proxy HTTP requests (HTML/JS/CSS assets) to the ttyd process.
@@ -2999,7 +3364,6 @@ async def ttyd_http_proxy(path: str, request: Request):
     No admin check here — ttyd is bound to 127.0.0.1 and unreachable
     from outside. The security boundary is Mira's login page.
     """
-    import httpx
     import base64
     from vibe.config import load_global_config
 
@@ -3012,17 +3376,15 @@ async def ttyd_http_proxy(path: str, request: Request):
     if pwd:
         token = base64.b64encode(f"admin:{pwd}".encode()).decode()
         headers["Authorization"] = f"Basic {token}"
-    async with httpx.AsyncClient(trust_env=False) as client:
-        try:
-            resp = await client.request(
-                method=request.method,
-                url=url,
-                headers=headers,
-                content=await request.body(),
-                timeout=10,
-            )
-        except httpx.ConnectError:
-            raise HTTPException(status_code=502, detail="ttyd 未运行")
+    try:
+        resp = await _get_ttyd_http_client().request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            content=await request.body(),
+        )
+    except _httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="ttyd 未运行")
     # Strip hop-by-hop and encoding headers (httpx decompresses; don't re-claim gzip)
     skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length", "www-authenticate"}
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
@@ -3117,7 +3479,7 @@ async def ttyd_ws_proxy(websocket: WebSocket):
 # ── Terminal focus / new-window API ────────────────────────────────────────────
 
 @api.post("/api/terminal/focus")
-async def terminal_focus(request: Request, body: dict):
+def terminal_focus(request: Request, body: dict):
     """Switch tmux client view to a specific pane (used by sidebar click)."""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
@@ -3178,7 +3540,7 @@ async def terminal_focus(request: Request, body: dict):
 
 
 @api.post("/api/terminals/{target:path}/scroll")
-async def terminal_scroll(request: Request, target: str, body: dict):
+def terminal_scroll(request: Request, target: str, body: dict):
     """Scroll a tmux pane using copy-mode (for mobile touch scroll)."""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
@@ -3192,7 +3554,7 @@ async def terminal_scroll(request: Request, target: str, body: dict):
 
 
 @api.post("/api/terminal/new-window")
-async def terminal_new_window(request: Request, body: dict):
+def terminal_new_window(request: Request, body: dict):
     """Create a new tmux window, optionally in a project directory."""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
@@ -3221,7 +3583,7 @@ async def terminal_new_window(request: Request, body: dict):
 
 
 @api.get("/api/terminal/buffer")
-async def terminal_buffer(request: Request):
+def terminal_buffer(request: Request):
     """Return tmux paste buffer (last copied text from copy-mode)."""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
