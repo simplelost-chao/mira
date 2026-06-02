@@ -1989,14 +1989,20 @@ def add_deployment(request: Request, body: dict):
     deployments = data.get("deployments", [])
     if any(d.get("project") == project for d in deployments):
         raise HTTPException(status_code=400, detail="该项目已存在部署条目")
-    entry = {
-        "project": project,
-        "ports": body.get("ports") or [],
-        "depends_on": body.get("depends_on") or [],
-        "domain": (body.get("domain") or "").strip() or None,
-        "deploy": body.get("deploy") or None,
-        "notes": (body.get("notes") or ""),
-    }
+    from .models import Deployment
+    from pydantic import ValidationError
+    try:
+        model = Deployment(
+            project=project,
+            ports=body.get("ports") or [],
+            depends_on=body.get("depends_on") or [],
+            domain=(body.get("domain") or "").strip() or None,
+            deploy=body.get("deploy") or None,
+            notes=body.get("notes") or "",
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    entry = model.model_dump()
     deployments.append(entry)
     data["deployments"] = deployments
     _write_vibe_yaml(cfg_path, data)
@@ -2013,9 +2019,15 @@ def update_deployment(request: Request, project: str, body: dict):
     target = next((d for d in deployments if d.get("project") == project), None)
     if not target:
         raise HTTPException(status_code=404, detail="未找到该部署条目")
-    for field in ("ports", "depends_on", "deploy"):
-        if field in body:
-            target[field] = body[field]
+    if "ports" in body:
+        try:
+            target["ports"] = [int(p) for p in (body["ports"] or [])]
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="ports 必须是整数列表")
+    if "depends_on" in body:
+        target["depends_on"] = body["depends_on"]
+    if "deploy" in body:
+        target["deploy"] = body["deploy"]
     if "domain" in body:
         target["domain"] = (body["domain"] or "").strip() or None
     if "notes" in body:

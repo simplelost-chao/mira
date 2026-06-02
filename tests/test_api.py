@@ -287,3 +287,59 @@ def test_deploy_page_renders():
 def test_topbar_has_deploy_link():
     from vibe.topbar import topbar_html
     assert '/deploy' in topbar_html(title="x")
+
+
+def test_deployments_post_coerces_string_ports_to_int(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("base_services: []\ndeployments: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        resp = client.post("/api/deployments",
+                           json={"project": "foo", "ports": ["8080", "9000"]},
+                           headers={"X-Admin-Token": "any"})
+        assert resp.status_code == 200
+
+    import yaml
+    persisted = yaml.safe_load(fake.read_text())["deployments"][0]
+    assert persisted["ports"] == [8080, 9000]  # coerced to ints, not strings
+
+
+def test_deployments_post_rejects_invalid_ports(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("base_services: []\ndeployments: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        resp = client.post("/api/deployments",
+                           json={"project": "foo", "ports": ["not-a-port"]},
+                           headers={"X-Admin-Token": "any"})
+    assert resp.status_code == 400
+
+
+def test_deployments_put_coerces_string_ports(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("base_services: []\ndeployments:\n- project: foo\n  ports: [1]\n  depends_on: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        resp = client.put("/api/deployments/foo",
+                          json={"ports": ["8080"]},
+                          headers={"X-Admin-Token": "any"})
+        assert resp.status_code == 200
+
+    import yaml
+    persisted = yaml.safe_load(fake.read_text())["deployments"][0]
+    assert persisted["ports"] == [8080]
