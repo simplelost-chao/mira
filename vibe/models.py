@@ -128,6 +128,18 @@ class DeployInfo(BaseModel):
     cmd: Optional[str] = None
 
 
+class Deployment(BaseModel):
+    """集中登记的项目部署条目。project 对应 scanner 扫描出的项目名;
+    depends_on 引用 base_services[].name。deploy 用宽松 dict 以兼容
+    各项目原有的额外字段(如 ssh_key / web_root)。"""
+    project: str
+    ports: list[int] = []
+    depends_on: list[str] = []
+    domain: Optional[str] = None
+    deploy: Optional[dict] = None
+    notes: str = ""
+
+
 class TechStack(BaseModel):
     name: str
     version: Optional[str] = None

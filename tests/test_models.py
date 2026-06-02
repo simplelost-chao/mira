@@ -1,7 +1,7 @@
 from vibe.models import (
     GitInfo, PlanTask, PlanFile, PlanInfo,
     ServiceInfo, LocInfo, FsNode, FsInfo,
-    Feature, DesignDoc, DeployInfo, ProjectInfo
+    Feature, DesignDoc, DeployInfo, ProjectInfo, Deployment
 )
 
 def test_git_info_defaults():
@@ -20,3 +20,28 @@ def test_project_info_minimal():
     p = ProjectInfo(id="my-proj", name="My Proj", path="/tmp/my-proj")
     assert p.id == "my-proj"
     assert p.git is None
+
+
+def test_deployment_minimal():
+    d = Deployment(project="simulacra")
+    assert d.project == "simulacra"
+    assert d.ports == []
+    assert d.depends_on == []
+    assert d.domain is None
+    assert d.deploy is None
+    assert d.notes == ""
+
+
+def test_deployment_full():
+    d = Deployment(
+        project="awalon-chao",
+        ports=[8080, 8081],
+        depends_on=["Ollama", "CosyVoice"],
+        domain="avalon.zhuchao.life",
+        deploy={"type": "ec2", "host": "h", "user": "ec2-user"},
+        notes="部署前先确认模型已加载",
+    )
+    assert d.ports == [8080, 8081]
+    assert d.depends_on == ["Ollama", "CosyVoice"]
+    assert d.deploy["type"] == "ec2"
+    assert d.notes.startswith("部署前")
