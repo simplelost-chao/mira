@@ -37,3 +37,8 @@ def test_empty_inputs_safe():
     assert find_port_conflicts([], []) == []
     assert find_missing_dependencies([], []) == []
     assert reverse_impact([], []) == {}
+
+
+def test_port_no_self_conflict_on_intra_project_duplicate():
+    deployments = [{"project": "a", "ports": [8080, 8080], "depends_on": []}]
+    assert find_port_conflicts(deployments, []) == []

@@ -13,7 +13,7 @@ def find_port_conflicts(deployments, base_services):
     """
     owners = defaultdict(list)
     for d in deployments or []:
-        for port in d.get("ports") or []:
+        for port in set(d.get("ports") or []):
             owners[port].append(d.get("project", "?"))
     for s in base_services or []:
         port = s.get("port")
