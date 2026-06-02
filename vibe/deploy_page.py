@@ -54,7 +54,7 @@ def render_deploy_page() -> str:
 {_tb_js}
 </script>
 <script>
-function esc(s) {{ return String(s == null ? '' : s).replace(/[&<>]/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;'}}[c])); }}
+function esc(s) {{ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }}
 async function load() {{
   const r = await fetch('/api/deployments', {{headers: _authHeaders()}});
   if (!r.ok) {{ document.getElementById('deploy-cards').innerHTML = '<p class="muted">需要管理员登录后查看。</p>'; return; }}
@@ -83,7 +83,7 @@ async function load() {{
   (data.deployments || []).forEach(d => {{
     const miss = missingByProj[d.project];
     cards += `<div class="card"><h3>${{esc(d.project)}}</h3>`;
-    cards += `<div class="muted">端口 ${{(d.ports||[]).join(', ') || '—'}} · 依赖 ${{(d.depends_on||[]).map(esc).join(', ') || '—'}}</div>`;
+    cards += `<div class="muted">端口 ${{(d.ports||[]).map(esc).join(', ') || '—'}} · 依赖 ${{(d.depends_on||[]).map(esc).join(', ') || '—'}}</div>`;
     if (miss) cards += `<div class="conflict">⚠️ 依赖缺失: ${{miss.map(esc).join(', ')}}</div>`;
     if (d.domain) cards += `<div><code>${{esc(d.domain)}}</code></div>`;
     if (d.notes) cards += `<pre style="white-space:pre-wrap;margin-top:6px">${{esc(d.notes)}}</pre>`;
