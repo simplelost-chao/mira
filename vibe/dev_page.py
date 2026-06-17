@@ -1229,12 +1229,17 @@ function _headerDown(e, key, type) {
 function _startDrag(e, key, type) {
   if (_drag) return;
   _drag = { key: key, type: type, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, capEl: null, pid: e.pointerId };
-  // 关键:捕获指针 —— Safari 不捕获就会因"以为要选中/滚动"而取消指针序列,导致整段拖拽失效;
-  // 同时保证指针移到右侧终端 iframe 上时事件仍归我们,不丢。
-  try { e.currentTarget.setPointerCapture(e.pointerId); _drag.capEl = e.currentTarget; } catch(_) {}
-  window.addEventListener('pointermove', _dragMove, { passive: false });
-  window.addEventListener('pointerup', _dragUp, { once: true });
-  window.addEventListener('pointercancel', _dragUp, { once: true });
+  // pointer 事件能捕获就捕获(Safari 不捕获会取消序列、移到 iframe 上会丢事件)。
+  if (e.pointerId != null) {
+    try { e.currentTarget.setPointerCapture(e.pointerId); _drag.capEl = e.currentTarget; } catch(_) {}
+    window.addEventListener('pointermove', _dragMove, { passive: false });
+    window.addEventListener('pointerup', _dragUp, { once: true });
+    window.addEventListener('pointercancel', _dragUp, { once: true });
+  }
+  // mouse 事件兜底:桌面 Safari 的 pointer 事件常不可靠,mousedown/move/up 最稳。
+  // 同时监听不冲突——一次拖拽只有一个 _drag,_dragUp 会把两套监听都摘掉。
+  window.addEventListener('mousemove', _dragMove);
+  window.addEventListener('mouseup', _dragUp, { once: true });
 }
 function _dragMove(e) {
   if (!_drag) return;
@@ -1307,6 +1312,8 @@ function _dragUp(e) {
   window.removeEventListener('pointermove', _dragMove);
   window.removeEventListener('pointerup', _dragUp);
   window.removeEventListener('pointercancel', _dragUp);
+  window.removeEventListener('mousemove', _dragMove);
+  window.removeEventListener('mouseup', _dragUp);
   document.body.classList.remove('dev-dragging');
   const st = _drag; _drag = null;
   if (st && st.capEl) { try { st.capEl.releasePointerCapture(st.pid); } catch(_) {} }
@@ -3012,6 +3019,15 @@ async function init() {
     if (e.target.closest('.term-pane-row') && !e.target.closest('.term-pane-kill')) {
       e.preventDefault();
     }
+    // 桌面 Safari 的 pointer 事件常不可靠 —— 用 mousedown 兜底启动拖拽(_startDrag 内部去重)
+    if (e.button !== 0) return;
+    var top = e.target.closest('#term-pane-list > .term-toplevel');
+    if (!top) return;
+    var onGrip = e.target.closest('.term-drag-handle');
+    var onHeader = e.target.closest('.term-group-header, .term-folder-header');
+    if (e.target.closest('.term-group-menu')) return;   // ⋯ 菜单不拖
+    if (onGrip) { e.preventDefault(); e.stopPropagation(); _startDrag(e, top.dataset.key, top.dataset.type); }
+    else if (onHeader) { _startDrag(e, top.dataset.key, top.dataset.type); }
   });
   document.getElementById('term-pane-list').addEventListener('click', function(e) {
     var row = e.target.closest('.term-pane-row');
