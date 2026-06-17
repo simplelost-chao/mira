@@ -123,11 +123,12 @@ def render_dev_page() -> str:
   }
   /* 拖拽抓手 + 排序辅助(主题变量驱动) */
   .term-drag-handle {
-    font-size: 12px; color: var(--muted); cursor: grab; flex-shrink: 0; line-height: 1;
-    padding: 0 2px; touch-action: none; user-select: none; opacity: .4; transition: opacity .12s, color .12s;
+    font-size: 15px; color: var(--sub); cursor: grab; flex-shrink: 0; line-height: 1;
+    padding: 2px 4px; margin-left: -2px; touch-action: none; user-select: none;
+    opacity: .65; transition: opacity .12s, color .12s;
   }
-  .term-group-header:hover .term-drag-handle, .term-folder-header:hover .term-drag-handle { opacity: .85; }
-  .term-drag-handle:hover { color: var(--text); }
+  .term-group-header:hover .term-drag-handle, .term-folder-header:hover .term-drag-handle { opacity: 1; }
+  .term-drag-handle:hover { color: var(--accent); }
   .term-drag-handle:active { cursor: grabbing; }
   body.dev-dragging, body.dev-dragging * { cursor: grabbing !important; }
   .dev-drag-ghost {
@@ -1018,7 +1019,7 @@ let _firstLoad = true;
 var _lastPanesHash = '';
 async function loadPanes(forceRebuild) {
   if (!_isAdmin) { openLoginModal(init); return; }
-  if (_drag && _drag.active && !forceRebuild) return;   // 拖拽中不重建列表
+  if (_drag && !forceRebuild) return;   // 拖拽中(含刚按下)不重建列表,避免抓手元素被换掉
   // On mobile detail view: skip entirely to protect iframe focus/IME
   var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
   if (_isMobile && inDetail && !_firstLoad && !forceRebuild) return;
@@ -1226,9 +1227,14 @@ function _headerDown(e, key, type) {
   _startDrag(e, key, type);
 }
 function _startDrag(e, key, type) {
-  _drag = { key: key, type: type, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null };
+  if (_drag) return;
+  _drag = { key: key, type: type, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, capEl: null, pid: e.pointerId };
+  // 关键:捕获指针 —— Safari 不捕获就会因"以为要选中/滚动"而取消指针序列,导致整段拖拽失效;
+  // 同时保证指针移到右侧终端 iframe 上时事件仍归我们,不丢。
+  try { e.currentTarget.setPointerCapture(e.pointerId); _drag.capEl = e.currentTarget; } catch(_) {}
   window.addEventListener('pointermove', _dragMove, { passive: false });
   window.addEventListener('pointerup', _dragUp, { once: true });
+  window.addEventListener('pointercancel', _dragUp, { once: true });
 }
 function _dragMove(e) {
   if (!_drag) return;
@@ -1299,8 +1305,11 @@ function _clearDropUI() {
 }
 function _dragUp(e) {
   window.removeEventListener('pointermove', _dragMove);
+  window.removeEventListener('pointerup', _dragUp);
+  window.removeEventListener('pointercancel', _dragUp);
   document.body.classList.remove('dev-dragging');
   const st = _drag; _drag = null;
+  if (st && st.capEl) { try { st.capEl.releasePointerCapture(st.pid); } catch(_) {} }
   if (st && st.ghost) st.ghost.remove();
   _clearDropUI();
   if (!st || !st.active) return;
