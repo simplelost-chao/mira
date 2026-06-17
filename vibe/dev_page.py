@@ -74,9 +74,8 @@ def render_dev_page() -> str:
   .term-new-btn:hover { color: var(--accent); border-color: var(--accent); }
   .term-edit-btn {
     background: none; border: 1px solid var(--border); color: var(--muted);
-    height: 20px; padding: 0 9px; border-radius: var(--radius-sm);
-    font-size: 11px; font-family: var(--mono); letter-spacing: normal; text-transform: none; font-weight: 600;
-    cursor: pointer; transition: all .12s; line-height: 1;
+    width: 20px; height: 20px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: all .12s; display: flex; align-items: center; justify-content: center; padding: 0;
   }
   .term-edit-btn:hover { color: var(--accent); border-color: var(--accent); }
   .term-edit-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -1208,6 +1207,14 @@ async function loadPanes(forceRebuild) {
 
 function toggleGroup(key) {
   if (_suppressToggle) return;   // 刚拖完那一下 click 不触发折叠
+  if (_editMode) {               // 编辑模式:点头部=重命名(展开折叠交给箭头)
+    if (key.indexOf('folder:') === 0) _renameFolder(key.slice(7));
+    else _renameProject(key);
+    return;
+  }
+  _doToggle(key);
+}
+function _doToggle(key) {
   _groupCollapsed[key] = !_groupCollapsed[key];
   const collapsed = _groupCollapsed[key];
   if (key.indexOf('folder:') === 0) {
@@ -1234,7 +1241,7 @@ function _renderProjectGroup(pid, grp, nested) {
       data-group="${escHtml(pid)}" data-drop-key="${escHtml(pid)}" data-drop-type="project"
       onclick="toggleGroup('${escHtml(pid)}')">
       ${grip}
-      <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
+      <span class="term-group-arrow${collapsed ? ' collapsed' : ''}" onclick="event.stopPropagation();_doToggle('${escHtml(pid)}')">▾</span>
       <span class="term-group-name" data-group="${escHtml(pid)}">${escHtml(name)}</span>
       <span class="term-group-count">${grp.panes.length}</span>
       <span class="term-group-menu" onclick="event.stopPropagation();_openGroupMenu(event,'${escHtml(pid)}')" title="更多">⋯</span>
@@ -1301,7 +1308,7 @@ function _renderFolder(folder, groups) {
     <div class="term-folder-header" data-folder="${escHtml(folder.id)}" data-drop-key="${escHtml(fkey)}" data-drop-type="folder"
         onclick="toggleGroup('${escHtml(fkey)}')">
       <span class="term-drag-handle" onpointerdown="_gripDown(event,'${escHtml(fkey)}','folder')" onclick="event.stopPropagation()" title="拖拽排序">⠿</span>
-      <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
+      <span class="term-group-arrow${collapsed ? ' collapsed' : ''}" onclick="event.stopPropagation();_doToggle('${escHtml(fkey)}')">▾</span>
       <span class="term-folder-icon">📁</span>
       <span class="term-folder-name">${escHtml(folder.name)}</span>
       <span class="term-group-count">${n}</span>
@@ -1322,7 +1329,7 @@ function toggleEditMode() {
   var list = document.getElementById('term-pane-list');
   if (list) list.classList.toggle('edit-mode', _editMode);
   var btn = document.getElementById('dev-edit-btn');
-  if (btn) { btn.classList.toggle('active', _editMode); btn.textContent = _editMode ? '完成' : '编辑'; }
+  if (btn) { btn.classList.toggle('active', _editMode); btn.title = _editMode ? '完成编辑' : '编辑:拖拽排序 / 合并 / 重命名 / 删除'; }
 }
 // 触屏:抓手 onpointerdown 触发(忽略鼠标,鼠标走下面的 mousedown 委托)
 function _gripDown(e, key, type) {
@@ -3205,7 +3212,7 @@ init();
     <div class="term-sidebar-header">
       <span>所有终端</span>
       <div style="display:flex;gap:6px;align-items:center">
-        <button class="term-edit-btn" id="dev-edit-btn" onclick="toggleEditMode()" title="编辑:拖拽排序 / 合并 / 重命名 / 删除">编辑</button>
+        <button class="term-edit-btn" id="dev-edit-btn" onclick="toggleEditMode()" title="编辑:拖拽排序 / 合并 / 重命名 / 删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <button class="term-new-btn" onclick="openNewTermDialog()" title="新建终端窗口">+</button>
       </div>
     </div>
