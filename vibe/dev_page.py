@@ -124,6 +124,11 @@ def render_dev_page() -> str:
     transition: background .12s;
   }
   .term-group-header:hover { background: rgba(255,255,255,.03); }
+  /* 单终端项目压成的一行 */
+  .term-single { gap: 7px; }
+  .term-single .term-group-name { color: var(--text); font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .term-single.active { background: rgba(var(--accent-rgb),.1); border-left: 2px solid var(--accent); padding-left: 12px; }
+  .term-single.active .term-group-name { color: var(--accent); }
   .term-group-header.focused { background: rgba(var(--accent-rgb),.06); border-left: 2px solid var(--accent); }
   .term-group-header.focused .term-group-name { color: var(--accent); }
   .term-group-arrow {
@@ -1124,7 +1129,9 @@ async function loadPanes(forceRebuild) {
           const fhtml = _renderFolder(folder, groups);
           if (fhtml) _topItems.push({ key: 'folder:' + folder.id, type: 'folder', html: fhtml });
         } else {
-          _topItems.push({ key: pid, type: 'project', html: _renderProjectGroup(pid, grp, false) });
+          // 只有 1 个终端的项目 → 直接显示成一行(不分组、不展开)
+          const phtml = grp.panes.length === 1 ? _renderSingleProject(pid, grp, false) : _renderProjectGroup(pid, grp, false);
+          _topItems.push({ key: pid, type: 'project', html: phtml });
         }
       }
       // 应用自定义排序(未在 order 里的排末尾,保持稳定)
@@ -1222,13 +1229,53 @@ function _renderProjectGroup(pid, grp, nested) {
   return h;
 }
 
+// 单终端项目:压成一行(项目名 + 工具徽标),点击=打开终端,仍可拖拽/重命名/合并
+function _renderSingleProject(pid, grp, nested) {
+  const p = grp.panes[0];
+  const name = _projName(pid, grp.name);
+  const focused = _focusProjects.indexOf(pid) >= 0;
+  const isCur = _currentTarget === p.target;
+  const badgeCls = p.tool === 'codex' ? 'codex' : p.tool === 'claude' ? 'claude' : 'unknown';
+  const badgeText = p.tool === 'codex' ? 'X' : p.tool === 'claude' ? 'C' : '';
+  const badge = badgeCls === 'unknown'
+    ? `<div class="term-pane-badge unknown" onclick="event.stopPropagation();toggleFocus('${escHtml(pid)}')"></div>`
+    : `<div class="term-pane-badge ${badgeCls}${focused ? ' glow' : ''}" onclick="event.stopPropagation();toggleFocus('${escHtml(pid)}')" title="${focused ? '取消专注' : '设为专注'}">${badgeText}</div>`;
+  const grip = nested ? '' : `<span class="term-drag-handle" onpointerdown="_gripDown(event,'${escHtml(pid)}','project')" onclick="event.stopPropagation()" title="拖拽:排序 / 拖到其它项目上=合并">⠿</span>`;
+  return `<div class="term-group-header term-single${focused ? ' focused' : ''}${nested ? ' nested' : ''}${isCur ? ' active' : ''}"
+      data-group="${escHtml(pid)}" data-drop-key="${escHtml(pid)}" data-drop-type="project"
+      data-target="${escHtml(p.target)}" data-cmd="${escHtml(p.command || '')}"
+      onclick="_singleSelect(this)">
+      ${grip}
+      ${badge}
+      <span class="term-group-name">${escHtml(name)}</span>
+      ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
+      <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation();_killSingle(this)">×</span>
+      <span class="term-group-menu" onclick="event.stopPropagation();_openGroupMenu(event,'${escHtml(pid)}')" title="更多">⋯</span>
+    </div>`;
+}
+function _singleSelect(rowEl) {
+  if (_suppressToggle) return;   // 刚拖完那次 click 不当成点击打开
+  selectPane(rowEl.dataset.target, rowEl.dataset.cmd || '');
+}
+async function _killSingle(killEl) {
+  const row = killEl.closest('[data-target]');
+  const target = row && row.dataset.target;
+  if (!target) return;
+  const name = (row.querySelector('.term-group-name') || {}).textContent || target;
+  if (!confirm(`确认关闭终端 "${name}" ?\\n\\n该 tmux pane 会被 kill，shell 进程退出，无法恢复。`)) return;
+  try {
+    const res = await fetch(`/api/dev/panes/${encodeURIComponent(target)}`, { method: 'DELETE', headers: _authHeaders() });
+    if (res.ok) loadPanes(true);
+  } catch(e) {}
+}
+
 function _renderFolder(folder, groups) {
   let inner = '', n = 0;
   for (const mpid of (folder.projects || [])) {
     const g = groups.get(mpid);
     if (!g) continue;            // 该成员当前没有活跃 pane → 不显示
     n++;
-    inner += _renderProjectGroup(mpid, g, true);
+    inner += g.panes.length === 1 ? _renderSingleProject(mpid, g, true) : _renderProjectGroup(mpid, g, true);
   }
   if (!n) return '';
   const fkey = 'folder:' + folder.id;
@@ -1494,7 +1541,7 @@ async function selectPane(target, cmd) {
   if (_isMobile) _saveSnapshot();  // save current pane's terminal output before switching
   _currentTarget = target;
   _currentIsRemote = !!_paneHostMap[target];
-  const rows = document.querySelectorAll('.term-pane-row');
+  const rows = document.querySelectorAll('.term-pane-row, .term-single[data-target]');
   rows.forEach(r => r.classList.toggle('active', r.dataset.target === target));
   document.getElementById('dev-page').classList.add('detail-open');
   // Lock body scroll on mobile to prevent iOS rubber-banding
