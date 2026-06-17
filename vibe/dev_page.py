@@ -3129,16 +3129,15 @@ async function init() {
     if (e.target.closest('.term-pane-row') && !e.target.closest('.term-pane-kill')) {
       e.preventDefault();
     }
-    // 桌面拖拽统一走 mouse 事件(Safari 的 pointer 不可靠)。抓手或行头都可拖。
+    // 桌面拖拽:只从抓手 ⠿ 发起(整行可拖会把"点名字改名"的微动当成拖拽吞掉)。
     if (!_editMode) return;       // 只有"编辑"模式才能拖
     if (e.button !== 0) return;
     var top = e.target.closest('#term-pane-list > .term-toplevel');
     if (!top) return;
-    if (e.target.closest('.term-group-menu')) return;   // ⋯ 菜单不拖
-    var onGrip = e.target.closest('.term-drag-handle');
-    var onHeader = e.target.closest('.term-group-header, .term-folder-header');
-    if (onGrip) { e.preventDefault(); e.stopPropagation(); _startDrag(e, top.dataset.key, top.dataset.type, 'mouse'); }
-    else if (onHeader) { _startDrag(e, top.dataset.key, top.dataset.type, 'mouse'); }
+    if (e.target.closest('.term-drag-handle')) {   // 抓手只在顶层项,所以拖的就是 top
+      e.preventDefault(); e.stopPropagation();
+      _startDrag(e, top.dataset.key, top.dataset.type, 'mouse');
+    }
   });
   document.getElementById('term-pane-list').addEventListener('click', function(e) {
     var row = e.target.closest('.term-pane-row');
