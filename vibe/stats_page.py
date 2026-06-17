@@ -942,7 +942,7 @@ function _renderSessTable(data) {
   el.innerHTML = data.map(function(s, i) {
     var cc=_costClass(s.estimated_cost_usd), hc=s.active_hours>=20?'hours-hi':'';
     var totTok=s.input_tokens+s.output_tokens+s.cache_creation_tokens+s.cache_read_tokens;
-    var onclick="openSessionTurns('"+s.session_id+"','"+_esc(s.project_name).replace(/'/g,"\\'")+"','"+s.date+"',"+s.estimated_cost_usd+")";
+    var onclick="openSessionTurns('"+_esc(s.session_id).replace(/'/g,"\\'")+"','"+_esc(s.project_name).replace(/'/g,"\\'")+"','"+s.date+"',"+s.estimated_cost_usd+")";
     return '<tr style="cursor:pointer" onclick="'+onclick+'" title="点击查看任务明细">' +
       '<td class="col-rank">'+(i+1)+'</td>' +
       '<td class="col-project" title="'+_esc(s.project_name)+'">'+_esc(s.project_name)+'</td>' +

@@ -165,11 +165,6 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
     parts.append('  <div class="topbar-spacer"></div>')
     if back_url:
         parts.append(f'  <a class="topbar-back" href="{back_url}">← 返回</a>')
-    parts.append('  <a class="topbar-btn" href="/deploy" title="部署" style="text-decoration:none">'
-                  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-                  '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>'
-                  '<line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>'
-                  '</svg></a>')
     if not hide_dev:
         parts.append('  <a class="topbar-btn" href="/dev" title="终端" style="text-decoration:none">'
                       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'

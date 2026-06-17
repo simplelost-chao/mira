@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import ipaddress
 import re
+import secrets
 import shutil
 import subprocess
 import urllib.error
@@ -137,20 +138,22 @@ def _start_ttyd() -> None:
 
     _ttyd_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+def _ensure_ttyd_running() -> None:
+    """Start ttyd when Mira has no live child process to serve terminals."""
+    if _ttyd_proc is None or _ttyd_proc.poll() is not None:
+        _start_ttyd()
+
+
 def _watch_ttyd() -> None:
-    """Restart ttyd if it dies or stops responding with Mira's configured auth."""
+    """Restart ttyd only after its process exits.
+
+    HTTP health probes can fail independently of the already established
+    terminal WebSocket. Restarting a live ttyd on such a failure disconnects
+    every browser session and leaves ttyd's reconnect prompt in a loop.
+    """
     while True:
         time.sleep(5)
-        if _ttyd_proc and _ttyd_proc.poll() is not None:
-            _start_ttyd()
-        elif not _ttyd_healthy():
-            if _ttyd_proc and _ttyd_proc.poll() is None:
-                _ttyd_proc.terminate()
-                try:
-                    _ttyd_proc.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    _ttyd_proc.kill()
-            _start_ttyd()
+        _ensure_ttyd_running()
 
 
 def _migrate_remote_passwords() -> None:
@@ -284,7 +287,8 @@ _CACHE_TTL = 120  # seconds
 _refreshing = False
 
 # ── Agent ──────────────────────────────────────────────────────────────────────
-_alerts: list[str] = []
+_alerts: list[str] = []        # 看门狗运行时事件（append-only，读取时消费）
+_anomalies: list[str] = []     # 异常扫描快照（每次重建整体替换，读取时消费）
 _alerts_lock = threading.Lock()
 
 # ── Base-service monitor ───────────────────────────────────────────────────────
@@ -321,10 +325,24 @@ def _is_admin(request: Request) -> bool:
 _BLOCKED_PATTERNS = [
     "rm ", "rmdir", "mv ", "cp ", "> /", ">> /",
     "mkfs", "dd if=", ":(){ ", "sudo ", "chmod ", "chown ",
-    "curl | ", "wget | ", "curl|", "wget|", "|bash", "|sh",
     "eval ", "exec ", "shutdown", "reboot", "halt", "kill -9",
     "DROP TABLE", "DELETE FROM",
 ]
+
+# 管道到解释器（含任意空白：`| sh`、`|sh`、`|\tpython3`）——比写死字符串更难绕过
+_PIPE_TO_INTERPRETER = re.compile(r"\|\s*(sh|bash|zsh|ksh|python3?|node|perl|ruby|php|lua)\b")
+
+
+def _command_is_blocked(command: str):
+    """Return the matched danger marker if command is blocked, else None.
+    归一化空白后匹配，防止用 Tab/多空格绕过带空格的模式。"""
+    norm = re.sub(r"\s+", " ", command.strip().lower())
+    for pattern in _BLOCKED_PATTERNS:
+        if pattern.lower() in norm:
+            return pattern
+    if _PIPE_TO_INTERPRETER.search(norm):
+        return "| <解释器>"
+    return None
 
 _SHELL_TOOL = {
     "type": "function",
@@ -421,11 +439,9 @@ def _build_system_prompt(projects: list[dict]) -> str:
 
 def _run_shell(command: str, working_dir: str = "~") -> str:
     import subprocess, os
-    stripped = command.strip().lower()
-    # Block dangerous patterns
-    for pattern in _BLOCKED_PATTERNS:
-        if pattern.lower() in stripped:
-            return f"[拒绝执行] 包含危险操作：{pattern}"
+    blocked = _command_is_blocked(command)
+    if blocked:
+        return f"[拒绝执行] 包含危险操作：{blocked}"
     cwd = os.path.expanduser(working_dir)
     try:
         result = subprocess.run(
@@ -444,7 +460,7 @@ def _run_shell(command: str, working_dir: str = "~") -> str:
 
 def _check_anomalies(projects: list[dict]) -> None:
     from datetime import datetime
-    global _alerts
+    global _anomalies
     new_alerts = []
     for p in projects:
         if p.get("status") != "active":
@@ -458,10 +474,11 @@ def _check_anomalies(projects: list[dict]) -> None:
             new_alerts.append(f"{p['name']} 本月没有新提交")
     ts = datetime.now().strftime("%H:%M")
     with _alerts_lock:
-        _alerts.clear()
-        _alerts.extend(f"[{ts}] {a}" for a in new_alerts)
-        if len(_alerts) > 50:
-            del _alerts[:-50]
+        # 只替换异常快照，绝不触碰看门狗线程写入的运行时事件（_alerts）
+        _anomalies.clear()
+        _anomalies.extend(f"[{ts}] {a}" for a in new_alerts)
+        if len(_anomalies) > 50:
+            del _anomalies[:-50]
 
 
 
@@ -485,7 +502,33 @@ def _auto_restart(name: str, cmd: str, port: int | None, sound: str) -> None:
         with _alerts_lock:
             _alerts.append(f"[{ts}] {name} 自动重启后端口仍无响应")
     except Exception as e:
-        pass
+        ts = datetime.now().strftime("%H:%M")
+        with _alerts_lock:
+            _alerts.append(f"[{ts}] {name} 自动重启失败：{e}")
+
+
+def _establish_baseline(cfg: dict) -> None:
+    """Startup baseline pass. A service already down at this point (e.g. after
+    a machine reboot) never produces an up→down transition for the monitor
+    loop, so restart it here directly when it has a restart_cmd."""
+    from datetime import datetime
+    sound = cfg.get("notification_sound", "Pop")
+    for svc in cfg.get("base_services") or []:
+        name = svc.get("name", "")
+        port, process = svc.get("port"), svc.get("process")
+        up = (_check_port(port) if port else False) or \
+             (_check_process(process) if process else False)
+        _base_svc_state[name] = up
+        restart_cmd = svc.get("restart_cmd", "").strip()
+        if not up and restart_cmd:
+            ts = datetime.now().strftime("%H:%M")
+            with _alerts_lock:
+                _alerts.append(f"[{ts}] {name} 启动检查发现服务未运行，正在自动重启…")
+            threading.Thread(
+                target=_auto_restart,
+                args=(name, restart_cmd, port, sound),
+                daemon=True,
+            ).start()
 
 
 def _monitor_base_services_loop() -> None:
@@ -495,15 +538,9 @@ def _monitor_base_services_loop() -> None:
     from vibe.config import load_global_config
     global _base_svc_state
 
-    # ── Establish baseline (no notifications on first pass) ───────────────────
+    # ── Establish baseline (restarts services already down, e.g. after reboot) ─
     try:
-        cfg = load_global_config()
-        for svc in cfg.get("base_services") or []:
-            name = svc.get("name", "")
-            port, process = svc.get("port"), svc.get("process")
-            up = (_check_port(port) if port else False) or \
-                 (_check_process(process) if process else False)
-            _base_svc_state[name] = up
+        _establish_baseline(load_global_config())
     except Exception:
         pass
 
@@ -655,6 +692,22 @@ def _rebuild_and_persist() -> list[dict]:
             return projects
         finally:
             _refreshing = False
+
+
+def _insert_project_into_cache(path: str) -> None:
+    """Collect a single (newly created) project and splice it into the cache,
+    so it is visible immediately without waiting for the full rebuild."""
+    from vibe.config import load_project_config
+    global _cache
+    p = Path(path)
+    try:
+        vibe_cfg = load_project_config(p)
+    except RuntimeError:
+        vibe_cfg = None
+    name = vibe_cfg.get("name", p.name) if vibe_cfg else p.name
+    info = _collect_one({"path": str(p), "name": name, "vibe_config": vibe_cfg})
+    with _cache_lock:
+        _cache = [c for c in _cache if c.get("path") != str(p)] + [info]
 
 
 def get_all_projects(force: bool = False) -> list[dict]:
@@ -835,6 +888,8 @@ def create_project_endpoint(request: Request, body: dict):
         raise HTTPException(status_code=400, detail="name 不能为空")
     if not desc:
         raise HTTPException(status_code=400, detail="description 不能为空")
+    if domain and "." not in domain:
+        raise HTTPException(status_code=400, detail=f"域名格式不对：{domain}（应形如 myapp.zhuchao.life，留空表示无域名）")
 
     from vibe.ai_brainstorm import create_project
     from vibe.config import load_global_config
@@ -857,6 +912,13 @@ def create_project_endpoint(request: Request, body: dict):
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"创建失败: {e}")
+
+    # 新项目先单独采集并插入缓存，跳回首页立即可见；全量重建仍走后台
+    try:
+        _insert_project_into_cache(result["path"])
+        log_lines.append("✓ 已加入项目列表")
+    except Exception as e:
+        log_lines.append(f"⚠ 项目列表缓存更新失败（稍后会自动刷新）: {e}")
 
     import threading
     threading.Thread(target=_rebuild_and_persist, daemon=True).start()
@@ -934,6 +996,91 @@ def get_design_doc(request: Request, project_id: str, filename: str):
     raise HTTPException(status_code=404, detail="Project not found")
 
 
+# ── 设计文档公开分享(免登录只读链接)──────────────────────────────────────────
+
+_SHARE_404_HTML = (
+    "<!DOCTYPE html><html lang=zh><head><meta charset=utf-8>"
+    "<meta name=viewport content='width=device-width,initial-scale=1'>"
+    "<title>链接失效 · Mira</title>"
+    "<style>body{background:#080c14;color:#7a8499;font-family:monospace;"
+    "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
+    "div{text-align:center}h1{color:#eef1f7;font-size:18px;margin:0 0 8px}</style></head>"
+    "<body><div><h1>链接已失效</h1><p>该分享不存在或已被取消。</p></div></body></html>"
+)
+
+
+def _read_doc_shares() -> list[dict]:
+    _, data = _read_vibe_yaml()
+    return data.get("doc_shares", [])
+
+
+@api.post("/api/projects/{project_id}/design-docs/{filename}/share")
+def share_design_doc(request: Request, project_id: str, filename: str):
+    """为某个设计文档生成公开分享 token(幂等)。公开页免登录、内容实时。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    proj = next((p for p in get_all_projects() if p["id"] == project_id), None)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not any(d.get("filename") == filename for d in proj.get("design_docs", [])):
+        raise HTTPException(status_code=404, detail="Design doc not found")
+    cfg_path, data = _read_vibe_yaml()
+    shares = data.get("doc_shares", [])
+    existing = next((s for s in shares
+                     if s.get("project") == project_id and s.get("filename") == filename), None)
+    if existing:
+        return {"token": existing["token"]}
+    token = secrets.token_urlsafe(16)
+    shares.append({"token": token, "project": project_id,
+                   "filename": filename, "created_at": int(time.time())})
+    data["doc_shares"] = shares
+    _write_vibe_yaml(cfg_path, data)
+    return {"token": token}
+
+
+@api.delete("/api/projects/{project_id}/design-docs/{filename}/share")
+def unshare_design_doc(request: Request, project_id: str, filename: str):
+    """撤销某个设计文档的分享;公开链接立即失效。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    cfg_path, data = _read_vibe_yaml()
+    shares = data.get("doc_shares", [])
+    new_list = [s for s in shares
+                if not (s.get("project") == project_id and s.get("filename") == filename)]
+    if len(new_list) == len(shares):
+        raise HTTPException(status_code=404, detail="该文档未分享")
+    data["doc_shares"] = new_list
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
+
+
+@api.get("/api/projects/{project_id}/shares")
+def list_project_shares(request: Request, project_id: str):
+    """返回本项目已分享文档的 {filename: token} 映射,供设计文档页显示分享状态。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    return {s["filename"]: s["token"] for s in _read_doc_shares()
+            if s.get("project") == project_id}
+
+
+@api.get("/share/{token}", response_class=HTMLResponse)
+def public_shared_doc(token: str):
+    """公开的设计文档只读页 —— 免登录,任何人可访问。内容实时读取当前文档。"""
+    share = next((s for s in _read_doc_shares() if s.get("token") == token), None)
+    doc = None
+    proj_name = ""
+    if share:
+        proj = next((p for p in get_all_projects() if p["id"] == share.get("project")), None)
+        if proj:
+            proj_name = proj.get("name", share["project"])
+            doc = next((d for d in proj.get("design_docs", [])
+                        if d.get("filename") == share.get("filename")), None)
+    if not doc:
+        return HTMLResponse(_SHARE_404_HTML, status_code=404)
+    from vibe.share_page import render_share_page
+    return HTMLResponse(render_share_page(doc, proj_name))
+
+
 @api.get("/api/projects/{project_id}/prompts")
 def get_project_prompts(request: Request, project_id: str):
     """Return user prompts for a project from the session index DB."""
@@ -987,9 +1134,27 @@ def github_trending(period: str = "weekly"):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+def _remove_deployment_entry(project: str) -> None:
+    """从 vibe.yaml 删掉指定项目(按 project 名/folder 名)的部署条目;没有则无操作。"""
+    cfg_path, data = _read_vibe_yaml()
+    deployments = data.get("deployments", [])
+    new_list = [d for d in deployments if d.get("project") != project]
+    if len(new_list) != len(deployments):
+        data["deployments"] = new_list
+        _write_vibe_yaml(cfg_path, data)
+
+
+def _remove_project_from_cache(path: str) -> None:
+    """从内存缓存即时剔除一个项目,避免删后最长等一个 TTL 才从首页消失。"""
+    global _cache
+    with _cache_lock:
+        _cache = [c for c in _cache if c.get("path") != str(path)]
+
+
 @api.delete("/api/projects/{project_id}")
 def delete_project(request: Request, project_id: str):
-    """Hide a project from discovery by adding it to excluded_paths."""
+    """彻底移除项目:加入 excluded_paths 永久排除发现、清掉它的部署条目、
+    即时从缓存剔除。不删除磁盘文件(可从 vibe.yaml 删掉那行恢复显示)。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.config import exclude_project
@@ -997,6 +1162,8 @@ def delete_project(request: Request, project_id: str):
     for p in projects:
         if p["id"] == project_id:
             exclude_project(p["path"])
+            _remove_deployment_entry(project_id)
+            _remove_project_from_cache(p["path"])
             return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Project not found")
 
@@ -1356,14 +1523,35 @@ def _get_claude_oauth_token() -> tuple[str, str] | None:
         return None
 
 
+# Account-global Claude usage 变化很慢(5h/7d 才 reset),而 Anthropic 的 OAuth
+# usage 接口有限流(429)。用 TTL 缓存把对上游的请求压到最多每 5 分钟一次,
+# 并在上游抖动时返回上次成功值(stale),避免前端拿到 error。
+_claude_usage_cache = {"ts": 0.0, "data": None}
+_CLAUDE_USAGE_TTL = 300  # seconds
+
+
 @api.get("/api/claude-usage")
 def claude_usage(request: Request):
-    """Get Claude Code usage via Anthropic OAuth usage API."""
+    """Get Claude Code usage via Anthropic OAuth usage API (TTL-cached, stale-on-error)."""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
+
+    import time as _time
+    now = _time.time()
+    cached = _claude_usage_cache["data"]
+    # 缓存未过期:直接返回,不打上游
+    if cached is not None and (now - _claude_usage_cache["ts"]) < _CLAUDE_USAGE_TTL:
+        return cached
+
+    def _stale_or_error(err_code, err_msg):
+        # 上游失败时:有旧值就返回旧值(标记 stale),否则才返回错误
+        if cached is not None:
+            return {**cached, "_stale": True}
+        return {"error": err_code, "message": err_msg}
+
     creds = _get_claude_oauth_token()
     if not creds:
-        return {"error": "no_credentials", "message": "无法获取 Claude OAuth token"}
+        return _stale_or_error("no_credentials", "无法获取 Claude OAuth token")
     token, sub_type = creds
     import httpx
     from datetime import datetime as _dt
@@ -1374,10 +1562,10 @@ def claude_usage(request: Request):
             timeout=15,
         )
         if resp.status_code != 200:
-            return {"error": "api_error", "message": f"OAuth usage API returned {resp.status_code}"}
+            return _stale_or_error("api_error", f"OAuth usage API returned {resp.status_code}")
         data = resp.json()
     except Exception:
-        return {"error": "api_error", "message": "Failed to reach Anthropic OAuth usage API"}
+        return _stale_or_error("api_error", "Failed to reach Anthropic OAuth usage API")
 
     def _parse_window(win):
         if not win:
@@ -1404,6 +1592,8 @@ def claude_usage(request: Request):
         win = _parse_window(data.get(key))
         if win:
             result[key] = win
+    _claude_usage_cache["ts"] = now
+    _claude_usage_cache["data"] = result
     return result
 
 
@@ -1500,13 +1690,16 @@ def codex_usage(request: Request):
     if not db_path.exists():
         return {"error": "no_db", "message": "Codex logs DB not found"}
     try:
+        # 注意：with sqlite3.connect() 只管理事务、不关闭连接，必须显式 close
         conn = sqlite3.connect(str(db_path), timeout=3)
-        row = conn.execute(
-            "SELECT feedback_log_body FROM logs "
-            "WHERE feedback_log_body LIKE '%rate_limits%' AND feedback_log_body LIKE '%used_percent%' "
-            "ORDER BY ts DESC LIMIT 1"
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT feedback_log_body FROM logs "
+                "WHERE feedback_log_body LIKE '%rate_limits%' AND feedback_log_body LIKE '%used_percent%' "
+                "ORDER BY ts DESC LIMIT 1"
+            ).fetchone()
+        finally:
+            conn.close()
         if not row:
             return {"error": "no_data"}
         def _parse_window(text, name):
@@ -1727,24 +1920,24 @@ async def restart_base_service(name: str, request: Request):
 
 
 def _check_service_statuses() -> dict:
-    """Lightweight port check for all discovered projects. Returns {project_id: {is_running, port}}."""
-    import psutil
-    from vibe.config import load_global_config
-    from vibe.scanner import discover_projects
-    from vibe.collectors.service import collect_service
+    """Lightweight 30s liveness check for /ws/status. Returns {project_id: {is_running, port, ...}}.
 
-    cfg = load_global_config()
-    discovered = discover_projects(cfg["scan_dirs"], cfg["exclude"],
-                                   cfg.get("extra_projects"), cfg.get("excluded_paths"))
+    复用 _cache 拿项目列表与已解析端口，只做一次 TCP 探活；不再每30s扫盘
+    (discover_projects) 也不跑完整 collect_service(全进程遍历 + 串行域名HTTPS探测)。
+    端口/进程名/domain_ok 取自 120s 全量重建的快照即可——前端这个推送只用 is_running 和 port。"""
     result = {}
-    for item in discovered:
-        p = Path(item["path"])
-        try:
-            svc = collect_service(p, item["vibe_config"])
-            result[p.name] = {"is_running": svc.is_running, "port": svc.port,
-                               "process_name": svc.process_name, "domain_ok": svc.domain_ok}
-        except Exception:
-            result[p.name] = {"is_running": False, "port": None, "process_name": None}
+    for p in get_all_projects():
+        svc = p.get("service") or {}
+        port = svc.get("port")
+        pid = p.get("id") or Path(p["path"]).name
+        # 有端口就实时 TCP 探活；无端口的服务回落到缓存里的 is_running
+        is_running = _check_port(port) if port else bool(svc.get("is_running"))
+        result[pid] = {
+            "is_running": is_running,
+            "port": port,
+            "process_name": svc.get("process_name"),
+            "domain_ok": svc.get("domain_ok"),
+        }
     return result
 
 
@@ -2200,6 +2393,14 @@ def _resolve_project_path(request: Request, project_id: str) -> Path:
 _ENV_PATTERNS = {".env", ".env.local", ".env.production", ".env.development", ".env.staging", ".env.test"}
 _ENV_EXCLUDE = {".env.example", ".env.sample", ".env.template"}
 
+
+def _is_valid_env_filename(name: str) -> bool:
+    """与 get_env_files 的列举判定保持一致：只接受 .env 系列文件，
+    防止 save 接口被用来覆写 vibe.yaml / main.py 等任意文件。"""
+    if not name or ".." in name or "/" in name:
+        return False
+    return name in _ENV_PATTERNS or (name.startswith(".env.") and name not in _ENV_EXCLUDE)
+
 @api.get("/api/settings/projects/{project_id}/env-files")
 def get_env_files(request: Request, project_id: str, reveal: bool = False):
     """List .env files with key-value pairs."""
@@ -2232,8 +2433,8 @@ def save_env_file(request: Request, project_id: str, body: dict):
     """Save a single .env file."""
     proj_path = _resolve_project_path(request, project_id)
     filename = body.get("filename", "")
-    if not filename or ".." in filename or "/" in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not _is_valid_env_filename(filename):
+        raise HTTPException(status_code=400, detail="只允许写入 .env 系列文件")
     entries = body.get("entries", [])
     lines = []
     for e in entries:
@@ -2747,6 +2948,131 @@ def dev_panes_list(request: Request):
     return result
 
 
+# ── Dev 侧栏:项目合并分组 + 自定义命名(纯展示,存 vibe.yaml)──────────────────
+
+@api.get("/api/dev/groups")
+def get_dev_groups(request: Request):
+    """返回 dev 侧栏的合并文件夹 + 项目自定义名。{groups:[{id,name,projects}], names:{pid:name}}"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    _, data = _read_vibe_yaml()
+    return {"groups": data.get("dev_groups", []),
+            "names": data.get("dev_project_names", {})}
+
+
+@api.post("/api/dev/groups/merge")
+def merge_dev_groups(request: Request, body: dict):
+    """把 source 项目并入 target 所在文件夹(没有则新建)。纯展示分组,不动项目本身。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    source = (body.get("source") or "").strip()
+    target = (body.get("target") or "").strip()
+    if not source or not target or source == target:
+        raise HTTPException(status_code=400, detail="source/target 无效")
+    cfg_path, data = _read_vibe_yaml()
+    groups = data.get("dev_groups", [])
+    # 先把 source 从它当前所在文件夹移除(支持跨文件夹拖拽)
+    for g in groups:
+        if source in g.get("projects", []):
+            g["projects"].remove(source)
+    tgt = next((g for g in groups if target in g.get("projects", [])), None)
+    if tgt:
+        if source not in tgt["projects"]:
+            tgt["projects"].append(source)
+    else:
+        groups.append({"id": secrets.token_urlsafe(8),
+                       "name": (body.get("name") or "新分组").strip(),
+                       "projects": [target, source]})
+    # 解散只剩 ≤1 个项目的空壳文件夹
+    groups = [g for g in groups if len(g.get("projects", [])) >= 2]
+    data["dev_groups"] = groups
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True, "groups": groups}
+
+
+@api.post("/api/dev/groups/unmerge")
+def unmerge_dev_group(request: Request, body: dict):
+    """把一个项目从所在文件夹移出;文件夹剩 ≤1 个项目时解散。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    project = (body.get("project") or "").strip()
+    cfg_path, data = _read_vibe_yaml()
+    groups = data.get("dev_groups", [])
+    for g in groups:
+        if project in g.get("projects", []):
+            g["projects"].remove(project)
+    groups = [g for g in groups if len(g.get("projects", [])) >= 2]
+    data["dev_groups"] = groups
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True, "groups": groups}
+
+
+@api.post("/api/dev/groups/rename")
+def rename_dev_group(request: Request, body: dict):
+    """重命名合并文件夹。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    gid = (body.get("id") or "").strip()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name 必填")
+    cfg_path, data = _read_vibe_yaml()
+    groups = data.get("dev_groups", [])
+    g = next((g for g in groups if g.get("id") == gid), None)
+    if not g:
+        raise HTTPException(status_code=404, detail="分组不存在")
+    g["name"] = name
+    data["dev_groups"] = groups
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
+
+
+@api.post("/api/dev/project-name")
+def set_dev_project_name(request: Request, body: dict):
+    """给项目设/清 dev 侧栏自定义显示名。name 为空则清除。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    pid = (body.get("project_id") or "").strip()
+    name = (body.get("name") or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="project_id 必填")
+    cfg_path, data = _read_vibe_yaml()
+    names = data.get("dev_project_names", {})
+    if name:
+        names[pid] = name
+    else:
+        names.pop(pid, None)
+    data["dev_project_names"] = names
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
+
+
+@api.get("/api/dev/project-options")
+def dev_project_options(request: Request):
+    """Return a non-blocking cache snapshot for the new-terminal dialog."""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+
+    with _cache_lock:
+        projects = list(_cache)
+
+    result = []
+    for project in projects:
+        path = project.get("path")
+        if not path:
+            continue
+        claude_last = str((project.get("claude_activity") or {}).get("last_session") or "")
+        codex_last = str((project.get("codex_activity") or {}).get("last_session") or "")
+        result.append({
+            "id": project.get("id") or Path(path).name,
+            "name": project.get("name") or project.get("id") or Path(path).name,
+            "path": path,
+            "last_activity": max(claude_last, codex_last),
+        })
+    result.sort(key=lambda project: project["last_activity"], reverse=True)
+    return result
+
+
 @api.get("/api/dev/pane-tokens")
 def dev_pane_tokens(request: Request, target: str = "", tool: str = ""):
     """Return token stats for the latest session in this pane's CWD."""
@@ -2933,9 +3259,9 @@ async def terminals_output(request: Request, target: str, lines: int = 200):
 async def terminal_stream_ws(ws: WebSocket, target: str):
     """Stream terminal output via WebSocket for mobile clients.
 
-    Uses capture-pane with ANSI codes every 200ms and only sends when
-    content changes. This gives <200ms latency real-time streaming without
-    sharing the ttyd PTY (so mobile and desktop are fully independent).
+    Uses adaptive capture-pane polling and only sends when content changes.
+    Active terminals refresh at 25 FPS for smooth typing, then back off when
+    idle so mobile and desktop remain independent without constant high CPU.
     """
     # WS 认证：优先检查 header，兼容 query param（浏览器 WS 无法设 header）
     ws_token = ws.headers.get("x-admin-token") or ws.query_params.get("token", "")
@@ -2987,6 +3313,7 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
 
     from vibe.tmux_bridge import capture_pane
     prev_hash = ""
+    last_change_at = time.monotonic()
     import logging
     logger = logging.getLogger(__name__)
     try:
@@ -2995,8 +3322,10 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
             h = hashlib.md5(text.encode()).hexdigest()
             if h != prev_hash:
                 prev_hash = h
+                last_change_at = time.monotonic()
                 await ws.send_text(text)
-            await asyncio.sleep(0.2)
+            active = (time.monotonic() - last_change_at) < 1.5
+            await asyncio.sleep(0.04 if active else 0.16)
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -3081,8 +3410,9 @@ def get_alerts(request: Request):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     with _alerts_lock:
-        current = list(_alerts)
+        current = list(_alerts) + list(_anomalies)
         _alerts.clear()
+        _anomalies.clear()
     return {"alerts": current}
 
 
@@ -3230,6 +3560,42 @@ async def ws_service_status(websocket: WebSocket):
 
 
 # ── ttyd HTTP proxy ─────────────────────────────────────────────────────────────
+
+# Injected before ttyd's application script. It reports connection state to the
+# parent dev page, keeps ttyd's automatic reconnect enabled after socket errors,
+# and hides ttyd's text overlays (Connection Closed / Press Enter to Reconnect).
+_TTYD_CONNECTION_INJECT = """<script id="mira-ttyd-connection">
+(function(){
+var NativeWebSocket=window.WebSocket;
+function notify(connected){
+  try{window.parent.postMessage({type:'mira-ttyd-connection',connected:connected},'*');}catch(_){}
+}
+function MiraWebSocket(url,protocols){
+  var ws=protocols===undefined?new NativeWebSocket(url):new NativeWebSocket(url,protocols);
+  if(String(url).indexOf('/terminal/ws')!==-1){
+    var nativeAdd=ws.addEventListener.bind(ws);
+    nativeAdd('open',function(){notify(true);});
+    nativeAdd('close',function(){notify(false);});
+    nativeAdd('error',function(){notify(false);});
+    // ttyd disables automatic reconnect when its error listener runs. The
+    // close event still follows and will use ttyd's normal reconnect path.
+    ws.addEventListener=function(type,listener,options){
+      if(type==='error')return;
+      return nativeAdd(type,listener,options);
+    };
+  }
+  return ws;
+}
+MiraWebSocket.prototype=NativeWebSocket.prototype;
+Object.setPrototypeOf(MiraWebSocket,NativeWebSocket);
+window.WebSocket=MiraWebSocket;
+var style=document.createElement('style');
+style.textContent='.xterm>div[style*="font-size: xx-large"]{display:none!important}';
+document.head.appendChild(style);
+notify(false);
+})();
+</script>"""
+
 
 # Injected into ttyd's HTML so the terminal follows Mira's active skin.
 # Runs inside the iframe: reads localStorage, polls for the xterm Terminal
@@ -3407,9 +3773,13 @@ async def ttyd_http_proxy(path: str, request: Request):
     skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length", "www-authenticate"}
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
     content = resp.content
-    # Inject theme script into the ttyd HTML page
-    if "text/html" in resp.headers.get("content-type", "") and b"</body>" in content:
-        content = content.replace(b"</body>", _TTYD_THEME_INJECT.encode() + b"</body>", 1)
+    # Connection interception must run before ttyd creates its WebSocket. Theme
+    # sync can run after the application has mounted the xterm instance.
+    if "text/html" in resp.headers.get("content-type", ""):
+        if b"</head>" in content:
+            content = content.replace(b"</head>", _TTYD_CONNECTION_INJECT.encode() + b"</head>", 1)
+        if b"</body>" in content:
+            content = content.replace(b"</body>", _TTYD_THEME_INJECT.encode() + b"</body>", 1)
     return Response(content=content, status_code=resp.status_code, headers=headers)
 
 
@@ -3489,7 +3859,9 @@ async def ttyd_ws_proxy(websocket: WebSocket):
         logger.warning("ttyd ws proxy closed: %s", e)
     finally:
         try:
-            await websocket.close()
+            # ttyd automatically reconnects abnormal closures. A normal 1000
+            # close makes its UI wait for Enter instead.
+            await websocket.close(code=1012, reason="Terminal bridge reconnect")
         except Exception:
             pass
 

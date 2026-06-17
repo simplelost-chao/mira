@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from vibe.main import api
+from vibe import main
 
 client = TestClient(api)
 
@@ -90,6 +91,22 @@ def test_terminals_list_empty():
     assert resp.json() == []
 
 
+def test_dev_project_options_returns_lightweight_local_projects():
+    projects = [{
+        'id': 'mira', 'name': 'Mira', 'path': '/projects/mira',
+        'description': 'large field that should not be returned',
+        'claude_activity': {'last_session': '2026-06-10T10:00:00Z'},
+    }]
+    with patch('vibe.main._is_admin', return_value=True), \
+         patch('vibe.main._cache', projects):
+        resp = client.get('/api/dev/project-options', headers={'X-Admin-Token': 'x'})
+    assert resp.status_code == 200
+    assert resp.json() == [{
+        'id': 'mira', 'name': 'Mira', 'path': '/projects/mira',
+        'last_activity': '2026-06-10T10:00:00Z',
+    }]
+
+
 def test_terminals_register_and_list():
     fake_pane = {'target': 'work:0.0', 'label': 'test', 'waiting': False}
     with patch('vibe.main._is_admin', return_value=True), \
@@ -158,6 +175,28 @@ def test_terminals_send_empty_keys():
             headers={'X-Admin-Token': 'x'},
         )
     assert resp.status_code == 400
+
+
+def test_ttyd_watch_keeps_live_process_when_http_probe_fails():
+    live_proc = MagicMock()
+    live_proc.poll.return_value = None
+    with patch('vibe.main._ttyd_proc', live_proc), \
+         patch('vibe.main._ttyd_healthy', return_value=False) as mock_healthy, \
+         patch('vibe.main._start_ttyd') as mock_start:
+        from vibe.main import _ensure_ttyd_running
+        _ensure_ttyd_running()
+    mock_healthy.assert_not_called()
+    mock_start.assert_not_called()
+
+
+def test_ttyd_watch_restarts_exited_process():
+    exited_proc = MagicMock()
+    exited_proc.poll.return_value = 1
+    with patch('vibe.main._ttyd_proc', exited_proc), \
+         patch('vibe.main._start_ttyd') as mock_start:
+        from vibe.main import _ensure_ttyd_running
+        _ensure_ttyd_running()
+    mock_start.assert_called_once_with()
 
 
 def test_stats_no_auth():
@@ -284,9 +323,60 @@ def test_deploy_page_renders():
     assert 'id="deploy-cards"' in body
 
 
-def test_topbar_has_deploy_link():
+def test_topbar_has_no_deploy_link():
+    """部署入口已从 topbar 右上角移除。"""
     from vibe.topbar import topbar_html
-    assert '/deploy' in topbar_html(title="x")
+    assert '/deploy' not in topbar_html(title="x")
+
+
+def test_detail_page_has_remove_button():
+    """详情页(编辑弹窗)应有'移除项目'入口,走二次确认后调用 DELETE /api/projects。"""
+    from vibe.detail_page import render_detail_page
+    html = render_detail_page("foo", "Foo")
+    assert '移除项目' in html
+    assert 'confirmDeleteProject' in html
+    assert "/api/projects/" in html and "method: 'DELETE'" in html
+
+
+def test_delete_project_excludes_removes_deployment_and_busts_cache(tmp_path):
+    """彻底移除项目:加入 excluded_paths(隐藏发现)、清掉它的部署条目、
+    即时从 _cache 剔除(不删磁盘文件)。"""
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text(
+        "excluded_paths: []\n"
+        "deployments:\n"
+        "  - project: ghost\n"
+        "    ports: [9001]\n"
+        "  - project: keep\n"
+        "    ports: [9002]\n"
+    )
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    excluded = []
+    ghost = {"id": "ghost", "path": str(tmp_path / "ghost")}
+    keep = {"id": "keep", "path": str(tmp_path / "keep")}
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main.get_all_projects", return_value=[ghost, keep]), \
+         patch("vibe.config.exclude_project", side_effect=lambda p: excluded.append(p)), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        main._cache = [dict(ghost), dict(keep)]
+        resp = client.delete("/api/projects/ghost", headers={"X-Admin-Token": "any"})
+        assert resp.status_code == 200
+        # 缓存即时剔除,无需等 120s TTL
+        assert all(c["id"] != "ghost" for c in main._cache)
+        assert any(c["id"] == "keep" for c in main._cache)
+
+    # 永久排除:确实对该项目路径调用了 exclude_project
+    assert excluded == [str(tmp_path / "ghost")]
+    # 部署条目:ghost 清掉、keep 保留
+    import yaml
+    persisted = yaml.safe_load(fake.read_text())
+    left = [d["project"] for d in persisted["deployments"]]
+    assert "ghost" not in left and "keep" in left
 
 
 def test_deployments_post_coerces_string_ports_to_int(tmp_path):
@@ -343,3 +433,235 @@ def test_deployments_put_coerces_string_ports(tmp_path):
     import yaml
     persisted = yaml.safe_load(fake.read_text())["deployments"][0]
     assert persisted["ports"] == [8080]
+
+
+# ── Design-doc 公开分享 ────────────────────────────────────────────────────────
+
+def _share_proj():
+    return {"id": "demo", "name": "Demo Proj", "design_docs": [
+        {"filename": "DESIGN.md", "title": "My Design", "content": "# Hello World", "mtime": 0},
+    ]}
+
+
+def test_share_design_doc_creates_token_and_is_idempotent(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("doc_shares: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main.get_all_projects", return_value=[_share_proj()]), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r1 = client.post("/api/projects/demo/design-docs/DESIGN.md/share",
+                         headers={"X-Admin-Token": "x"})
+        assert r1.status_code == 200
+        tok = r1.json()["token"]
+        assert tok
+        r2 = client.post("/api/projects/demo/design-docs/DESIGN.md/share",
+                         headers={"X-Admin-Token": "x"})
+        assert r2.json()["token"] == tok   # 幂等:同一文档复用同一 token
+
+    import yaml
+    shares = yaml.safe_load(fake.read_text())["doc_shares"]
+    assert len(shares) == 1
+    assert shares[0]["project"] == "demo" and shares[0]["filename"] == "DESIGN.md"
+
+
+def test_share_design_doc_404_for_missing_doc(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("doc_shares: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main.get_all_projects", return_value=[_share_proj()]), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/projects/demo/design-docs/NOPE.md/share",
+                        headers={"X-Admin-Token": "x"})
+    assert r.status_code == 404
+
+
+def test_unshare_design_doc_removes(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("doc_shares:\n  - token: tok1\n    project: demo\n    filename: DESIGN.md\n    created_at: 1\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.delete("/api/projects/demo/design-docs/DESIGN.md/share",
+                          headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+
+    import yaml
+    assert yaml.safe_load(fake.read_text())["doc_shares"] == []
+
+
+def test_list_project_shares(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("doc_shares:\n  - token: tok1\n    project: demo\n    filename: DESIGN.md\n    created_at: 1\n"
+                    "  - token: tok2\n    project: other\n    filename: X.md\n    created_at: 1\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.get("/api/projects/demo/shares", headers={"X-Admin-Token": "x"})
+    assert r.status_code == 200
+    assert r.json() == {"DESIGN.md": "tok1"}   # 只返回本项目的
+
+
+def test_public_share_route_renders_without_auth(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("doc_shares:\n  - token: tok1\n    project: demo\n    filename: DESIGN.md\n    created_at: 1\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main.get_all_projects", return_value=[_share_proj()]), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.get("/share/tok1")   # 注意:无 admin token
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "My Design" in r.text                 # 标题渲染
+    assert "Hello World" in r.text                # 内容嵌入(供前端 markdown 渲染)
+
+
+def test_public_share_unknown_token_404(tmp_path):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text("doc_shares: []\n")
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+
+    with patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.get("/share/nope")
+    assert r.status_code == 404
+
+
+# ── Dev 侧栏:项目合并分组 + 自定义命名 ──────────────────────────────────────────
+
+def _yaml_tmp(tmp_path, text="{}\n"):
+    fake = tmp_path / "vibe.yaml"
+    fake.write_text(text)
+
+    def fake_read():
+        import yaml
+        return fake, (yaml.safe_load(fake.read_text()) or {})
+    return fake, fake_read
+
+
+def _load(fake):
+    import yaml
+    return yaml.safe_load(fake.read_text()) or {}
+
+
+def test_dev_merge_creates_folder_with_both(tmp_path):
+    fake, fake_read = _yaml_tmp(tmp_path, "dev_groups: []\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/dev/groups/merge",
+                        json={"source": "a", "target": "b", "name": "登录"},
+                        headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+    groups = _load(fake)["dev_groups"]
+    assert len(groups) == 1
+    assert groups[0]["name"] == "登录"
+    assert set(groups[0]["projects"]) == {"a", "b"}
+    assert groups[0]["id"]
+
+
+def test_dev_merge_adds_third_into_existing_folder(tmp_path):
+    fake, fake_read = _yaml_tmp(
+        tmp_path,
+        "dev_groups:\n  - id: g1\n    name: F\n    projects: [a, b]\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/dev/groups/merge",
+                        json={"source": "c", "target": "a"},
+                        headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+    groups = _load(fake)["dev_groups"]
+    assert len(groups) == 1
+    assert set(groups[0]["projects"]) == {"a", "b", "c"}
+
+
+def test_dev_merge_moves_project_between_folders(tmp_path):
+    fake, fake_read = _yaml_tmp(
+        tmp_path,
+        "dev_groups:\n"
+        "  - id: g1\n    name: F1\n    projects: [a, b]\n"
+        "  - id: g2\n    name: F2\n    projects: [c, d]\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        # 把 a 从 F1 拖到 F2(target d):a 离开 F1(只剩 b → 解散),加入 F2
+        r = client.post("/api/dev/groups/merge",
+                        json={"source": "a", "target": "d"},
+                        headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+    groups = {g["id"]: set(g["projects"]) for g in _load(fake)["dev_groups"]}
+    assert "g1" not in groups          # F1 只剩 b → 解散
+    assert groups["g2"] == {"c", "d", "a"}
+
+
+def test_dev_unmerge_dissolves_folder_when_one_left(tmp_path):
+    fake, fake_read = _yaml_tmp(
+        tmp_path,
+        "dev_groups:\n  - id: g1\n    name: F\n    projects: [a, b]\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/dev/groups/unmerge",
+                        json={"project": "a"}, headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+    assert _load(fake)["dev_groups"] == []   # 只剩 b → 解散
+
+
+def test_dev_rename_group(tmp_path):
+    fake, fake_read = _yaml_tmp(
+        tmp_path,
+        "dev_groups:\n  - id: g1\n    name: Old\n    projects: [a, b]\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/dev/groups/rename",
+                        json={"id": "g1", "name": "New"},
+                        headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+    assert _load(fake)["dev_groups"][0]["name"] == "New"
+
+
+def test_dev_project_name_set_and_clear(tmp_path):
+    fake, fake_read = _yaml_tmp(tmp_path, "{}\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        client.post("/api/dev/project-name",
+                    json={"project_id": "a", "name": "Plan A"},
+                    headers={"X-Admin-Token": "x"})
+        assert _load(fake)["dev_project_names"]["a"] == "Plan A"
+        client.post("/api/dev/project-name",
+                    json={"project_id": "a", "name": ""},
+                    headers={"X-Admin-Token": "x"})
+        assert "a" not in _load(fake).get("dev_project_names", {})
+
+
+def test_dev_groups_get_returns_groups_and_names(tmp_path):
+    fake, fake_read = _yaml_tmp(
+        tmp_path,
+        "dev_groups:\n  - id: g1\n    name: F\n    projects: [a, b]\n"
+        "dev_project_names:\n  a: Plan A\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.get("/api/dev/groups", headers={"X-Admin-Token": "x"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["groups"][0]["id"] == "g1"
+    assert body["names"]["a"] == "Plan A"

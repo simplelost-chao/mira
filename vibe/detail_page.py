@@ -93,6 +93,18 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   .doc-item.active {{ color: var(--accent); border-left-color: var(--accent); background: rgba(79,70,229,.06); }}
   .doc-item.stale {{ opacity: .55; }}
   .docs-body {{ padding: 32px 40px; overflow-y: auto; max-height: calc(100vh - 92px); }}
+  /* 设计文档公开分享条 —— 颜色全用主题变量,切主题一致 */
+  .share-row {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -10px 0 24px; }}
+  .share-badge {{ font-size: 11px; color: var(--green); font-weight: 600; white-space: nowrap; }}
+  .share-url {{ flex: 1; min-width: 150px; max-width: 380px; font-family: var(--mono); font-size: 11px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--sub); padding: 4px 8px; outline: none; }}
+  .share-btn {{ font-size: 11px; font-family: var(--mono); padding: 4px 10px; border-radius: var(--radius-sm);
+    background: none; border: 1px solid var(--border); color: var(--sub); cursor: pointer; transition: all .15s; white-space: nowrap; }}
+  .share-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .share-btn.danger {{ color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }}
+  .share-btn.danger:hover {{ border-color: var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }}
+  .share-hint {{ font-size: 11px; color: var(--muted); }}
   .doc-title {{ font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }}
   .doc-meta  {{ font-size: 11px; color: var(--muted); margin-bottom: 24px; }}
   .doc-content {{
@@ -232,6 +244,13 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   }}
   .modal-actions button.primary {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
   .modal-actions button:hover {{ opacity: 0.85; }}
+  /* danger (移除项目) — 用主题 --red 派生,切主题保持一致,不写死 */
+  /* hero 里的 🗑 移除:复用 .edit-btn 的布局,仅改成红色描边 */
+  .edit-btn.danger-btn {{ color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }}
+  .edit-btn.danger-btn:hover {{ color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }}
+  /* 确认弹窗里的实心红按钮 */
+  .modal-actions button.danger-btn.solid {{ background: var(--red); color: #fff; border-color: var(--red); }}
+  .modal-actions button.danger-btn.solid:hover {{ opacity: .85; }}
   .proj-desc {{ font-size: 12px; color: var(--sub); margin-bottom: 8px; line-height: 1.5; }}
   /* arch section */
   .arch-card {{
@@ -462,6 +481,8 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
 const PROJECT_ID = {repr(project_id)};
 window._INLINE_PROJECT = {inline_data};
 let projectData = null;
+let _docShares = {{}};   // {{filename: token}} — 已分享的设计文档
+let _curDocIdx = 0;      // 当前在 docs-body 显示的设计文档下标
 // Redirect #terminals to /dev?project=xxx
 if (location.hash === '#terminals') {{
   location.replace('/dev?project=' + encodeURIComponent({repr(project_id)}));
@@ -664,6 +685,7 @@ function simpleMarkdown(md) {{
     // Hero row
     const descText = p.description || '';
     const editBtn = _isAdmin ? `<button class="edit-btn" onclick="openEditModal()" title="编辑">✎ 编辑</button>` : '';
+    const delBtn = _isAdmin ? `<button class="edit-btn danger-btn" onclick="askDeleteProject()" title="从 Mira 移除此项目">🗑 移除</button>` : '';
     html += `<div class="hero-row">
       <div class="hero-left">
         <div class="proj-title">${{escHtml(p.name || '')}}</div>
@@ -673,6 +695,7 @@ function simpleMarkdown(md) {{
       </div>
       <div class="hero-right">
         ${{editBtn}}
+        ${{delBtn}}
         ${{p.path ? `<a class="term-qbtn" href="/dev?project=${{encodeURIComponent(PROJECT_ID)}}" title="在 Dev 页面打开该项目的终端">⬛ Dev</a>` : ''}}
         ${{caLastStr ? `<span class="claude-last">${{caLastStr}}</span>` : ''}}
       </div>
@@ -914,6 +937,36 @@ function closeEditModal() {{
   const m = document.querySelector('.modal-overlay');
   if (m) m.remove();
 }}
+
+// ── 移除项目(危险操作)──────────────────────────────────────────────────────
+function askDeleteProject() {{
+  const p = projectData || {{}};
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal-box">
+    <div class="modal-title">移除项目</div>
+    <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:16px">
+      确认从 Mira 移除 <b style="color:var(--text)">${{escHtml(p.name || PROJECT_ID)}}</b>？<br>
+      <span style="color:var(--muted);font-size:12px">仅从 Mira 隐藏并清掉其部署条目，<b>不会删除磁盘文件</b>。</span>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeEditModal()">取消</button>
+      <button class="danger-btn solid" onclick="confirmDeleteProject()">确认移除</button>
+    </div>
+  </div>`;
+  overlay.addEventListener('click', e => {{ if (e.target === overlay) closeEditModal(); }});
+  document.body.appendChild(overlay);
+}}
+async function confirmDeleteProject() {{
+  try {{
+    const res = await fetch(`/api/projects/${{encodeURIComponent(PROJECT_ID)}}`, {{
+      method: 'DELETE', headers: _authHeaders()
+    }});
+    if (res.ok) {{ location.href = '/'; return; }}   // 移除后回首页
+    const d = await res.json().catch(() => ({{}}));
+    alert('移除失败: ' + (d.detail || res.status));
+  }} catch(e) {{ alert('移除失败: ' + e.message); }}
+}}
 async function saveEditModal() {{
   const nameVal = (document.getElementById('edit-modal-name').value || '').trim();
   const descVal = (document.getElementById('edit-modal-desc').value || '').trim();
@@ -952,6 +1005,12 @@ async function renderDesign() {{
       const full = await res.json();
       projectData.design_docs = full.design_docs;
       projectData.plans = full.plans;
+    }} catch(e) {{ /* non-fatal */ }}
+  }}
+  if (_isAdmin) {{
+    try {{
+      const sres = await fetch(`/api/projects/${{PROJECT_ID}}/shares`, {{headers: _authHeaders()}});
+      if (sres.ok) _docShares = await sres.json();
     }} catch(e) {{ /* non-fatal */ }}
   }}
   const docs = (projectData && projectData.design_docs) || [];
@@ -997,12 +1056,65 @@ function showDoc(i) {{
   const docs = (projectData && projectData.design_docs) || [];
   const d = docs[i];
   if (!d) return;
+  _curDocIdx = i;
   document.querySelectorAll('.doc-item').forEach((el,j) => el.classList.toggle('active', j===i));
   const mtime = new Date(d.mtime * 1000).toLocaleDateString('zh-CN');
   document.getElementById('docs-body').innerHTML = `
     <div class="doc-title">${{escHtml(d.title || d.filename)}}</div>
     <div class="doc-meta">${{escHtml(d.filename)}} · ${{mtime}}${{d.possibly_stale?' · <span style="color:var(--red)">⚠ 可能已过期</span>':''}}</div>
+    ${{_isAdmin ? _shareControlHtml(d.filename) : ''}}
     <div class="doc-content">${{simpleMarkdown(d.content)}}</div>`;
+}}
+
+// ── 设计文档公开分享 ──────────────────────────────────────────────────────────
+function _shareControlHtml(filename) {{
+  const tok = _docShares[filename];
+  if (tok) {{
+    const url = location.origin + '/share/' + tok;
+    return `<div class="share-row">
+      <span class="share-badge">🔗 已公开分享</span>
+      <input id="share-url-input" class="share-url" readonly value="${{escHtml(url)}}" onclick="this.select()">
+      <button class="share-btn" onclick="copyShareLink(this)">复制</button>
+      <button class="share-btn danger" onclick="unshareDoc()">取消分享</button>
+    </div>`;
+  }}
+  return `<div class="share-row">
+    <button class="share-btn" onclick="shareDoc()">🔗 生成公开链接</button>
+    <span class="share-hint">任何人可访问 · 无需密码</span>
+  </div>`;
+}}
+async function shareDoc() {{
+  const docs = (projectData && projectData.design_docs) || [];
+  const d = docs[_curDocIdx];
+  if (!d) return;
+  try {{
+    const res = await fetch(`/api/projects/${{PROJECT_ID}}/design-docs/${{encodeURIComponent(d.filename)}}/share`, {{
+      method: 'POST', headers: _authHeaders()
+    }});
+    if (!res.ok) {{ alert('分享失败'); return; }}
+    const j = await res.json();
+    _docShares[d.filename] = j.token;
+    showDoc(_curDocIdx);
+  }} catch(e) {{ alert('分享失败: ' + e.message); }}
+}}
+async function unshareDoc() {{
+  const docs = (projectData && projectData.design_docs) || [];
+  const d = docs[_curDocIdx];
+  if (!d) return;
+  try {{
+    const res = await fetch(`/api/projects/${{PROJECT_ID}}/design-docs/${{encodeURIComponent(d.filename)}}/share`, {{
+      method: 'DELETE', headers: _authHeaders()
+    }});
+    if (res.ok) {{ delete _docShares[d.filename]; showDoc(_curDocIdx); }}
+  }} catch(e) {{ alert('取消失败: ' + e.message); }}
+}}
+function copyShareLink(btn) {{
+  const inp = document.getElementById('share-url-input');
+  if (!inp) return;
+  inp.select();
+  const done = () => {{ const o = btn.textContent; btn.textContent = '已复制'; setTimeout(() => btn.textContent = o, 1500); }};
+  if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(done).catch(() => {{ document.execCommand('copy'); done(); }});
+  else {{ document.execCommand('copy'); done(); }}
 }}
 
 function docsMobileSelect(i) {{

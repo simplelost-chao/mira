@@ -10,11 +10,21 @@ _monitored: dict[str, dict] = {}
 _terminal_alerts: list[dict] = []
 _monitor_lock = threading.Lock()
 
+# 未识别 pane 的 Codex 内容检测负向缓存：target -> 上次扫描的单调时钟。
+# 避免每 2s 轮询都对同一个非 Codex pane 反复 capture_pane；间隔到了再重扫，
+# 这样后来才在该 pane 启动的 Codex 仍能在一个间隔内被发现。
+_codex_scan_cache: dict[str, float] = {}
+_CODEX_RESCAN_INTERVAL = 30.0
+
 _AUTO_COMMANDS = {"claude", "ccc"}
 _AUTO_TITLE_FRAGMENTS = {"Claude Code"}
 _CLAUDE_TITLE_ICONS = {"✳", "⠐", "⠂", "⠈", "⠁", "⠑", "⠃", "⠊", "⠔", "⠤", "⠠"}  # Claude Code spinner chars
 _CODEX_COMMANDS = {"codex"}
 _CODEX_TITLE_FRAGMENTS = {"Codex"}
+# 版本无关的 Codex 终端内容特征(检测标题/命令都认不出的 Codex pane,如标题被设成项目名、命令是 node)
+_CODEX_CONTENT_RE = re.compile(
+    r"OpenAI Codex|codex app|gpt-[56](?:\.\d+)?\b|Worked for \d+[hms]"
+)
 
 WAIT_PATTERNS = [
     r"do you want to",
@@ -113,6 +123,11 @@ def _poll_once() -> None:
     with _monitor_lock:
         tracked_targets = set(_monitored.keys())
 
+    # 清理已消失 pane 的负向缓存,防止长跑积累
+    _live_targets = {pane["target"] for pane in all_panes}
+    for _gone in [t for t in _codex_scan_cache if t not in _live_targets]:
+        del _codex_scan_cache[_gone]
+
     # Auto-discover Claude / Codex panes — compute project_id OUTSIDE the lock (I/O)
     new_entries = {}
     for pane in all_panes:
@@ -128,22 +143,23 @@ def _poll_once() -> None:
         # For unrecognized node panes not yet tracked, check terminal output for Codex
         # Codex uses alternate screen, so check both scrollback and visible pane
         if not is_claude and not is_codex and pane["target"] not in tracked_targets:
-            _codex_markers = ("OpenAI Codex", "codex app", "gpt-5.4 ", "gpt-5.3 ", "gpt-4o ")
-            for cap_args in [
-                ["-p"],               # visible (alternate screen)
-                ["-p", "-S", "-50"],  # scrollback
-            ]:
-                try:
-                    import subprocess as _sp
-                    proc = _sp.run(
-                        ["tmux", "capture-pane", "-t", pane["target"]] + cap_args,
-                        capture_output=True, text=True, timeout=3,
-                    )
-                    if proc.returncode == 0 and any(m in proc.stdout for m in _codex_markers):
-                        is_codex = True
-                        break
-                except Exception:
-                    pass
+            # 负向缓存:间隔内不重扫同一个未识别 pane,避免每 2s 两次 subprocess
+            _last = _codex_scan_cache.get(pane["target"], 0.0)
+            if time.monotonic() - _last >= _CODEX_RESCAN_INTERVAL:
+                _codex_scan_cache[pane["target"]] = time.monotonic()
+                # 用版本无关的标记,别再硬编码具体模型号(gpt-5.5/5.6… 会让旧列表失效)。
+                # _CODEX_CONTENT_RE 匹配 Codex CLI 的稳定特征:任意 gpt-5.x/gpt-6.x 模型行、
+                # "Worked for …" 状态行、以及 "OpenAI Codex" 字样。
+                # 用 tmux_bridge.capture_pane(它设了正确的 PATH/TMUX_TMPDIR);裸 subprocess
+                # 在 launchd 环境下找不到 tmux socket,会静默失败 —— 这正是之前检测不到的原因。
+                for _lines in (0, 50):   # 0=可见(备用屏),50=往上 50 行回滚
+                    try:
+                        out = capture_pane(pane["target"], _lines)
+                        if out and _CODEX_CONTENT_RE.search(out):
+                            is_codex = True
+                            break
+                    except Exception:
+                        pass
         if is_claude or is_codex:
             project_id = (
                 None if pane["target"] in tracked_targets

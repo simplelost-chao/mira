@@ -110,6 +110,45 @@ def render_dev_page() -> str:
   }
   .term-group-body { overflow: hidden; }
   .term-group-body.collapsed { display: none; }
+  /* ⋯ 菜单触发 + 拖拽合并 + 文件夹(主题变量驱动,切主题一致) */
+  .term-group-menu {
+    font-size: 13px; color: var(--muted); padding: 0 4px; border-radius: 3px;
+    line-height: 1; cursor: pointer; opacity: 0; transition: opacity .12s, color .12s; flex-shrink: 0;
+  }
+  .term-group-header:hover .term-group-menu, .term-folder-header:hover .term-group-menu { opacity: 1; }
+  .term-group-menu:hover { color: var(--text); background: rgba(255,255,255,.08); }
+  .term-group-header.drag-over, .term-folder-header.drag-over {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .term-folder { border-bottom: 1px solid rgba(255,255,255,.04); }
+  .term-folder-header {
+    padding: 8px 14px; display: flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none; transition: background .12s;
+  }
+  .term-folder-header:hover { background: rgba(255,255,255,.03); }
+  .term-folder-icon { font-size: 12px; flex-shrink: 0; }
+  .term-folder-name {
+    font-size: 11px; font-weight: 700; color: var(--text);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .term-folder-body { overflow: hidden; padding-left: 10px;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); margin-left: 14px; }
+  .term-folder-body.collapsed { display: none; }
+  .term-group-header.nested { padding-left: 8px; }
+  /* 上下文菜单 */
+  .dev-ctx-menu {
+    position: fixed; z-index: 4000; min-width: 140px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.4); padding: 4px; display: flex; flex-direction: column;
+  }
+  .dev-ctx-item {
+    text-align: left; font-family: var(--mono); font-size: 12px; color: var(--text);
+    background: none; border: none; border-radius: 5px; padding: 7px 10px; cursor: pointer;
+  }
+  .dev-ctx-item:hover { background: rgba(255,255,255,.07); }
+  .dev-ctx-item.danger { color: var(--red); }
+  .dev-ctx-item.danger:hover { background: color-mix(in srgb, var(--red) 12%, transparent); }
   .term-group-body .term-pane-row { padding-left: 26px; }
 
   /* ── Remote host badge ── */
@@ -227,7 +266,7 @@ def render_dev_page() -> str:
   /* ── New terminal dialog overlay ── */
   .new-term-overlay {
     position: fixed; inset: 0; z-index: 400;
-    background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+    background: rgba(0,0,0,.65);
     display: flex; align-items: center; justify-content: center;
   }
   .new-term-dialog {
@@ -261,6 +300,9 @@ def render_dev_page() -> str:
   }
   .new-term-item-path {
     font-size: 11px; color: var(--muted); margin-top: 2px;
+  }
+  .new-term-loading {
+    padding: 18px 20px; font-size: 11px; color: var(--muted);
   }
   .new-term-item-sep {
     height: 1px; background: var(--border); margin: 0 20px;
@@ -448,6 +490,13 @@ def render_dev_page() -> str:
   }
   .term-toolbar-btn svg { display: block; }
   .term-toolbar-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .desktop-ws-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    background: var(--red); transition: background .2s;
+  }
+  .desktop-ws-dot.ok { background: var(--green); }
+  .desktop-ws-dot.err { background: var(--red); animation: desktop-ws-blink 1.5s ease-in-out infinite; }
+  @keyframes desktop-ws-blink { 0%,100%{opacity:1} 50%{opacity:.4} }
   .toolbar-spacer { flex: 1; }
   .toolbar-tokens {
     font-size: 11px; color: var(--sub); display: flex; align-items: center; gap: 12px;
@@ -525,7 +574,7 @@ def render_dev_page() -> str:
   .tab-switcher {
     position: fixed; inset: 0; z-index: 300;
     background: rgba(0,0,0,.88);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    /* backdrop-filter removed for perf */
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     padding: 60px 12px 40px;
     display: none; opacity: 0;
@@ -619,7 +668,7 @@ def render_dev_page() -> str:
   .upload-confirm-btns button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .upload-confirm-overlay {
     position: fixed; inset: 0; z-index: 499;
-    background: rgba(0,0,0,.4); backdrop-filter: blur(2px);
+    background: rgba(0,0,0,.5);
   }
 
   /* ── Prompt line highlight (Phase 3) ── */
@@ -895,6 +944,24 @@ var _focusProjects = JSON.parse(localStorage.getItem('mira-focus-projects') || '
 const _paneHostMap = {};     // target -> host alias (远程 pane 映射)
 const _filterProject = new URLSearchParams(location.search).get('project') || null;
 
+// ── Dev 侧栏:合并文件夹 + 自定义命名(纯展示,后端 vibe.yaml)────────────────
+var _devGroups = [];     // [{id,name,projects:[pid,...]}]
+var _devNames = {};      // pid -> 自定义显示名
+var _pidToFolder = {};   // pid -> folder 对象
+var _lastGroupPids = []; // 本次渲染出现的顶层项目 [{pid,name}],供"合并到…"选择器用
+async function loadDevGroups() {
+  try {
+    const res = await fetch('/api/dev/groups', { headers: _authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+    _devGroups = d.groups || [];
+    _devNames = d.names || {};
+    _pidToFolder = {};
+    for (const f of _devGroups) for (const pid of (f.projects || [])) _pidToFolder[pid] = f;
+  } catch(e) { /* non-fatal */ }
+}
+function _projName(pid, fallback) { return _devNames[pid] || fallback; }
+
 // ── State detection / polling removed — dots are static green ────────────────
 
 // ── Pane row renderer ─────────────────────────────────────────────────────────
@@ -925,6 +992,7 @@ function _renderPaneRow(p, st) {
 
 // ── Pane list ─────────────────────────────────────────────────────────────────
 let _firstLoad = true;
+var _lastPanesHash = '';
 async function loadPanes(forceRebuild) {
   if (!_isAdmin) { openLoginModal(init); return; }
   // On mobile detail view: skip entirely to protect iframe focus/IME
@@ -985,19 +1053,18 @@ async function loadPanes(forceRebuild) {
         });
       }
 
+      _lastGroupPids = [];
+      const _renderedFolders = new Set();
       for (const [pid, grp] of _sortedGroups) {
-        const collapsed = !!_groupCollapsed[pid];
-        html += `<div class="term-group-header${_focusProjects.indexOf(pid) >= 0 ? ' focused' : ''}" data-group="${escHtml(pid)}" onclick="toggleGroup('${escHtml(pid)}')">
-          <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
-          <span class="term-group-name" data-group="${escHtml(pid)}">${escHtml(grp.name)}</span>
-          <span class="term-group-count">${grp.panes.length}</span>
-        </div>
-        <div class="term-group-body${collapsed ? ' collapsed' : ''}" data-group-body="${escHtml(pid)}">`;
-        for (const p of grp.panes) {
-          const st = 'idle';
-          html += _renderPaneRow(p, st);
+        _lastGroupPids.push({ pid: pid, name: _projName(pid, grp.name) });
+        const folder = _pidToFolder[pid];
+        if (folder) {
+          if (_renderedFolders.has(folder.id)) continue;  // 文件夹随首个成员一次性渲染
+          _renderedFolders.add(folder.id);
+          html += _renderFolder(folder, groups);
+        } else {
+          html += _renderProjectGroup(pid, grp, false);
         }
-        html += '</div>';
       }
     }
     // Skip DOM rebuild if user is in detail view (mobile terminal active)
@@ -1016,7 +1083,14 @@ async function loadPanes(forceRebuild) {
         }
       }
     } else {
-      list.innerHTML = html;
+      // Skip full DOM rebuild if pane list hasn't changed
+      var panesHash = JSON.stringify(panes);
+      if (panesHash === _lastPanesHash && !forceRebuild) {
+        // nothing changed, skip innerHTML
+      } else {
+        _lastPanesHash = panesHash;
+        list.innerHTML = html;
+      }
     }
 
     // If current pane disappeared, clear
@@ -1036,13 +1110,165 @@ async function loadPanes(forceRebuild) {
   } catch(e) { console.warn('dev panes:', e); }
 }
 
-function toggleGroup(pid) {
-  _groupCollapsed[pid] = !_groupCollapsed[pid];
-  const collapsed = _groupCollapsed[pid];
-  const header = document.querySelector(`.term-group-header[data-group="${CSS.escape(pid)}"]`);
-  const body = document.querySelector(`.term-group-body[data-group-body="${CSS.escape(pid)}"]`);
+function toggleGroup(key) {
+  _groupCollapsed[key] = !_groupCollapsed[key];
+  const collapsed = _groupCollapsed[key];
+  if (key.indexOf('folder:') === 0) {
+    const fid = key.slice(7);
+    const hdr = document.querySelector(`.term-folder-header[data-folder="${CSS.escape(fid)}"]`);
+    const body = hdr ? hdr.parentElement.querySelector('.term-folder-body') : null;
+    if (hdr) hdr.querySelector('.term-group-arrow').classList.toggle('collapsed', collapsed);
+    if (body) body.classList.toggle('collapsed', collapsed);
+    return;
+  }
+  const header = document.querySelector(`.term-group-header[data-group="${CSS.escape(key)}"]`);
+  const body = document.querySelector(`.term-group-body[data-group-body="${CSS.escape(key)}"]`);
   if (header) header.querySelector('.term-group-arrow').classList.toggle('collapsed', collapsed);
   if (body) body.classList.toggle('collapsed', collapsed);
+}
+
+// ── 项目组 / 文件夹渲染 ────────────────────────────────────────────────────────
+function _renderProjectGroup(pid, grp, nested) {
+  const collapsed = !!_groupCollapsed[pid];
+  const name = _projName(pid, grp.name);
+  const focused = _focusProjects.indexOf(pid) >= 0;
+  let h = `<div class="term-group-header${focused ? ' focused' : ''}${nested ? ' nested' : ''}"
+      data-group="${escHtml(pid)}" draggable="true"
+      ondragstart="_dragStart(event,'${escHtml(pid)}')" ondragend="_dragEnd(event)"
+      ondragover="_dragOver(event)" ondragleave="_dragLeave(event)" ondrop="_dropOnGroup(event,'${escHtml(pid)}')"
+      onclick="toggleGroup('${escHtml(pid)}')">
+      <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
+      <span class="term-group-name" data-group="${escHtml(pid)}">${escHtml(name)}</span>
+      <span class="term-group-count">${grp.panes.length}</span>
+      <span class="term-group-menu" onclick="event.stopPropagation();_openGroupMenu(event,'${escHtml(pid)}')" title="更多">⋯</span>
+    </div>
+    <div class="term-group-body${collapsed ? ' collapsed' : ''}" data-group-body="${escHtml(pid)}">`;
+  for (const p of grp.panes) h += _renderPaneRow(p, 'idle');
+  h += '</div>';
+  return h;
+}
+
+function _renderFolder(folder, groups) {
+  let inner = '', n = 0;
+  for (const mpid of (folder.projects || [])) {
+    const g = groups.get(mpid);
+    if (!g) continue;            // 该成员当前没有活跃 pane → 不显示
+    n++;
+    inner += _renderProjectGroup(mpid, g, true);
+  }
+  if (!n) return '';
+  const fkey = 'folder:' + folder.id;
+  const collapsed = !!_groupCollapsed[fkey];
+  return `<div class="term-folder">
+    <div class="term-folder-header" data-folder="${escHtml(folder.id)}"
+        ondragover="_dragOver(event)" ondragleave="_dragLeave(event)" ondrop="_dropOnFolder(event,'${escHtml(folder.id)}')"
+        onclick="toggleGroup('${escHtml(fkey)}')">
+      <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
+      <span class="term-folder-icon">📁</span>
+      <span class="term-folder-name">${escHtml(folder.name)}</span>
+      <span class="term-group-count">${n}</span>
+      <span class="term-group-menu" onclick="event.stopPropagation();_openFolderMenu(event,'${escHtml(folder.id)}')" title="更多">⋯</span>
+    </div>
+    <div class="term-folder-body${collapsed ? ' collapsed' : ''}">${inner}</div>
+  </div>`;
+}
+
+// ── 拖拽合并(桌面)──────────────────────────────────────────────────────────
+var _dragPid = null;
+function _dragStart(e, pid) { _dragPid = pid; try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', pid); } catch(_) {} }
+function _dragEnd(e) { _dragPid = null; document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); }
+function _dragOver(e) { if (!_dragPid) return; e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch(_) {} e.currentTarget.classList.add('drag-over'); }
+function _dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+async function _dropOnGroup(e, targetPid) {
+  e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over');
+  const src = _dragPid; _dragPid = null;
+  if (!src || src === targetPid) return;
+  await _confirmMerge(src, targetPid, null);
+}
+async function _dropOnFolder(e, folderId) {
+  e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over');
+  const src = _dragPid; _dragPid = null;
+  const folder = _devGroups.find(f => f.id === folderId);
+  if (!src || !folder || !folder.projects.length) return;
+  if (folder.projects.indexOf(src) >= 0) return;
+  await _confirmMerge(src, folder.projects[0], folder.name);
+}
+async function _confirmMerge(src, target, folderName) {
+  const sName = _projName(src, src), tName = folderName || _projName(target, target);
+  if (!confirm(`把 "${sName}" 合并到 "${tName}"？\n（只是 dev 侧栏分组，不影响项目本身）`)) return;
+  await _devMutate('/api/dev/groups/merge', { source: src, target: target, name: folderName || _projName(target, target) });
+}
+async function _devMutate(url, body) {
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ..._authHeaders() }, body: JSON.stringify(body) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert('操作失败: ' + (d.detail || res.status)); return; }
+    await loadDevGroups();
+    loadPanes(true);
+  } catch(e) { alert('操作失败: ' + e.message); }
+}
+
+// ── ⋯ 菜单(重命名 / 合并 / 移出 / 解散)—— 桌面+手机通用 ──────────────────────
+function _closeDevMenu() { const m = document.getElementById('dev-ctx-menu'); if (m) m.remove(); }
+function _showDevMenu(e, items) {
+  _closeDevMenu();
+  const m = document.createElement('div');
+  m.id = 'dev-ctx-menu';
+  m.className = 'dev-ctx-menu';
+  m.innerHTML = items.map((it, i) => `<button class="dev-ctx-item${it.danger ? ' danger' : ''}" data-i="${i}">${escHtml(it.label)}</button>`).join('');
+  document.body.appendChild(m);
+  const r = (e.currentTarget || e.target).getBoundingClientRect();
+  m.style.top = (r.bottom + 4) + 'px';
+  m.style.left = Math.min(r.left, window.innerWidth - 180) + 'px';
+  m.querySelectorAll('.dev-ctx-item').forEach((btn, i) => btn.onclick = (ev) => { ev.stopPropagation(); _closeDevMenu(); items[i].fn(); });
+  setTimeout(() => document.addEventListener('click', _closeDevMenu, { once: true }), 0);
+}
+function _openGroupMenu(e, pid) {
+  const inFolder = !!_pidToFolder[pid];
+  const items = [
+    { label: '重命名', fn: () => _renameProject(pid) },
+    { label: '合并到…', fn: () => _mergeIntoPicker(pid) },
+  ];
+  if (inFolder) items.push({ label: '移出分组', danger: true, fn: () => _devMutate('/api/dev/groups/unmerge', { project: pid }) });
+  _showDevMenu(e, items);
+}
+function _openFolderMenu(e, fid) {
+  _showDevMenu(e, [
+    { label: '重命名分组', fn: () => _renameFolder(fid) },
+    { label: '解散分组', danger: true, fn: () => _dissolveFolder(fid) },
+  ]);
+}
+function _renameProject(pid) {
+  const cur = _devNames[pid] || '';
+  const v = prompt('项目显示名（留空恢复默认）:', cur);
+  if (v === null) return;
+  _devMutate('/api/dev/project-name', { project_id: pid, name: v.trim() });
+}
+function _renameFolder(fid) {
+  const f = _devGroups.find(x => x.id === fid); if (!f) return;
+  const v = prompt('分组名:', f.name);
+  if (!v || !v.trim()) return;
+  _devMutate('/api/dev/groups/rename', { id: fid, name: v.trim() });
+}
+function _mergeIntoPicker(src) {
+  const others = _lastGroupPids.filter(g => g.pid !== src);
+  if (!others.length) { alert('没有其它项目可合并'); return; }
+  const lines = others.map((g, i) => `${i + 1}. ${g.name}`).join('\\n');
+  const ans = prompt('合并到哪个项目？输入编号:\\n' + lines);
+  if (ans === null) return;
+  const idx = parseInt(ans.trim(), 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= others.length) return;
+  _confirmMerge(src, others[idx].pid, null);
+}
+async function _dissolveFolder(fid) {
+  const f = _devGroups.find(x => x.id === fid); if (!f) return;
+  if (!confirm(`解散分组 "${f.name}"？`)) return;
+  for (const pid of [...f.projects]) {
+    try {
+      await fetch('/api/dev/groups/unmerge', { method: 'POST', headers: { 'Content-Type': 'application/json', ..._authHeaders() }, body: JSON.stringify({ project: pid }) });
+    } catch(e) {}
+  }
+  await loadDevGroups();
+  loadPanes(true);
 }
 
 function toggleFocus(pid) {
@@ -1114,42 +1340,51 @@ async function selectPane(target, cmd) {
   }
 
   if (!_isMobile && !_currentIsRemote) {
-    try {
-      var focusRes = await fetch('/api/terminal/focus', {
-        method: 'POST',
-        headers: _authHeaders({'Content-Type': 'application/json'}),
-        body: JSON.stringify({ target })
-      });
-      if (!focusRes.ok) console.warn('focus failed:', focusRes.status);
-    } catch(e) { console.warn('focus error:', e); }
+    // Fire-and-forget: don't block UI on tmux focus switch
+    fetch('/api/terminal/focus', {
+      method: 'POST',
+      headers: _authHeaders({'Content-Type': 'application/json'}),
+      body: JSON.stringify({ target })
+    }).catch(function() {});
   }
 
   showTerminal();
   var paneRow = document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"]');
   var tool = _paneToolMap[target] || (paneRow ? paneRow.dataset.tool : '') || '';
-  await _loadPaneTokens(target, tool);
+  // Load tokens and usage in parallel, don't block each other
+  _loadPaneTokens(target, tool);
   _updateTopbarUsage(tool);
   _startTokenRefresh(target, tool);
 }
 
 var _tokenRefreshTimer = null;
+var _usageRefreshTimer = null;
 function _startTokenRefresh(target, tool) {
+  // per-session token(本地、便宜)每 30s 刷
   if (_tokenRefreshTimer) clearInterval(_tokenRefreshTimer);
   _tokenRefreshTimer = setInterval(async function() {
     if (_currentTarget !== target) { clearInterval(_tokenRefreshTimer); return; }
     var t = _paneToolMap[target] || tool;
     await _loadPaneTokens(target, t);
-    _updateTopbarUsage(t);
   }, 30000);
+
+  // 账号级 usage 变化很慢、上游有限流,单独用 5 分钟的节奏刷(切 pane 时已即时刷过一次)
+  if (_usageRefreshTimer) clearInterval(_usageRefreshTimer);
+  _usageRefreshTimer = setInterval(function() {
+    if (_currentTarget !== target) { clearInterval(_usageRefreshTimer); return; }
+    _updateTopbarUsage(_paneToolMap[target] || tool);
+  }, 300000);
 }
 
 function _setMobileTokens(html) {
   var bar = document.getElementById('mobile-token-bar');
   if (!bar) return;
   var dot = bar.querySelector('.ws-dot');
+  var usage = bar.querySelector('.mob-usage');  // 保留 usage:它是账号全局的,不该被 token 刷新抹掉
   bar.innerHTML = '';
   if (dot) bar.appendChild(dot);
   if (html) bar.insertAdjacentHTML('beforeend', html);
+  if (usage) bar.appendChild(usage);            // usage 放回(排在 tokens 之后)
 }
 
 function _resizeTtydFrame() {
@@ -1181,7 +1416,6 @@ async function _loadPaneTokens(target, tool) {
     if (!hasTool) d.tool = tool;
     var fT = function(t) { if (!t) return '—'; if (t>=1e9) return (t/1e9).toFixed(1)+'B'; if (t>=1e6) return (t/1e6).toFixed(1)+'M'; if (t>=1e3) return (t/1e3).toFixed(0)+'k'; return String(t); };
     var fB = function(bytes) { if (bytes>=1e9) return (bytes/1e9).toFixed(1)+'GB'; if (bytes>=1e6) return (bytes/1e6).toFixed(0)+'MB'; if (bytes>=1e3) return (bytes/1e3).toFixed(0)+'KB'; return bytes+'B'; };
-    var cost = d.estimated_cost_usd < 1 ? '$' + d.estimated_cost_usd.toFixed(2) : '$' + d.estimated_cost_usd.toFixed(1);
     var badge = d.tool === 'codex'
       ? '<span class="tok-badge codex">Codex</span>'
       : '<span class="tok-badge claude">Claude</span>';
@@ -1195,9 +1429,9 @@ async function _loadPaneTokens(target, tool) {
     var avgCtx = msgs > 0 ? totalCtx / msgs : 0;
 
     var html = badge;
-    html += '<span class="tok-item" title="实际上行流量（含缓存重传）"><span class="tok-icon tok-up">▲</span><span class="tok-val">' + fB(uploadBytes) + '</span></span>';
-    html += '<span class="tok-item" title="下行流量"><span class="tok-icon tok-down">▼</span><span class="tok-val">' + fB(downloadBytes) + '</span></span>';
-    html += '<span class="tok-item"><span class="tok-cost">' + cost + '</span></span>';
+    html += '<span class="tok-item" title="上行 tokens"><span class="tok-icon tok-up">▲</span><span class="tok-val">' + fT(totalCtx) + '</span></span>';
+    html += '<span class="tok-item" title="下行 tokens"><span class="tok-icon tok-down">▼</span><span class="tok-val">' + fT(d.output_tokens) + '</span></span>';
+    html += '<span class="tok-item" title="上行流量 ' + fB(uploadBytes) + ' / 下行流量 ' + fB(downloadBytes) + '"><span style="color:var(--muted);font-size:10px">' + fB(uploadBytes) + '/' + fB(downloadBytes) + '</span></span>';
 
     // Warn if per-request context is large
     if (msgs > 5 && avgCtx > 150000) {
@@ -1300,7 +1534,7 @@ function _renderTokDropdown(dd, data) {
       .map(function(s){return '<div style="width:'+(s.v/(totTok||1)*100).toFixed(1)+'%;background:'+s.c+'"></div>';}).join('');
     var tip = '输入:'+fT(it.inp)+' 输出:'+fT(it.out)+' 缓存写:'+fT(it.cw)+' 缓存读:'+fT(it.cr);
     return '<div class="tok-dropdown-row">' +
-      '<div class="tok-dropdown-name" title="'+it.name+'">'+it.name+'</div>' +
+      '<div class="tok-dropdown-name" title="'+escHtml(it.name)+'">'+escHtml(it.name)+'</div>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+(it.cost/maxCost*100).toFixed(1)+'%;background:var(--accent);border-radius:3px;opacity:.7"></div></div>' +
         (totTok ? '<div class="tok-dropdown-bar" style="margin-top:2px" title="'+tip+'">'+segs+'</div>' : '') +
@@ -1330,6 +1564,14 @@ function _renderTokDropdown(dd, data) {
 
 // ── Topbar usage: switch between Claude / Codex ──────────────────────────────
 window._topbarUsageMode = null;  // null = not yet loaded into toolbar
+
+function _fmtTokens(t) {
+  if (!t) return '0';
+  if (t >= 1e9) return (t / 1e9).toFixed(1) + 'B';
+  if (t >= 1e6) return (t / 1e6).toFixed(1) + 'M';
+  if (t >= 1e3) return (t / 1e3).toFixed(0) + 'k';
+  return String(t);
+}
 
 function _mobileUsageText(d) {
   function _fmtReset(ts) {
@@ -1366,21 +1608,43 @@ async function _updateTopbarUsage(tool) {
   if (topbarEl) topbarEl.style.display = 'none';
 
   var apiUrl = window._topbarUsageMode === 'codex' ? '/api/codex-usage' : '/api/claude-usage';
+
+  // Usage 是账号全局的、变化很慢。缓存上次成功值(按 tool 分键),
+  // 这样拉取失败时保持显示旧值、不清空,加载时也先垫上旧值,避免"时有时无"。
+  var cacheKey = 'mira-usage-' + window._topbarUsageMode;
+  // usage 是账号全局的,不该因切项目/切 pane 而空白。
+  // 切换工具,或当前显示为空(被 showPlaceholder 等逻辑清过)时,立刻用上次成功值垫上。
+  if (el.dataset.tool !== window._topbarUsageMode || !el.innerHTML) {
+    var cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      el.innerHTML = cached;
+      el.style.display = 'inline-flex';
+    } else if (el.dataset.tool !== window._topbarUsageMode) {
+      el.innerHTML = '';
+      el.style.display = 'none';
+    }
+    el.dataset.tool = window._topbarUsageMode;
+  }
+
   try {
     var res = await fetch(apiUrl, { headers: _authHeaders() });
-    if (!res.ok) return;
+    if (!res.ok) return;        // 保留上次显示的值,不清空
     var d = await res.json();
-    if (d.error) return;
+    if (d.error) return;        // 同上
     var usageHtml = _mobileUsageText(d);
-    el.innerHTML = usageHtml;
+    if (!usageHtml) return;     // 渲染为空(数据缺字段)时保留旧值,绝不用空覆盖
+    // 值没变就别重写 innerHTML:重设 innerHTML 会拆建 DOM 导致闪现。原地比对,数字变了才更新。
+    if (el.innerHTML !== usageHtml) el.innerHTML = usageHtml;
     el.style.display = 'inline-flex';
+    localStorage.setItem(cacheKey, usageHtml);   // 记下上次成功值
     var _mob = document.getElementById('mobile-token-bar');
     if (_mob) {
-      // Remove old usage text if any (avoid duplicates on re-render)
       var _old = _mob.querySelector('.mob-usage');
-      if (_old) _old.remove();
-      // Wrap in a span so we can identify it
-      _mob.insertAdjacentHTML('beforeend', '<span class="mob-usage">' + usageHtml + '</span>');
+      if (!_old) {
+        _mob.insertAdjacentHTML('beforeend', '<span class="mob-usage">' + usageHtml + '</span>');
+      } else if (_old.innerHTML !== usageHtml) {
+        _old.innerHTML = usageHtml;   // 原地更新文本,不删除重建,避免闪现
+      }
       _mob.classList.add('visible');
     }
   } catch(e) {}
@@ -1473,8 +1737,8 @@ function showPlaceholder() {
   window._topbarUsageMode = 'claude';
   var _tbu = document.getElementById('topbar-usage');
   if (_tbu) _tbu.style.display = '';
-  var _tlu = document.getElementById('toolbar-usage');
-  if (_tlu) _tlu.innerHTML = '';
+  // 不清空 toolbar-usage:usage 是账号全局的,保留上次值(占位态下整条 toolbar 本就隐藏),
+  // 切回有终端的项目时即时显示,不再"消失"。
   document.getElementById('term-placeholder').style.display = '';
   document.getElementById('dev-page').classList.remove('detail-open');
   document.body.classList.remove('detail-locked');
@@ -1516,45 +1780,71 @@ async function newWindow(cwd) {
 }
 
 // ── New terminal dialog ───────────────────────────────────────────────────────
-async function openNewTermDialog() {
-  const overlay = document.getElementById('new-term-overlay');
+var _newTermProjects = null;
+var _newTermProjectsPromise = null;
+var _newTermProjectsRetry = null;
+
+function _fetchNewTermProjects() {
+  // 不做长期缓存：每次都重新拉取，新建的项目才能及时出现在列表里
+  if (_newTermProjectsPromise) return _newTermProjectsPromise;
+  _newTermProjectsPromise = fetch('/api/dev/project-options', { headers: _authHeaders() })
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(projects) {
+      if (projects.length) {
+        _newTermProjects = projects;
+        clearTimeout(_newTermProjectsRetry);
+        _newTermProjectsRetry = null;
+        var overlay = document.getElementById('new-term-overlay');
+        if (overlay && overlay.style.display !== 'none') {
+          _renderNewTermProjects(projects, false);
+        }
+      } else if (!_newTermProjectsRetry) {
+        // The server is rebuilding its project cache. Keep the dialog
+        // responsive and retry without ever blocking the click handler.
+        _newTermProjectsRetry = setTimeout(function() {
+          _newTermProjectsRetry = null;
+          _fetchNewTermProjects().catch(function() {});
+        }, 1500);
+      }
+      return projects;
+    })
+    .finally(function() { _newTermProjectsPromise = null; });
+  return _newTermProjectsPromise;
+}
+
+function _renderNewTermProjects(projects, loading) {
   const list = document.getElementById('new-term-list');
-  // Static home option
   let html = `<div class="new-term-item" data-cwd="">
     <div class="new-term-item-name">~ 主目录</div>
     <div class="new-term-item-path">在用户 home 目录打开</div>
   </div>`;
-  // Fetch projects (sorted by last activity, same as homepage)
-  try {
-    const res = await fetch('/api/projects', { headers: _authHeaders() });
-    if (res.ok) {
-      const projects = await res.json();
-      projects.sort((a, b) => {
-        const ta = Math.max(
-          new Date((a.claude_activity && a.claude_activity.last_session) || 0).getTime(),
-          new Date((a.codex_activity && a.codex_activity.last_session) || 0).getTime()
-        );
-        const tb = Math.max(
-          new Date((b.claude_activity && b.claude_activity.last_session) || 0).getTime(),
-          new Date((b.codex_activity && b.codex_activity.last_session) || 0).getTime()
-        );
-        return tb - ta;
-      });
-      for (const p of projects) {
-        if (!p.path) continue;
-        html += `<div class="new-term-item-sep"></div>`;
-        html += `<div class="new-term-item" data-cwd="${escHtml(p.path)}">
-          <div class="new-term-item-name">${escHtml(p.name || p.project_id)}</div>
-          <div class="new-term-item-path">${escHtml(p.path)}</div>
-        </div>`;
-      }
-    }
-  } catch(e) { console.warn('fetch projects:', e); }
+  if (loading) html += '<div class="new-term-loading">正在加载项目…</div>';
+  for (const p of projects || []) {
+    html += `<div class="new-term-item-sep"></div>`;
+    html += `<div class="new-term-item" data-cwd="${escHtml(p.path)}">
+      <div class="new-term-item-name">${escHtml(p.name || p.id)}</div>
+      <div class="new-term-item-path">${escHtml(p.path)}</div>
+    </div>`;
+  }
   list.innerHTML = html;
   list.querySelectorAll('.new-term-item').forEach(el => {
     el.addEventListener('click', () => pickNewTerm(el.dataset.cwd || null));
   });
+}
+
+function openNewTermDialog() {
+  const overlay = document.getElementById('new-term-overlay');
+  // 先渲染已有列表（或加载态），后台刷新拿到新列表后会自动重绘
+  _renderNewTermProjects(_newTermProjects || [], !_newTermProjects);
   overlay.style.display = '';
+  _fetchNewTermProjects().catch(function(e) {
+    console.warn('fetch projects:', e);
+    var loading = document.querySelector('#new-term-list .new-term-loading');
+    if (loading) loading.textContent = '项目加载失败，请重试';
+  });
 }
 
 function closeNewTermDialog() {
@@ -1750,23 +2040,49 @@ function _connectTermWs(target) {
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var url = proto + '//' + location.host + '/ws/terminal/' + encodeURIComponent(target)
             + '/stream?token=' + encodeURIComponent(_adminToken);
-  _termWs = new WebSocket(url);
+  var termWs = new WebSocket(url);
+  _termWs = termWs;
   var output = document.getElementById('mobile-term-output');
 
-  _termWs.onmessage = function(e) {
-    if (!output) return;
+  var _lastWsData = '';
+  var _pendingWsData = null;
+  var _renderWsFrame = 0;
+
+  function _renderTerminalFrame() {
+    _renderWsFrame = 0;
+    var data = _pendingWsData;
+    _pendingWsData = null;
+    if (_termWs !== termWs || !output || data === null || data === _lastWsData) return;
+    _lastWsData = data;
     var wasAtBottom = (output.scrollHeight - output.scrollTop - output.clientHeight) < 40;
-    output.innerHTML = _ansiToHtml(e.data);
+    output.innerHTML = _ansiToHtml(data);
     if (wasAtBottom) output.scrollTop = output.scrollHeight;
     // Cache snapshot for tab switcher (last 20 lines of plain text)
     if (_currentTarget) {
       var _lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
       _paneSnapshots[_currentTarget] = _lines.slice(-20).join('\n');
     }
+  }
+
+  termWs._cancelPendingRender = function() {
+    if (_renderWsFrame) cancelAnimationFrame(_renderWsFrame);
+    _renderWsFrame = 0;
+    _pendingWsData = null;
   };
 
-  _termWs.onclose = function() {
-    _termWs = null;
+  termWs.onmessage = function(e) {
+    if (_termWs !== termWs) return;
+    if (!output) return;
+    // Keep only the newest terminal snapshot and render at most once per
+    // animation frame. This prevents ANSI conversion and full DOM replacement
+    // from queueing up while output is arriving quickly.
+    _pendingWsData = e.data;
+    if (!_renderWsFrame) _renderWsFrame = requestAnimationFrame(_renderTerminalFrame);
+  };
+
+  termWs.onclose = function() {
+    termWs._cancelPendingRender();
+    if (_termWs === termWs) _termWs = null;
     _setWsDot(false);
     // Auto-reconnect if still viewing this pane in stream mode
     if (_currentTarget !== target ||
@@ -1782,12 +2098,13 @@ function _connectTermWs(target) {
       _connectTermWs(target);
     }, 2000);
   };
-  _termWs.onopen = function() { _setWsDot(true); };
-  _termWs.onerror = function() {};
+  termWs.onopen = function() { _setWsDot(true); };
+  termWs.onerror = function() {};
 }
 
 function _disconnectTermWs() {
   if (_termWs) {
+    if (_termWs._cancelPendingRender) _termWs._cancelPendingRender();
     _termWs.onclose = null;  // prevent auto-reconnect
     try { _termWs.close(); } catch(e) {}
     _termWs = null;
@@ -1800,6 +2117,14 @@ function _setWsDot(connected) {
     dot.className = 'ws-dot ' + (connected ? 'ok' : 'err');
     dot.title = connected ? '已连接' : '已断开 · 点击重连';
   }
+  _setDesktopWsDot(connected);
+}
+
+function _setDesktopWsDot(connected) {
+  var dot = document.getElementById('desktop-ws-dot');
+  if (!dot) return;
+  dot.className = 'desktop-ws-dot ' + (connected ? 'ok' : 'err');
+  dot.title = connected ? '终端已连接' : '终端连接中';
 }
 function _sendOk() {
   _sendToTerminal('y\n');
@@ -2201,7 +2526,7 @@ function _startBufferPoll() {
     .then(function(r) { return r.ok ? r.json() : {}; })
     .then(function(d) { _lastTmuxBuffer = (d.text || '').trim(); })
     .catch(function() {});
-  _bufferPollTimer = setInterval(_checkBufferChange, 1500);
+  _bufferPollTimer = setInterval(_checkBufferChange, 4000);
 }
 
 function _stopBufferPoll() {
@@ -2257,25 +2582,21 @@ function _showCopyToast(text) {
 
 async function _checkBufferChange() {
   try {
-    console.log('[mira-copy] 2. checking tmux buffer...');
     var res = await fetch('/api/terminal/buffer', { headers: _authHeaders() });
-    if (!res.ok) { console.log('[mira-copy] 3. fetch failed:', res.status); return; }
+    if (!res.ok) return;
     var data = await res.json();
     var text = (data.text || '').trim();
-    console.log('[mira-copy] 3. buffer text length:', text.length, 'lastBuffer length:', _lastTmuxBuffer.length);
-    if (!text || text.length < 2) { console.log('[mira-copy] 4. text too short, skip'); return; }
-    if (text === _lastTmuxBuffer) { console.log('[mira-copy] 4. same as last buffer, skip'); return; }
+    if (!text || text.length < 2) return;
+    if (text === _lastTmuxBuffer) return;
     _lastTmuxBuffer = text;
-    console.log('[mira-copy] 4. NEW buffer detected, trying clipboard...');
     var ok = false;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      try { await navigator.clipboard.writeText(text); ok = true; console.log('[mira-copy] 5. clipboard.writeText SUCCESS'); } catch(e) { console.log('[mira-copy] 5. clipboard.writeText FAILED:', e); }
+      try { await navigator.clipboard.writeText(text); ok = true; } catch(e) {}
     }
     if (ok) {
       var preview = text.length > 50 ? text.substring(0, 47) + '…' : text;
       _showToast('已复制: ' + preview.replace(/\n/g, ' ↵ '), 2000);
     } else {
-      console.log('[mira-copy] 5. showing clickable toast');
       _showCopyToast(text);
     }
   } catch(e) { console.warn('[mira-copy] ERROR:', e); }
@@ -2525,10 +2846,14 @@ function _applyTtydTheme() {
   try { frame.contentWindow.postMessage({ type: 'mira-theme' }, '*'); } catch(_) {}
 }
 
-// ── Listen for mouseup from ttyd iframe (via postMessage) ────────────────────
+// ── Listen for status/mouseup from ttyd iframe (via postMessage) ─────────────
 window.addEventListener('message', function(e) {
+  var frame = document.getElementById('ttyd-frame');
+  if (frame && e.source === frame.contentWindow && e.data && e.data.type === 'mira-ttyd-connection') {
+    _setDesktopWsDot(e.data.connected === true);
+    return;
+  }
   if (e.data && e.data.type === 'mira-mouseup') {
-    console.log('[mira-copy] 1. mouseup received from iframe');
     setTimeout(_checkBufferChange, 200);
   }
 });
@@ -2561,9 +2886,32 @@ async function init() {
     var _preFrame = document.getElementById('ttyd-frame');
     if (_preFrame && !_preFrame.src) _preFrame.src = '/terminal/';
   }
+  await loadDevGroups();
   await loadPanes();
-  setInterval(loadPanes, 5000);
+  var _panesInterval = setInterval(loadPanes, 5000);
   _startBufferPoll();
+  // Warm the lightweight project list while the page is idle so the first
+  // click on + normally opens with a complete list and no network wait.
+  var _preloadProjects = function() { _fetchNewTermProjects().catch(function() {}); };
+  if (window.requestIdleCallback) requestIdleCallback(_preloadProjects, { timeout: 1500 });
+  else setTimeout(_preloadProjects, 300);
+
+  // Pause all polling when tab is hidden, resume when visible
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      clearInterval(_panesInterval); _panesInterval = null;
+      _stopBufferPoll();
+      if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+    } else {
+      loadPanes();
+      _panesInterval = setInterval(loadPanes, 5000);
+      _startBufferPoll();
+      if (_currentTarget) {
+        var t = _paneToolMap[_currentTarget] || '';
+        if (t) _startTokenRefresh(_currentTarget, t);
+      }
+    }
+  });
 }
 init();
 """
@@ -2629,6 +2977,7 @@ init();
         </svg>
       </button>
       <span class="toolbar-spacer"></span>
+      <span class="desktop-ws-dot err" id="desktop-ws-dot" title="终端连接中"></span>
       <span class="toolbar-tokens" id="toolbar-tokens"></span>
       <span class="toolbar-usage" id="toolbar-usage"></span>
     </div>

@@ -796,103 +796,6 @@ body {
 .summary-table tr:last-child td { border-bottom: none; }
 .summary-table tr:hover td { background: rgba(255,255,255,0.02); }
 
-/* MODAL */
-.modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 52px 0 0 0;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(4px);
-  z-index: 250;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 40px 20px;
-  overflow-y: auto;
-}
-.modal-overlay.open { display: flex; }
-.modal {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  width: 100%;
-  max-width: 900px;
-  min-height: 600px;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-.modal-header {
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.modal-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-.modal-path {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-.modal-close {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.modal-close:hover { background: rgba(239,68,68,0.1); border-color: var(--red); color: var(--red); }
-
-.modal-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 12px 24px 0;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-}
-.modal-tab-btn {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  color: var(--text-sec);
-  font-size: 13px;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.modal-tab-btn:hover { color: var(--text); }
-.modal-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-.modal-body {
-  padding: 20px 24px;
-  flex: 1;
-  overflow-y: auto;
-}
-.modal-footer {
-  display: flex;
-  align-items: center;
-  padding: 10px 20px;
-  border-top: 1px solid var(--border);
-  background: var(--card-deep);
-  border-radius: 0 0 12px 12px;
-  min-height: 44px;
-}
-#delete-init-btn:hover { border-color: var(--red); color: var(--red); }
-.modal-tab-content { display: none; }
-.modal-tab-content.active { display: block; }
-
 /* SECTIONS */
 .section {
   margin-bottom: 24px;
@@ -1501,9 +1404,9 @@ body {
   padding: 16px 18px; display: flex; align-items: flex-start; gap: 14px;
   transition: border-color .15s;
 }
-.infra-card:hover { border-color: rgba(255,255,255,.15); }
+.infra-card:hover { border-color: var(--accent); }
 .infra-card.running { border-left: 3px solid var(--green); }
-.infra-card.stopped { border-left: 3px solid rgba(255,255,255,.08); }
+.infra-card.stopped { border-left: 3px solid var(--border); }
 .infra-icon {
   width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -1515,7 +1418,7 @@ body {
 .infra-icon.wiki    { background: rgba(217,179,107,.12); }
 .infra-icon.storage { background: rgba(229,166,80,.12); }
 .infra-icon.db      { background: rgba(176,124,255,.12); }
-.infra-icon.other   { background: rgba(255,255,255,.05); }
+.infra-icon.other   { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .infra-body { flex: 1; min-width: 0; }
 .infra-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
 .infra-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
@@ -1527,6 +1430,39 @@ body {
 .infra-status.on  { color: var(--green); }
 .infra-status.off { color: var(--text-muted); }
 .infra-port { color: var(--text-muted); }
+
+/* ── tunnel table ── */
+.tunnel-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tunnel-table th {
+  text-align: left; padding: 6px 10px; font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.tunnel-table td { padding: 7px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+.tunnel-table tr:hover td { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.tunnel-name { font-weight: 600; color: var(--text); }
+.tunnel-host { color: var(--text-muted); font-size: 11px; }
+.tunnel-host a { color: var(--accent); text-decoration: none; }
+.tunnel-host a:hover { text-decoration: underline; }
+.tunnel-port { font-family: var(--mono); color: var(--text-muted); }
+.tunnel-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
+.tunnel-dot.on { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.tunnel-dot.off { background: var(--text-muted); }
+.tunnel-toggle {
+  position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer;
+}
+.tunnel-toggle input { opacity: 0; width: 0; height: 0; }
+.tunnel-toggle .slider {
+  position: absolute; inset: 0; background: rgba(255,255,255,.1);
+  border-radius: 9px; transition: background .2s;
+}
+.tunnel-toggle .slider::before {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  left: 2px; bottom: 2px; background: var(--text-muted);
+  border-radius: 50%; transition: transform .2s, background .2s;
+}
+.tunnel-toggle input:checked + .slider { background: rgba(var(--accent-rgb),.4); }
+.tunnel-toggle input:checked + .slider::before { transform: translateX(14px); background: var(--accent); }
 
 /* ── RESPONSIVE ────────────────────────────────────────────────── */
 @media (max-width: 640px) {
@@ -1567,22 +1503,11 @@ body {
   #summary-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: 12px; }
   .summary-table th, .summary-table td { padding: 8px 10px; white-space: nowrap; }
 
-  /* Anomaly toggle */
+  /* Tunnel table: scroll horizontally */
+  #tunnel-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tunnel-table td, .tunnel-table th { white-space: nowrap; }
 
-  /* Modal: fullscreen on mobile */
-  .modal-overlay { padding: 0; align-items: flex-end; }
-  .modal {
-    max-width: 100%;
-    min-height: 90vh;
-    border-radius: 16px 16px 0 0;
-  }
-  .modal-header { padding: 16px 16px 12px; }
-  .modal-title { font-size: 15px; }
-  .modal-path { display: none; }
-  .modal-tabs { padding: 8px 16px 0; gap: 0; }
-  .modal-tab-btn { padding: 6px 10px; font-size: 12px; }
-  .modal-body { padding: 14px 16px; }
-  #modal-overview-link { display: none; }
+  /* Anomaly toggle */
 
   /* Design docs: stack sidebar on top */
   .docs-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; gap: 0; min-height: auto; }
@@ -1975,6 +1900,17 @@ body {
     <div class="infra-grid" id="infra-grid"></div>
   </div>
 
+  <!-- B: Tunnel 管理 -->
+  <div id="tunnel-section" style="display:none;margin-bottom:24px">
+    <div class="infra-section-title" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none" onclick="toggleTunnelSection()">
+      <span id="tunnel-toggle-icon" style="font-size:10px">▸</span>
+      Cloudflare Tunnels
+      <span id="tunnel-count" style="font-size:10px;color:var(--text-muted);font-weight:400"></span>
+    </div>
+    <div id="tunnel-body" style="display:none">
+      <div id="tunnel-table-wrap"></div>
+    </div>
+  </div>
 
   <div class="filter-bar">
     <button class="filter-btn" id="filter-all" onclick="setFilter('all', this)">全部 <span class="filter-count" id="count-all">0</span></button>
@@ -1990,53 +1926,12 @@ body {
 </div>
 
 
-<!-- PROJECT DETAIL MODAL -->
-<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
-  <div class="modal" id="modal">
-    <div class="modal-header" style="display:flex;align-items:flex-start;justify-content:space-between">
-      <div>
-        <div class="modal-title" id="modal-title">Project Name</div>
-        <div class="modal-path" id="modal-path">/path/to/project</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;padding-top:2px">
-        <a id="modal-overview-link" href="#" target="_blank"
-           style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);text-decoration:none;transition:all .15s"
-           onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
-           onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">↗ 全页查看</a>
-        <button class="modal-close" onclick="closeModal()" style="position:static">✕</button>
-      </div>
-    </div>
-    <div class="modal-tabs">
-      <button class="modal-tab-btn active" id="mtab-summary" onclick="showModalTab('summary')"> 概览</button>
-      <button class="modal-tab-btn" id="mtab-design" onclick="showModalTab('design')"> 文档</button>
-      <button class="modal-tab-btn" id="mtab-prompts" onclick="showModalTab('prompts')"> Prompts</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-tab-content active" id="mcontent-summary"></div>
-      <div class="modal-tab-content" id="mcontent-overview"></div>
-      <div class="modal-tab-content" id="mcontent-design"></div>
-      <div class="modal-tab-content" id="mcontent-prompts"></div>
-    </div>
-    <div class="modal-footer">
-      <div id="delete-confirm-row" style="display:none;align-items:center;gap:8px;font-size:12px;color:var(--red);">
-        <span>确认从 Mira 移除此项目？（不会删除文件）</span>
-        <button onclick="confirmDeleteProject()" style="padding:3px 12px;border:1px solid var(--red);border-radius:4px;background:rgba(239,68,68,.15);color:var(--red);cursor:pointer;font-size:12px;">确认移除</button>
-        <button onclick="cancelDelete()" style="padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:none;color:var(--text-muted);cursor:pointer;font-size:12px;">取消</button>
-      </div>
-      <button id="delete-init-btn" onclick="initDelete()" style="margin-left:auto;background:none;border:1px solid rgba(239,68,68,.3);border-radius:4px;color:rgba(239,68,68,.5);cursor:pointer;font-size:12px;padding:4px 12px;transition:all .15s">移除项目</button>
-    </div>
-  </div>
-</div>
-
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 let allProjects = [];
 let allBaseServices = [];
 let currentFilter = 'active';
 let currentHostFilter = null;  // null = 全部, 'local' = 本机, alias = 远程主机
-let currentProject = null;
-let currentDocIdx = 0;
-let currentModalTab = 'overview';
 let wsSnapshot = {};  // projectId -> {is_running, port}
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -2083,7 +1978,7 @@ async function doGateLogin() {
     _adminToken = token; _isAdmin = true;
     localStorage.setItem('mira-admin-token', token);
     _revealApp();
-    loadProjects(); loadInfraServices(); connectStatusWs(); loadBalance();
+    loadProjects(); loadInfraServices(); initTunnelSection(); connectStatusWs(); loadBalance();
   } catch(_) { errEl.style.display = 'block'; }
 }
 
@@ -2723,592 +2618,6 @@ function renderGlobal() {
 
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-function openProject(id) {
-  currentProject = allProjects.find(p => p.id === id || String(p.id) === String(id));
-  if (!currentProject) return;
-
-  document.getElementById('modal-title').textContent = currentProject.name;
-  document.getElementById('modal-path').textContent = currentProject.path || '';
-  document.getElementById('modal-overview-link').href = `/projects/${encodeURIComponent(currentProject.id)}/overview`;
-  document.getElementById('modal-overlay').classList.add('open');
-
-  // Reset to first tab
-  showModalTab('summary');
-}
-
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
-  cancelDelete();
-  currentProject = null;
-}
-
-function handleOverlayClick(e) {
-  if (e.target === document.getElementById('modal-overlay')) closeModal();
-}
-
-function showModalTab(tab) {
-  currentModalTab = tab;
-  document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.modal-tab-content').forEach(c => c.classList.remove('active'));
-  document.getElementById('mtab-' + tab).classList.add('active');
-  document.getElementById('mcontent-' + tab).classList.add('active');
-
-  if (!currentProject) return;
-  if (tab === 'summary') renderProjectSummary(currentProject);
-  if (tab === 'overview') renderProjectOverview(currentProject);
-  if (tab === 'design') renderDesignDocs(currentProject);
-  if (tab === 'prompts') renderProjectPrompts(currentProject);
-}
-
-// ─── Tech stack categorization ────────────────────────────────────────────────
-const _TECH_AI    = new Set(['openai','anthropic','claude','deepseek','ollama','gemini','dashscope','qwen','cosy','whisper','sentence-transformers','chromadb','faiss','hdbscan','scikit-learn','transformers','langchain','llamaindex','huggingface']);
-const _TECH_DB    = new Set(['redis','postgres','postgresql','mysql','mongodb','sqlite','sqlalchemy','alembic','prisma','supabase','elasticsearch','kafka','rabbitmq','minio','s3']);
-const _TECH_WEB   = new Set(['fastapi','express','nextjs','react','vue','svelte','nuxt','remix','django','flask','uvicorn','gunicorn','nginx','vite','webpack','tailwind','axios','httpx','requests','websocket']);
-const _TECH_LANG  = new Set(['python','typescript','javascript','go','rust','java','kotlin','swift','ruby','php','c++','c#','lua','bash']);
-
-function classifyTech(name) {
-  const n = name.toLowerCase().replace(/[-_.@]/g, '');
-  if ([..._TECH_AI].some(k => n.includes(k))) return 'ai';
-  if ([..._TECH_DB].some(k => n.includes(k))) return 'db';
-  if ([..._TECH_WEB].some(k => n.includes(k))) return 'web';
-  if ([..._TECH_LANG].some(k => n.includes(k))) return 'lang';
-  return 'infra';
-}
-
-function techPillClass(cat) {
-  return { ai:'pill-ai', db:'pill-db', web:'pill-web', lang:'pill-lang', infra:'pill-infra' }[cat] || 'pill-infra';
-}
-
-// ─── Modal: 概览 Tab ─────────────────────────────────────────────────────────
-function renderProjectSummary(p) {
-  const el = document.getElementById('mcontent-summary');
-  const svc = p.service || {};
-  const ca = p.claude_activity;
-  const deploy = p.deploy || {};
-  const techStack = p.tech_stack || [];
-  const features = p.features || [];
-  const git = p.git || {};
-  const wsState = wsSnapshot[p.id];
-  const isRunning = wsState !== undefined ? wsState.is_running : svc.is_running;
-
-  // ── Top KPI row ──
-  const implCount = features.filter(f => f.implemented !== false).length;
-  function _ago(iso) {
-    const diff = (Date.now() - new Date(iso)) / 1000;
-    if (diff < 3600) return Math.round(diff/60) + 'm前';
-    if (diff < 86400) return Math.round(diff/3600) + 'h前';
-    return Math.round(diff/86400) + 'd前';
-  }
-  const caLast = ca && ca.last_session ? _ago(ca.last_session) : '—';
-  const isDown = svc.port && !isRunning;
-  const kpiRow = `<div class="sm-kpi-row">
-    <div class="sm-kpi ${isRunning ? 'green' : isDown ? 'red' : ''}">
-      <div class="sm-kl">服务状态</div>
-      <div class="sm-kv ${isRunning ? 'green' : isDown ? 'red' : ''}">${isRunning ? '运行中' : (svc.port ? '停止' : '无服务')}</div>
-    </div>
-    <div class="sm-kpi">
-      <div class="sm-kl">本月提交</div>
-      <div class="sm-kv yellow">${git.monthly_commits || 0}</div>
-    </div>
-    <div class="sm-kpi">
-      <div class="sm-kl">功能实现</div>
-      <div class="sm-kv">${implCount}${features.length ? ' / ' + features.length : ''}</div>
-    </div>
-    <div class="sm-kpi ${ca ? 'accent' : ''}">
-      <div class="sm-kl">Claude 上次</div>
-      <div class="sm-kv purple">${caLast}</div>
-    </div>
-  </div>`;
-
-  // ── Left col: service + tech stack ──
-  const svcPort = svc.port ? `:${svc.port}` : '';
-  const svcDomain = svc.public_domain ? `<div class="sm-domain">${escHtml(svc.public_domain)}</div>` : '';
-  const svcIp = svc.public_ip ? `<div class="sm-svc-meta">${escHtml(svc.public_ip)}${svcPort}</div>` : (svcPort ? `<div class="sm-svc-meta">${svcPort}</div>` : '');
-  const deployLine = deploy.type && deploy.type !== 'none'
-    ? `<div class="sm-svc-meta">${DEPLOY_ICONS[deploy.type] || '△'} ${escHtml(deploy.type)}${deploy.host ? ' · ' + escHtml(deploy.host) : ''}</div>`
-    : '';
-
-  const svcCard = `<div class="sm-card">
-    <div class="sm-svc-row">
-      <div class="sm-dot ${isRunning ? 'on' : 'off'}"></div>
-      <div class="sm-svc-name">${escHtml(p.name)}</div>
-    </div>
-    ${svcIp}${svcDomain}${deployLine}
-    ${svc.url ? `<div class="sm-svc-meta" style="color:var(--green)">${escHtml(svc.url)}</div>` : ''}
-  </div>`;
-
-  const groups = { lang:[], web:[], ai:[], db:[], infra:[] };
-  techStack.forEach(t => { const n = t.name || t; groups[classifyTech(n)].push(n); });
-  const groupLabels = { lang:'语言', web:'框架', ai:'AI', db:'存储', infra:'工具链' };
-  const techHtml = Object.entries(groups).filter(([,v]) => v.length).map(([cat, items]) => `
-    <div class="sm-tech-group">
-      <div class="sm-tech-label">${groupLabels[cat]}</div>
-      <div class="sm-tech-pills">${items.map(n => `<span class="sm-pill ${cat}">${escHtml(n)}</span>`).join('')}</div>
-    </div>`).join('');
-  const techCard = techStack.length ? `<div class="sm-card">${techHtml}</div>` : '';
-
-  // ── Right col: Claude + features ──
-  let claudeCard = '';
-  if (ca) {
-    const spark = ca.session_spark_15d || [];
-    const sparkMax = Math.max(...spark, 0.1);
-    const sparkBars = spark.map(v => {
-      const h = v === 0 ? 100 : Math.min(100, Math.max(15, Math.round((v / 12) * 100)));
-      const cls = v === 0 ? '' : (v >= 12 || v >= sparkMax * 0.7) ? ' hi' : ' on';
-      return `<span class="sm-sbar${cls}" style="height:${h}%"></span>`;
-    }).join('');
-
-    const todos = (ca.todos || []).slice(0, 5);
-    const todoHtml = todos.length ? `<div class="sm-todo-list">${todos.map(t => {
-      const s = t.status || 'pending';
-      return `<div class="sm-todo"><div class="sm-todo-dot ${s}"></div><span style="color:${s==='completed'?'var(--green)':s==='in_progress'?'var(--yellow)':'var(--text-muted)'}">${escHtml(t.content || '')}</span></div>`;
-    }).join('')}</div>` : '';
-
-    claudeCard = `<div class="sm-card claude">
-      <div class="sm-section-title" style="margin-bottom:10px">Claude</div>
-      <div class="sm-cl-grid">
-        <div class="sm-cl-stat"><div class="sm-cl-val">${ca._masked ? '***' : '$' + (ca.estimated_cost_usd||0).toFixed(1)}</div><div class="sm-cl-lbl">累计花费</div></div>
-        <div class="sm-cl-stat"><div class="sm-cl-val">${ca.session_count_30d||0}</div><div class="sm-cl-lbl">30天会话</div></div>
-        <div class="sm-cl-stat"><div class="sm-cl-val">${ca._masked ? '***' : fmtTok(ca.output_tokens||0)}</div><div class="sm-cl-lbl">输出 Token</div></div>
-        <div class="sm-cl-stat"><div class="sm-cl-val">${ca._masked ? '***' : fmtTok(ca.cache_read_tokens||0)}</div><div class="sm-cl-lbl">Cache 读</div></div>
-      </div>
-      <div class="sm-spark">${sparkBars}</div>
-      ${todoHtml}
-    </div>`;
-  }
-
-  // Codex card
-  const cx = p.codex_activity;
-  let codexCard = '';
-  if (cx) {
-    const cxSpark = cx.session_spark_15d || [];
-    const cxSparkMax = Math.max(...cxSpark, 0.1);
-    const cxSparkBars = cxSpark.map(v => {
-      const h = v === 0 ? 100 : Math.min(100, Math.max(15, Math.round((v / 12) * 100)));
-      const cls = v === 0 ? '' : (v >= 12 || v >= cxSparkMax * 0.7) ? ' hi' : ' on';
-      return `<span class="sm-sbar codex${cls}" style="height:${h}%"></span>`;
-    }).join('');
-    const avgDur = cx.avg_task_duration_sec || 0;
-    const durStr = avgDur >= 60 ? (avgDur/60).toFixed(1)+'m' : avgDur.toFixed(0)+'s';
-    codexCard = `<div class="sm-card codex">
-      <div class="sm-section-title" style="margin-bottom:10px">Codex</div>
-      <div class="sm-cl-grid">
-        <div class="sm-cl-stat"><div class="sm-cl-val">${cx.session_count_30d||0}</div><div class="sm-cl-lbl">30天会话</div></div>
-        <div class="sm-cl-stat"><div class="sm-cl-val">${cx.total_tasks||0}</div><div class="sm-cl-lbl">任务数</div></div>
-        <div class="sm-cl-stat"><div class="sm-cl-val">${durStr}</div><div class="sm-cl-lbl">平均耗时</div></div>
-        <div class="sm-cl-stat"><div class="sm-cl-val">${(cx.active_hours||0).toFixed(1)}h</div><div class="sm-cl-lbl">活跃时长</div></div>
-      </div>
-      <div class="sm-spark">${cxSparkBars}</div>
-    </div>`;
-  }
-
-  const featCard = features.length ? `<div class="sm-card">
-    <div class="sm-section-title" style="margin-bottom:10px">功能列表</div>
-    <div class="sm-feat-list">${features.map(f => {
-      const impl = f.implemented !== false;
-      return `<div class="sm-feat">
-        <span class="sm-feat-check ${impl ? 'done' : 'plan'}">${impl ? '✓' : '○'}</span>
-        <span>${escHtml(f.text || '')}</span>
-      </div>`;
-    }).join('')}</div>
-  </div>` : '';
-
-  el.innerHTML = kpiRow + `<div class="sm-cols">
-    <div class="sm-col">${svcCard}${techCard}</div>
-    <div class="sm-col">${claudeCard}${codexCard}${featCard}</div>
-  </div>`;
-}
-
-// ─── Modal: 全局面貌 ──────────────────────────────────────────────────────────
-function renderProjectOverview(p) {
-  const el = document.getElementById('mcontent-overview');
-  const git = p.git || {};
-  const deploy = p.deploy || {};
-  const loc = p.loc || {};
-  const svc = p.service || {};
-  const features = p.features || [];
-  const extDeps = p.external_deps || [];
-
-  // ── Shared deps lookup ──
-  const shared = {};
-  allProjects.forEach(op => {
-    if (op.id === p.id) return;
-    (op.external_deps || []).forEach(od => {
-      extDeps.forEach(d => {
-        if (d.name === od.name || (d.port && d.port === od.port)) {
-          if (!shared[d.name]) shared[d.name] = [];
-          if (!shared[d.name].includes(op.name)) shared[d.name].push(op.name);
-        }
-      });
-    });
-  });
-
-  // ── Hero ──
-  const wsState = wsSnapshot[p.id];
-  const isRunning = wsState !== undefined ? wsState.is_running : svc.is_running;
-  const svcBadge = svc.port
-    ? `<span class="ov-badge ${isRunning ? 'ov-badge-running' : 'ov-badge-stopped'}">${isRunning ? '● 运行中' : '○ 停止'} :${svc.port}</span>`
-    : '';
-  const deployBadge = deploy.type && deploy.type !== 'none'
-    ? `<span class="ov-badge ov-badge-deploy">${escHtml(deploy.type)}${deploy.host ? ' · ' + escHtml(deploy.host) : ''}</span>`
-    : '';
-  const curStatus = p.status || 'active';
-  const statusOpts = Object.entries(STATUS_META).map(([k,v]) =>
-    `<div class="status-opt${k===curStatus?' selected':''}" onclick="event.stopPropagation();setStatus('${escHtml(p.id)}','${k}',this)">${v.label}</div>`
-  ).join('');
-  const statusBadge = `<div class="status-dropdown-wrap" onclick="event.stopPropagation();toggleStatusMenu(this)" style="display:inline-block">
-    <span class="ov-badge ov-badge-status status-badge-clickable">${escHtml(curStatus)} ▾</span>
-    <div class="status-menu">${statusOpts}</div>
-  </div>`;
-
-  // Extract one-liner: first non-heading line from arch_summary
-  let oneLiner = '';
-  if (p.arch_summary) {
-    const firstLine = p.arch_summary.split('\n').find(l => l.trim() && !l.startsWith('#'));
-    oneLiner = firstLine ? firstLine.replace(/^\*\*[^*]+\*\*[:：]\s*/, '').trim() : '';
-  }
-
-  const summaryBtnId = `btn-summarize-${p.id}`;
-  let html = `<div class="ov-hero">
-    <button class="ov-regen-btn" id="${summaryBtnId}" onclick="generateSummary('${escHtml(p.id)}')">↻ 重新生成</button>
-    <div class="ov-hero-title">${escHtml(p.name)}</div>
-    ${oneLiner ? `<div class="ov-hero-oneliner">${escHtml(oneLiner)}</div>` : ''}
-    <div class="ov-hero-badges">${svcBadge}${deployBadge}${statusBadge}</div>
-  </div>`;
-
-  // ── Two-column: arch markdown + tech stack ──
-  const techStack = p.tech_stack || [];
-  const groups = { lang:[], web:[], ai:[], db:[], infra:[] };
-  techStack.forEach(t => {
-    const name = t.name || t;
-    groups[classifyTech(name)].push(name);
-  });
-  const groupLabels = { lang:'语言', web:'框架 / API', ai:'AI / ML', db:'存储', infra:'工具链' };
-
-  const techPanelHtml = Object.entries(groups)
-    .filter(([, items]) => items.length)
-    .map(([cat, items]) => `
-      <div class="ov-tech-group">
-        <div class="ov-tech-group-label">${groupLabels[cat]}</div>
-        <div class="ov-tech-pills">
-          ${items.map(n => `<span class="ov-tech-pill ${techPillClass(cat)}">${escHtml(n)}</span>`).join('')}
-        </div>
-      </div>`).join('');
-
-  if (p.arch_summary || techStack.length) {
-    html += `<div class="ov-cols">`;
-    if (p.arch_summary) {
-      html += `<div class="arch-text" id="arch-text-${p.id}">${simpleMarkdown(p.arch_summary)}</div>`;
-    } else {
-      html += `<div class="arch-text" style="color:var(--text-muted);display:flex;align-items:center;justify-content:center;">
-        <button onclick="generateSummary('${escHtml(p.id)}')" style="font-size:12px;padding:6px 14px;cursor:pointer;border:1px solid var(--green-dim);border-radius:5px;background:rgba(34,197,94,.12);color:var(--green-dim);">AI 生成总结</button>
-      </div>`;
-    }
-    if (techStack.length) {
-      html += `<div class="ov-tech-panel">
-        <div class="ov-tech-panel-title">技术栈</div>
-        ${techPanelHtml}
-      </div>`;
-    }
-    html += `</div>`;
-  }
-
-  // ── Service map (project → external deps) ──
-  if (extDeps.length) {
-    const nodes = extDeps.map(d => {
-      const sharedWith = shared[d.name] || [];
-      const isShared = sharedWith.length > 0;
-      let meta = d.port ? `:${d.port}` : '';
-      if (!meta && d.url) { try { meta = new URL(d.url.startsWith('http') ? d.url : 'http://' + d.url).hostname; } catch(_) {} }
-      const sharedBadge = isShared
-        ? `<div class="ov-svc-shared-badge">共用 · ${escHtml(sharedWith.join(', '))}</div>`
-        : '';
-      return `
-        <div class="ov-svc-arrow">→</div>
-        <div class="ov-svc-node">
-          <div class="ov-svc-node-box ext${isShared ? ' shared' : ''}">${escHtml(d.name)}</div>
-          ${meta ? `<div class="ov-svc-node-meta">${escHtml(meta)}</div>` : ''}
-          ${sharedBadge}
-        </div>`;
-    }).join('');
-
-    html += `<div class="ov-svc-map">
-      <div class="ov-svc-map-title">服务依赖</div>
-      <div class="ov-svc-flow">
-        <div class="ov-svc-node">
-          <div class="ov-svc-node-box self">${escHtml(p.name)}</div>
-          ${svc.port ? `<div class="ov-svc-node-meta">:${svc.port}</div>` : ''}
-        </div>
-        ${nodes}
-      </div>
-    </div>`;
-  }
-
-  // ── Bottom data row: LOC · Git · Languages ──
-  const hasLoc = loc.total_lines || loc.code_lines;
-  const hasGit = git.branch;
-  const hasLangs = (loc.languages || []).length > 0;
-
-  if (hasLoc || hasGit || hasLangs) {
-    html += `<div class="ov-data-row">`;
-
-    // LOC card
-    if (hasLoc) {
-      html += `<div class="ov-data-card">
-        <div class="ov-data-card-title">代码规模</div>
-        <div class="ov-stat-grid">
-          <div class="ov-stat"><div class="ov-stat-val">${((loc.total_lines || 0) / 1000).toFixed(1)}k</div><div class="ov-stat-label">总行数</div></div>
-          <div class="ov-stat"><div class="ov-stat-val">${((loc.code_lines || 0) / 1000).toFixed(1)}k</div><div class="ov-stat-label">代码行</div></div>
-          <div class="ov-stat"><div class="ov-stat-val">${loc.file_count || 0}</div><div class="ov-stat-label">文件数</div></div>
-          <div class="ov-stat"><div class="ov-stat-val">${loc.total_lines ? Math.round(((loc.comment_lines || 0) / loc.total_lines) * 100) : 0}%</div><div class="ov-stat-label">注释率</div></div>
-        </div>
-      </div>`;
-    }
-
-    // Git card
-    if (hasGit) {
-      const recentCommits = (git.recent_commits || []).slice(0, 4);
-      html += `<div class="ov-data-card">
-        <div class="ov-data-card-title">Git</div>
-        <div class="ov-git-items">
-          <div class="ov-git-kv"><span class="k">分支</span><span class="v">${escHtml(git.branch || '—')}</span></div>
-          <div class="ov-git-kv"><span class="k">Commit</span><span class="v">${escHtml((git.commit_hash || '').slice(0, 7) || '—')}</span></div>
-          <div class="ov-git-kv"><span class="k">本月提交</span><span class="v">${git.monthly_commits || 0}</span></div>
-          ${(git.dirty_files || []).length ? `<div class="ov-git-kv"><span class="k">未提交</span><span class="v" style="color:var(--orange)">${git.dirty_files.length} 文件</span></div>` : ''}
-        </div>
-        ${recentCommits.length ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px;">
-          ${recentCommits.map(c => {
-            const msg = typeof c === 'object' ? (c.message || c.msg || String(c)) : String(c);
-            return `<div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(msg)}</div>`;
-          }).join('')}
-        </div>` : ''}
-      </div>`;
-    }
-
-    // Languages card
-    if (hasLangs) {
-      const langs = (loc.languages || []).slice(0, 6);
-      const maxLines = Math.max(...langs.map(l => l.code || 0), 1);
-      html += `<div class="ov-data-card">
-        <div class="ov-data-card-title">语言分布</div>
-        <div class="ov-lang-list">
-          ${langs.map((l, i) => {
-            const lines = l.code || 0;
-            const pct = Math.round((lines / maxLines) * 100);
-            const color = LANG_COLORS[i % LANG_COLORS.length];
-            return `<div class="ov-lang-row">
-              <span class="ov-lang-name">${escHtml(l.name || '')}</span>
-              <div class="ov-lang-track"><div class="ov-lang-fill" style="width:${pct}%;background:${color}"></div></div>
-              <span class="ov-lang-num">${lines >= 1000 ? (lines/1000).toFixed(1)+'k' : lines}</span>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    }
-
-    html += `</div>`;
-  }
-
-  // ── Features (compact, below fold) ──
-  if (features.length) {
-    html += `<div class="section">
-      <div class="section-title">功能列表</div>
-      <div class="feature-list">
-        ${features.map(f => {
-          const impl = f.implemented !== false;
-          return `<div class="feature-item">
-            <span class="feature-check ${impl ? 'done' : 'planned'}">${impl ? '✓' : '○'}</span>
-            <span class="feature-text">${escHtml(f.text || '')}</span>
-            ${f.source ? `<span class="feature-source">${escHtml(f.source)}</span>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-  }
-
-  if (!html) html = '<div class="placeholder"><div class="placeholder-icon">◎</div><div class="placeholder-title">暂无概览信息</div></div>';
-  el.innerHTML = html;
-}
-
-// ─── Modal: 设计文档 ──────────────────────────────────────────────────────────
-function renderDesignDocs(p) {
-  const el = document.getElementById('mcontent-design');
-  const docs = p.design_docs || [];
-
-  if (!docs.length) {
-    el.innerHTML = `<div class="placeholder">
-      <div class="placeholder-icon">◇</div>
-      <div class="placeholder-title">暂无设计文档</div>
-    </div>`;
-    return;
-  }
-
-  currentDocIdx = 0;
-
-  const sidebarItems = docs.map((d, i) => `
-    <div class="doc-file-item ${i === 0 ? 'active' : ''}" id="doc-item-${i}" onclick="showDoc(${i})">
-      <span>${escHtml(d.filename || d.title || `文档 ${i+1}`)}</span>
-      ${d.possibly_stale ? '<span class="stale-dot" title="可能已过期"></span>' : ''}
-    </div>`).join('');
-
-  const aiCmd = p.path
-    ? `claude "请根据最新代码更新设计文档" --project "${escHtml(p.path)}"`
-    : '';
-
-  el.innerHTML = `<div class="docs-layout">
-    <div class="docs-sidebar">
-      <div class="docs-sidebar-title">文档列表</div>
-      ${sidebarItems}
-      ${aiCmd ? `<div class="ai-cmd-section">
-        <div class="ai-cmd-label">AI 更新文档</div>
-        <div class="ai-cmd-box">
-          <span class="ai-cmd-text" id="ai-cmd-text">${escHtml(aiCmd)}</span>
-          <button class="copy-btn" onclick="copyAiCmd()">复制</button>
-        </div>
-      </div>` : ''}
-    </div>
-    <div class="docs-content" id="docs-content">
-      <!-- doc content injected here -->
-    </div>
-  </div>`;
-
-  showDoc(0);
-}
-
-function showDoc(idx) {
-  const p = currentProject;
-  if (!p) return;
-  const docs = p.design_docs || [];
-  if (idx < 0 || idx >= docs.length) return;
-
-  currentDocIdx = idx;
-  document.querySelectorAll('.doc-file-item').forEach((el, i) => {
-    el.classList.toggle('active', i === idx);
-  });
-
-  const doc = docs[idx];
-  const content = document.getElementById('docs-content');
-  if (!content) return;
-
-  const rendered = simpleMarkdown(doc.content || '');
-  content.innerHTML = `
-    <div class="docs-content-title">${escHtml(doc.title || doc.filename || '')}</div>
-    ${doc.possibly_stale ? `<div style="font-size:11px;color:var(--orange);margin-bottom:8px">⚠ 此文档可能已过期</div>` : ''}
-    <div class="markdown-body">${rendered}</div>`;
-}
-
-function copyAiCmd() {
-  const el = document.getElementById('ai-cmd-text');
-  if (!el) return;
-  navigator.clipboard.writeText(el.textContent).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = el.textContent;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-  });
-  const btn = document.querySelector('.copy-btn');
-  if (btn) { btn.textContent = '已复制!'; setTimeout(() => btn.textContent = '复制', 1500); }
-}
-
-// ─── Modal: 计划 ──────────────────────────────────────────────────────────────
-function renderPlans(p) {
-  const el = document.getElementById('mcontent-plans');
-  const plans = p.plans || {};
-  const files = plans.files || [];
-
-  if (!files.length) {
-    el.innerHTML = `<div class="placeholder">
-      <div class="placeholder-icon">✓</div>
-      <div class="placeholder-title">暂无计划文件</div>
-    </div>`;
-    return;
-  }
-
-  let html = '';
-
-  // Overall progress
-  html += `<div class="section">
-    <div class="section-title">总体进度</div>
-    ${progressBar(plans.done || 0, plans.total || 0)}
-  </div>`;
-
-  // Per file
-  html += files.map(f => {
-    const tasks = f.tasks || [];
-    const done = tasks.filter(t => t.done).length;
-    const total = tasks.length;
-
-    return `<div class="plan-file">
-      <div class="plan-file-name">${escHtml(f.filename || '')}</div>
-      <div class="plan-progress-row">
-        ${progressBar(done, total)}
-      </div>
-      <div class="task-list">
-        ${tasks.map(t => `<div class="task-item">
-          <span class="task-check ${t.done ? 'done' : 'todo'}">${t.done ? '✓' : '○'}</span>
-          <span class="task-text ${t.done ? 'done' : 'todo'}">${escHtml(t.text || '')}</span>
-        </div>`).join('')}
-      </div>
-    </div>`;
-  }).join('');
-
-  el.innerHTML = html;
-}
-
-// ─── Keyboard ─────────────────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
-});
-
-// ─── Generate Summary ─────────────────────────────────────────────────────────
-async function generateSummary(projectId) {
-  const btn = document.getElementById(`btn-summarize-${projectId}`);
-  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
-  try {
-    const res = await fetch(`/api/projects/${projectId}/summarize?force=true`, { method: 'POST', headers: _authHeaders() });
-    const data = await res.json();
-    if (res.ok && data.status === 'ok' && data.project) {
-      currentProject = data.project;
-      renderProjectOverview(currentProject);
-    } else {
-      const detail = data.detail || data.status || '未知错误';
-      if (btn) { btn.disabled = false; btn.textContent = '↻ 重新生成'; }
-      alert(`生成失败: ${detail}`);
-    }
-  } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '↻ 重新生成'; }
-    alert(`生成失败: ${e.message}`);
-  }
-}
-
-// ─── Delete ───────────────────────────────────────────────────────────────────
-function initDelete() {
-  document.getElementById('delete-confirm-row').style.display = 'flex';
-  document.getElementById('delete-init-btn').style.display = 'none';
-}
-function cancelDelete() {
-  document.getElementById('delete-confirm-row').style.display = 'none';
-  document.getElementById('delete-init-btn').style.display = '';
-}
-async function confirmDeleteProject() {
-  if (!currentProject) return;
-  try {
-    const res = await fetch(`/api/projects/${encodeURIComponent(currentProject.id)}`, { method: 'DELETE', headers: _authHeaders() });
-    if (res.ok) {
-      closeModal();
-      await loadProjects();
-    } else {
-      const d = await res.json();
-      showToast('移除失败: ' + (d.detail || ''));
-    }
-  } catch(e) {
-    showToast('移除失败: ' + e.message);
-  }
-}
-
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function showToast(msg, ok = false) {
   const el = document.createElement('div');
@@ -3362,7 +2671,8 @@ let wsStatusPrev = {};  // {project_id: is_running}
 
 function connectStatusWs() {
   const _wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${_wsProto}//${location.host}/ws/status`);
+  const _wsToken = _adminToken ? `?token=${encodeURIComponent(_adminToken)}` : '';
+  const ws = new WebSocket(`${_wsProto}//${location.host}/ws/status${_wsToken}`);
 
   ws.onmessage = (e) => {
     const { snapshot, changes } = JSON.parse(e.data);
@@ -3478,6 +2788,87 @@ async function restartInfraSvc(name) {
   if (btn) { btn.textContent = '↺ 重启'; btn.disabled = false; }
   // Refresh status after 15s
   setTimeout(loadInfraServices, 15000);
+}
+
+// ─── Tunnel Management ──────────────────────────────────────────────────────
+let tunnelOpen = false;
+
+function toggleTunnelSection() {
+  tunnelOpen = !tunnelOpen;
+  document.getElementById('tunnel-body').style.display = tunnelOpen ? '' : 'none';
+  document.getElementById('tunnel-toggle-icon').textContent = tunnelOpen ? '▾' : '▸';
+  if (tunnelOpen) loadTunnels();
+}
+
+async function loadTunnels() {
+  try {
+    const res = await fetch('/api/tunnels', { headers: _authHeaders() });
+    if (res.status === 401) return;
+    if (!res.ok) return;
+    const data = await res.json();
+    renderTunnelTable(data);
+  } catch(e) { console.error('loadTunnels error:', e); }
+}
+
+function renderTunnelTable(tunnels) {
+  const section = document.getElementById('tunnel-section');
+  const wrap = document.getElementById('tunnel-table-wrap');
+  const countEl = document.getElementById('tunnel-count');
+  if (!section || !wrap) return;
+  section.style.display = '';
+
+  const enabledCount = tunnels.filter(t => t.enabled).length;
+  countEl.textContent = `${enabledCount}/${tunnels.length}`;
+
+  const rows = tunnels.map(t => {
+    const on = t.is_running;
+    const href = t.enabled ? `https://${escHtml(t.hostname)}` : '#';
+    return `<tr>
+      <td><span class="tunnel-name">${escHtml(t.name)}</span></td>
+      <td class="tunnel-host"><a href="${href}" target="_blank">${escHtml(t.hostname)}</a></td>
+      <td class="tunnel-port">:${t.port}</td>
+      <td><span class="tunnel-dot ${on ? 'on' : 'off'}"></span>${on ? '运行' : '停止'}</td>
+      <td>
+        <label class="tunnel-toggle">
+          <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleTunnel('${escHtml(t.name)}', this)">
+          <span class="slider"></span>
+        </label>
+      </td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table class="tunnel-table">
+    <thead><tr><th>名称</th><th>域名</th><th>端口</th><th>服务</th><th>Tunnel</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function toggleTunnel(name, el) {
+  const wasChecked = !el.checked; // already toggled by browser
+  try {
+    const res = await fetch(`/api/tunnels/${encodeURIComponent(name)}/toggle`, {
+      method: 'POST', headers: _authHeaders()
+    });
+    if (res.status === 401) { el.checked = wasChecked; openLoginModal(() => toggleTunnel(name, el)); return; }
+    if (!res.ok) { el.checked = wasChecked; return; }
+    // refresh after toggle
+    loadTunnels();
+  } catch(e) { el.checked = wasChecked; }
+}
+
+// Load tunnel section on page load (just show the collapsed header)
+async function initTunnelSection() {
+  try {
+    const res = await fetch('/api/tunnels', { headers: _authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.length) return;
+    const section = document.getElementById('tunnel-section');
+    const countEl = document.getElementById('tunnel-count');
+    if (section) section.style.display = '';
+    const enabledCount = data.filter(t => t.enabled).length;
+    if (countEl) countEl.textContent = `${enabledCount}/${data.length}`;
+  } catch(e) {}
 }
 
 // ─── Claude Usage ────────────────────────────────────────────────────────────
@@ -3931,77 +3322,12 @@ function renderBalanceCard(p, activity = null) {
   </div>`;
 }
 
-// ─── Prompts (modal tab) ───────────────────────────────────────────────────────
-let _promptsData = null;   // [{id, name, prompts:[{date,text}]}]
-
-// Pre-fetch prompts on page load so modal tab is instant
-fetch('/api/prompts').then(r => r.json()).then(d => { _promptsData = d.projects || []; }).catch(() => {});
-
-// ── Modal: Prompts tab ────────────────────────────────────────────────────────
-function renderProjectPrompts(project) {
-  const el = document.getElementById('mcontent-prompts');
-  if (!_promptsData) {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:16px">加载中…</div>';
-    fetch('/api/prompts').then(r => r.json()).then(d => {
-      _promptsData = d.projects || [];
-      renderProjectPrompts(project);
-    });
-    return;
-  }
-
-  // Match project to prompts bucket
-  const haystack = ((project.id || '') + ' ' + (project.name || '')).toLowerCase().replace(/-/g, '');
-  const proj = _promptsData.find(p => haystack.includes(p.id.replace(/-/g, '')));
-
-  if (!proj || !proj.prompts.length) {
-    el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:16px">暂无 prompt 记录</div>';
-    return;
-  }
-
-  let searchQ = '';
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <input id="mprompt-search" type="text" placeholder="搜索 prompt…"
-        style="flex:1;background:var(--card-deep);border:1px solid var(--border);border-radius:6px;
-               padding:5px 10px;color:var(--text);font-size:12px;outline:none">
-      <span id="mprompt-count" style="font-size:11px;color:var(--text-muted);white-space:nowrap"></span>
-    </div>
-    <div id="mprompt-list" style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto"></div>`;
-
-  const searchEl = el.querySelector('#mprompt-search');
-  searchEl.addEventListener('input', () => _renderModalList(proj.prompts, searchEl.value.trim().toLowerCase()));
-  _renderModalList(proj.prompts, '');
-}
-
-function _renderModalList(prompts, q) {
-  const list = document.getElementById('mprompt-list');
-  const count = document.getElementById('mprompt-count');
-  if (!list) return;
-  const filtered = q ? prompts.filter(e => e.text.toLowerCase().includes(q)) : prompts;
-  if (count) count.textContent = `${filtered.length} 条`;
-  if (!filtered.length) {
-    list.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:12px">无匹配</div>';
-    return;
-  }
-  list.innerHTML = filtered.map(entry => {
-    let text = escHtml(entry.text);
-    if (q) {
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      text = text.replace(re, m => `<mark>${m}</mark>`);
-    }
-    return `<div style="background:var(--card-deep);border:1px solid var(--border);border-radius:6px;
-                         padding:10px 12px;font-size:12px;line-height:1.6">
-      <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">${escHtml(entry.date)}</div>
-      <div style="white-space:pre-wrap;word-break:break-word;color:var(--text)">${text}</div>
-    </div>`;
-  }).join('');
-}
-
 // ─── Init ─────────────────────────────────────────────────────────────────────
 _initAuth().then(ready => {
   if (!ready) return; // waiting at login gate
   loadProjects();
   loadInfraServices();
+  initTunnelSection();
   connectStatusWs();
   loadBalance();
 });

@@ -127,3 +127,27 @@ def test_dead_pane_removed_on_poll():
 
     panes = get_panes()
     assert len(panes) == 0
+
+
+def test_unrecognized_pane_not_rescanned_every_poll():
+    """回归：未识别 pane 原本每 2s 轮询都做两次 capture_pane subprocess，
+    永远扫不出结果却反复扫。负向缓存应在间隔内跳过重扫。"""
+    import vibe.terminal_monitor as m
+    m._codex_scan_cache.clear()
+    fake_panes = [
+        {'target': 'work:0.1', 'command': 'node', 'cwd': '/tmp/foo', 'session': 'work', 'window': 0, 'pane': 1, 'title': 'foo'},
+    ]
+    calls = {'n': 0}
+    def _counting_capture(target, lines):
+        calls['n'] += 1
+        return 'just a node server, not codex'
+    with patch('vibe.tmux_bridge.list_panes', return_value=fake_panes), \
+         patch('vibe.tmux_bridge.capture_pane', side_effect=_counting_capture), \
+         patch('vibe.terminal_monitor._match_project', return_value=None):
+        from vibe.terminal_monitor import _poll_once
+        _poll_once()
+        first = calls['n']
+        _poll_once()   # 紧接着第二次 poll（在重扫间隔内）
+        second = calls['n']
+    assert first == 2, f"首次应扫两次(可见+回滚)，实际 {first}"
+    assert second == 2, f"间隔内第二次 poll 不应再扫，实际累计 {second}"

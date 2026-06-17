@@ -144,13 +144,13 @@ def render_new_project_page() -> str:
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">都不满意？直接输入你想要的名字</div>
       <div style="display:flex;gap:8px">
         <input id="custom-name" class="wz-input" style="flex:1;margin:0" placeholder="输入项目名称，如 EchoMind">
-        <button type="button" class="wz-btn" onclick="useCustomName()" style="flex:0 0 auto;white-space:nowrap">用这个名字 →</button>
+        <button type="button" class="wz-btn" onclick="useCustomName()" style="flex:0 0 auto;width:auto;margin:0;padding:13px 18px;white-space:nowrap">用这个名字 →</button>
       </div>
     </div>
     <div class="wz-error" id="step2-error"></div>
-    <div style="display:flex;gap:8px">
-      <button type="button" class="wz-btn" id="btn-next2" onclick="goStep(3)" disabled style="flex:1">下一步：确认配置 →</button>
-      <button type="button" class="wz-btn" id="btn-regen" onclick="doRegenerate()" style="flex:0 0 auto;background:none;border:1px solid var(--border);color:var(--sub)">↻ 重新生成</button>
+    <div style="display:flex;gap:8px;margin-top:20px">
+      <button type="button" class="wz-btn" id="btn-next2" onclick="goStep(3)" disabled style="flex:1;margin:0">下一步：确认配置 →</button>
+      <button type="button" class="wz-btn" id="btn-regen" onclick="doRegenerate()" style="flex:0 0 auto;width:auto;margin:0;padding:13px 16px;background:none;border:1px solid var(--border);color:var(--sub);white-space:nowrap">↻ 重新生成</button>
     </div>
   </div>
 
