@@ -1219,7 +1219,7 @@ function _renderFolder(folder, groups) {
 // ── 指针拖拽:顶层项排序 + 合并(鼠标 / 触屏通用)──────────────────────────────
 var _drag = null;          // {key,type,x0,y0,active,ghost,target}
 var _suppressToggle = false;
-function _gripDown(e, key, type) { e.stopPropagation(); _startDrag(e, key, type); }
+function _gripDown(e, key, type) { e.stopPropagation(); e.preventDefault(); _startDrag(e, key, type); }
 function _headerDown(e, key, type) {
   // 桌面整行可拖;触屏只允许从抓手拖(避免和滚动/点击冲突)
   if (e.pointerType !== 'mouse') return;
