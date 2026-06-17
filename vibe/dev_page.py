@@ -35,7 +35,7 @@ def render_dev_page() -> str:
   body.detail-locked { position: fixed; width: 100%; touch-action: none; }
   /* 部署版本号(右下角)—— 用来核对页面是否刷到最新代码 */
   .dev-build-badge {
-    position: fixed; bottom: 6px; right: 8px; z-index: 6000;
+    position: fixed; bottom: 6px; left: 8px; z-index: 6000;
     font-size: 10px; font-family: var(--mono, monospace); color: var(--muted);
     background: color-mix(in srgb, var(--panel) 85%, transparent);
     border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px;
@@ -162,6 +162,8 @@ def render_dev_page() -> str:
   .term-drag-handle:hover { color: var(--accent); }
   .term-drag-handle:active { cursor: grabbing; }
   body.dev-dragging, body.dev-dragging * { cursor: grabbing !important; }
+  /* 拖拽时让终端 iframe 不吃鼠标事件,否则光标划过它时 mousemove 会被 iframe 截走 */
+  body.dev-dragging #ttyd-frame { pointer-events: none !important; }
   .dev-drag-ghost {
     position: fixed; z-index: 5000; pointer-events: none; white-space: nowrap;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 6px;
@@ -1207,7 +1209,6 @@ function _renderProjectGroup(pid, grp, nested) {
   const grip = nested ? '' : `<span class="term-drag-handle" onpointerdown="_gripDown(event,'${escHtml(pid)}','project')" onclick="event.stopPropagation()" title="拖拽:排序 / 拖到其它项目上=合并">⠿</span>`;
   let h = `<div class="term-group-header${focused ? ' focused' : ''}${nested ? ' nested' : ''}"
       data-group="${escHtml(pid)}" data-drop-key="${escHtml(pid)}" data-drop-type="project"
-      onpointerdown="_headerDown(event,'${escHtml(pid)}','project')"
       onclick="toggleGroup('${escHtml(pid)}')">
       ${grip}
       <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
@@ -1234,7 +1235,6 @@ function _renderFolder(folder, groups) {
   const collapsed = !!_groupCollapsed[fkey];
   return `<div class="term-folder">
     <div class="term-folder-header" data-folder="${escHtml(folder.id)}" data-drop-key="${escHtml(fkey)}" data-drop-type="folder"
-        onpointerdown="_headerDown(event,'${escHtml(fkey)}','folder')"
         onclick="toggleGroup('${escHtml(fkey)}')">
       <span class="term-drag-handle" onpointerdown="_gripDown(event,'${escHtml(fkey)}','folder')" onclick="event.stopPropagation()" title="拖拽排序">⠿</span>
       <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
@@ -1247,30 +1247,29 @@ function _renderFolder(folder, groups) {
   </div>`;
 }
 
-// ── 指针拖拽:顶层项排序 + 合并(鼠标 / 触屏通用)──────────────────────────────
-var _drag = null;          // {key,type,x0,y0,active,ghost,target}
+// ── 拖拽:桌面只走 mouse 事件,触屏只走 pointer 事件 ──────────────────────────────
+// 不混用:Safari 桌面在 pointerdown 后常立刻 pointercancel,会把刚挂的拖拽连 mouse
+// 监听一起拆掉。所以桌面(有鼠标)纯 mouse,触屏纯 pointer,各跑各的、互不干扰。
+var _drag = null;
 var _suppressToggle = false;
-function _gripDown(e, key, type) { e.stopPropagation(); e.preventDefault(); _startDrag(e, key, type); }
-function _headerDown(e, key, type) {
-  // 桌面整行可拖;触屏只允许从抓手拖(避免和滚动/点击冲突)
-  if (e.pointerType !== 'mouse') return;
-  if (e.target.closest('.term-group-menu, .term-drag-handle')) return;
-  _startDrag(e, key, type);
+// 触屏:抓手 onpointerdown 触发(忽略鼠标,鼠标走下面的 mousedown 委托)
+function _gripDown(e, key, type) {
+  if (e.pointerType === 'mouse') return;
+  e.stopPropagation(); e.preventDefault();
+  _startDrag(e, key, type, 'pointer');
 }
-function _startDrag(e, key, type) {
+function _startDrag(e, key, type, mode) {
   if (_drag) return;
-  _drag = { key: key, type: type, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, capEl: null, pid: e.pointerId };
-  // pointer 事件能捕获就捕获(Safari 不捕获会取消序列、移到 iframe 上会丢事件)。
-  if (e.pointerId != null) {
+  _drag = { key: key, type: type, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null, capEl: null, pid: e.pointerId, mode: mode };
+  if (mode === 'pointer') {
     try { e.currentTarget.setPointerCapture(e.pointerId); _drag.capEl = e.currentTarget; } catch(_) {}
     window.addEventListener('pointermove', _dragMove, { passive: false });
     window.addEventListener('pointerup', _dragUp, { once: true });
     window.addEventListener('pointercancel', _dragUp, { once: true });
+  } else {
+    window.addEventListener('mousemove', _dragMove);
+    window.addEventListener('mouseup', _dragUp, { once: true });
   }
-  // mouse 事件兜底:桌面 Safari 的 pointer 事件常不可靠,mousedown/move/up 最稳。
-  // 同时监听不冲突——一次拖拽只有一个 _drag,_dragUp 会把两套监听都摘掉。
-  window.addEventListener('mousemove', _dragMove);
-  window.addEventListener('mouseup', _dragUp, { once: true });
 }
 function _dragMove(e) {
   if (!_drag) return;
@@ -3050,15 +3049,15 @@ async function init() {
     if (e.target.closest('.term-pane-row') && !e.target.closest('.term-pane-kill')) {
       e.preventDefault();
     }
-    // 桌面 Safari 的 pointer 事件常不可靠 —— 用 mousedown 兜底启动拖拽(_startDrag 内部去重)
+    // 桌面拖拽统一走 mouse 事件(Safari 的 pointer 不可靠)。抓手或行头都可拖。
     if (e.button !== 0) return;
     var top = e.target.closest('#term-pane-list > .term-toplevel');
     if (!top) return;
+    if (e.target.closest('.term-group-menu')) return;   // ⋯ 菜单不拖
     var onGrip = e.target.closest('.term-drag-handle');
     var onHeader = e.target.closest('.term-group-header, .term-folder-header');
-    if (e.target.closest('.term-group-menu')) return;   // ⋯ 菜单不拖
-    if (onGrip) { e.preventDefault(); e.stopPropagation(); _startDrag(e, top.dataset.key, top.dataset.type); }
-    else if (onHeader) { _startDrag(e, top.dataset.key, top.dataset.type); }
+    if (onGrip) { e.preventDefault(); e.stopPropagation(); _startDrag(e, top.dataset.key, top.dataset.type, 'mouse'); }
+    else if (onHeader) { _startDrag(e, top.dataset.key, top.dataset.type, 'mouse'); }
   });
   document.getElementById('term-pane-list').addEventListener('click', function(e) {
     var row = e.target.closest('.term-pane-row');
