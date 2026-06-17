@@ -426,6 +426,8 @@ def render_dev_page() -> str:
     .term-group-body .term-pane-row { padding-left: 28px; }
     .term-main { display: none; flex-direction: column; }
     .dev-page.detail-open .term-sidebar { display: none; }
+    /* 手机进终端详情时,版本号 badge 跟着隐藏(只在项目列表显示) */
+    .dev-page.detail-open .dev-build-badge { display: none; }
     .dev-page.detail-open .term-main {
       display: flex; position: fixed; left: 0; right: 0; bottom: 0; top: 52px;
       height: calc(var(--app-h, 100dvh) - 52px); z-index: 90;
