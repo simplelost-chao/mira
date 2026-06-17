@@ -16,7 +16,7 @@ def _build_id() -> str:
         r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
                            capture_output=True, text=True, timeout=2)
         h = r.stdout.strip() or "unknown"
-        d = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+        d = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "-uno"],
                            capture_output=True, text=True, timeout=2)
         _BUILD_ID = h + ("+dirty" if d.stdout.strip() else "")
     except Exception:
