@@ -41,7 +41,7 @@ def render_dev_page() -> str:
     padding: 0; transition: color .12s, border-color .12s;
   }
   .term-new-btn:hover { color: var(--accent); border-color: var(--accent); }
-  #term-pane-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #term-pane-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; }
   .term-pane-row {
     padding: 10px 14px; display: flex; align-items: flex-start; gap: 8px;
     cursor: pointer; border-left: 2px solid transparent; transition: background .12s, border-color .12s;
@@ -120,6 +120,26 @@ def render_dev_page() -> str:
   .term-group-header.drag-over, .term-folder-header.drag-over {
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  /* 拖拽抓手 + 排序辅助(主题变量驱动) */
+  .term-drag-handle {
+    font-size: 12px; color: var(--muted); cursor: grab; flex-shrink: 0; line-height: 1;
+    padding: 0 2px; touch-action: none; user-select: none; opacity: .4; transition: opacity .12s, color .12s;
+  }
+  .term-group-header:hover .term-drag-handle, .term-folder-header:hover .term-drag-handle { opacity: .85; }
+  .term-drag-handle:hover { color: var(--text); }
+  .term-drag-handle:active { cursor: grabbing; }
+  body.dev-dragging, body.dev-dragging * { cursor: grabbing !important; }
+  .dev-drag-ghost {
+    position: fixed; z-index: 5000; pointer-events: none; white-space: nowrap;
+    background: var(--panel); border: 1px solid var(--accent); border-radius: 6px;
+    padding: 4px 10px; font-size: 11px; color: var(--text); box-shadow: 0 6px 20px rgba(0,0,0,.45);
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dev-drop-line {
+    position: absolute; left: 6px; right: 6px; height: 2px; display: none; z-index: 10;
+    pointer-events: none; background: var(--accent); border-radius: 2px;
+    box-shadow: 0 0 6px var(--accent);
   }
   .term-folder { border-bottom: 1px solid rgba(255,255,255,.04); }
   .term-folder-header {
@@ -947,8 +967,10 @@ const _filterProject = new URLSearchParams(location.search).get('project') || nu
 // ── Dev 侧栏:合并文件夹 + 自定义命名(纯展示,后端 vibe.yaml)────────────────
 var _devGroups = [];     // [{id,name,projects:[pid,...]}]
 var _devNames = {};      // pid -> 自定义显示名
+var _devOrder = [];      // 顶层项排序 [key,...](项目=pid,文件夹='folder:'+id)
 var _pidToFolder = {};   // pid -> folder 对象
 var _lastGroupPids = []; // 本次渲染出现的顶层项目 [{pid,name}],供"合并到…"选择器用
+var _topLevelKeys = [];  // 本次渲染的顶层项 key 顺序,供拖拽排序计算
 async function loadDevGroups() {
   try {
     const res = await fetch('/api/dev/groups', { headers: _authHeaders() });
@@ -956,6 +978,7 @@ async function loadDevGroups() {
     const d = await res.json();
     _devGroups = d.groups || [];
     _devNames = d.names || {};
+    _devOrder = d.order || [];
     _pidToFolder = {};
     for (const f of _devGroups) for (const pid of (f.projects || [])) _pidToFolder[pid] = f;
   } catch(e) { /* non-fatal */ }
@@ -995,6 +1018,7 @@ let _firstLoad = true;
 var _lastPanesHash = '';
 async function loadPanes(forceRebuild) {
   if (!_isAdmin) { openLoginModal(init); return; }
+  if (_drag && _drag.active && !forceRebuild) return;   // 拖拽中不重建列表
   // On mobile detail view: skip entirely to protect iframe focus/IME
   var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
   if (_isMobile && inDetail && !_firstLoad && !forceRebuild) return;
@@ -1054,17 +1078,32 @@ async function loadPanes(forceRebuild) {
       }
 
       _lastGroupPids = [];
-      const _renderedFolders = new Set();
+      // 收集顶层项:文件夹(含≥1活跃成员)+ 未分组项目
+      const _topItems = [];
+      const _seenFolders = new Set();
       for (const [pid, grp] of _sortedGroups) {
         _lastGroupPids.push({ pid: pid, name: _projName(pid, grp.name) });
         const folder = _pidToFolder[pid];
         if (folder) {
-          if (_renderedFolders.has(folder.id)) continue;  // 文件夹随首个成员一次性渲染
-          _renderedFolders.add(folder.id);
-          html += _renderFolder(folder, groups);
+          if (_seenFolders.has(folder.id)) continue;
+          _seenFolders.add(folder.id);
+          const fhtml = _renderFolder(folder, groups);
+          if (fhtml) _topItems.push({ key: 'folder:' + folder.id, type: 'folder', html: fhtml });
         } else {
-          html += _renderProjectGroup(pid, grp, false);
+          _topItems.push({ key: pid, type: 'project', html: _renderProjectGroup(pid, grp, false) });
         }
+      }
+      // 应用自定义排序(未在 order 里的排末尾,保持稳定)
+      if (_devOrder.length) {
+        _topItems.sort(function(a, b) {
+          var ai = _devOrder.indexOf(a.key); if (ai < 0) ai = 1e9;
+          var bi = _devOrder.indexOf(b.key); if (bi < 0) bi = 1e9;
+          return ai - bi;
+        });
+      }
+      _topLevelKeys = _topItems.map(function(it) { return it.key; });
+      for (const it of _topItems) {
+        html += `<div class="term-toplevel" data-key="${escHtml(it.key)}" data-type="${it.type}">${it.html}</div>`;
       }
     }
     // Skip DOM rebuild if user is in detail view (mobile terminal active)
@@ -1111,6 +1150,7 @@ async function loadPanes(forceRebuild) {
 }
 
 function toggleGroup(key) {
+  if (_suppressToggle) return;   // 刚拖完那一下 click 不触发折叠
   _groupCollapsed[key] = !_groupCollapsed[key];
   const collapsed = _groupCollapsed[key];
   if (key.indexOf('folder:') === 0) {
@@ -1132,11 +1172,12 @@ function _renderProjectGroup(pid, grp, nested) {
   const collapsed = !!_groupCollapsed[pid];
   const name = _projName(pid, grp.name);
   const focused = _focusProjects.indexOf(pid) >= 0;
+  const grip = nested ? '' : `<span class="term-drag-handle" onpointerdown="_gripDown(event,'${escHtml(pid)}','project')" onclick="event.stopPropagation()" title="拖拽:排序 / 拖到其它项目上=合并">⠿</span>`;
   let h = `<div class="term-group-header${focused ? ' focused' : ''}${nested ? ' nested' : ''}"
-      data-group="${escHtml(pid)}" draggable="true"
-      ondragstart="_dragStart(event,'${escHtml(pid)}')" ondragend="_dragEnd(event)"
-      ondragover="_dragOver(event)" ondragleave="_dragLeave(event)" ondrop="_dropOnGroup(event,'${escHtml(pid)}')"
+      data-group="${escHtml(pid)}" data-drop-key="${escHtml(pid)}" data-drop-type="project"
+      onpointerdown="_headerDown(event,'${escHtml(pid)}','project')"
       onclick="toggleGroup('${escHtml(pid)}')">
+      ${grip}
       <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
       <span class="term-group-name" data-group="${escHtml(pid)}">${escHtml(name)}</span>
       <span class="term-group-count">${grp.panes.length}</span>
@@ -1160,9 +1201,10 @@ function _renderFolder(folder, groups) {
   const fkey = 'folder:' + folder.id;
   const collapsed = !!_groupCollapsed[fkey];
   return `<div class="term-folder">
-    <div class="term-folder-header" data-folder="${escHtml(folder.id)}"
-        ondragover="_dragOver(event)" ondragleave="_dragLeave(event)" ondrop="_dropOnFolder(event,'${escHtml(folder.id)}')"
+    <div class="term-folder-header" data-folder="${escHtml(folder.id)}" data-drop-key="${escHtml(fkey)}" data-drop-type="folder"
+        onpointerdown="_headerDown(event,'${escHtml(fkey)}','folder')"
         onclick="toggleGroup('${escHtml(fkey)}')">
+      <span class="term-drag-handle" onpointerdown="_gripDown(event,'${escHtml(fkey)}','folder')" onclick="event.stopPropagation()" title="拖拽排序">⠿</span>
       <span class="term-group-arrow${collapsed ? ' collapsed' : ''}">▾</span>
       <span class="term-folder-icon">📁</span>
       <span class="term-folder-name">${escHtml(folder.name)}</span>
@@ -1173,25 +1215,118 @@ function _renderFolder(folder, groups) {
   </div>`;
 }
 
-// ── 拖拽合并(桌面)──────────────────────────────────────────────────────────
-var _dragPid = null;
-function _dragStart(e, pid) { _dragPid = pid; try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', pid); } catch(_) {} }
-function _dragEnd(e) { _dragPid = null; document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over')); }
-function _dragOver(e) { if (!_dragPid) return; e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch(_) {} e.currentTarget.classList.add('drag-over'); }
-function _dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-async function _dropOnGroup(e, targetPid) {
-  e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over');
-  const src = _dragPid; _dragPid = null;
-  if (!src || src === targetPid) return;
-  await _confirmMerge(src, targetPid, null);
+// ── 指针拖拽:顶层项排序 + 合并(鼠标 / 触屏通用)──────────────────────────────
+var _drag = null;          // {key,type,x0,y0,active,ghost,target}
+var _suppressToggle = false;
+function _gripDown(e, key, type) { e.stopPropagation(); _startDrag(e, key, type); }
+function _headerDown(e, key, type) {
+  // 桌面整行可拖;触屏只允许从抓手拖(避免和滚动/点击冲突)
+  if (e.pointerType !== 'mouse') return;
+  if (e.target.closest('.term-group-menu, .term-drag-handle')) return;
+  _startDrag(e, key, type);
 }
-async function _dropOnFolder(e, folderId) {
-  e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over');
-  const src = _dragPid; _dragPid = null;
-  const folder = _devGroups.find(f => f.id === folderId);
-  if (!src || !folder || !folder.projects.length) return;
-  if (folder.projects.indexOf(src) >= 0) return;
-  await _confirmMerge(src, folder.projects[0], folder.name);
+function _startDrag(e, key, type) {
+  _drag = { key: key, type: type, x0: e.clientX, y0: e.clientY, active: false, ghost: null, target: null };
+  window.addEventListener('pointermove', _dragMove, { passive: false });
+  window.addEventListener('pointerup', _dragUp, { once: true });
+}
+function _dragMove(e) {
+  if (!_drag) return;
+  if (!_drag.active) {
+    if (Math.abs(e.clientX - _drag.x0) + Math.abs(e.clientY - _drag.y0) < 6) return;
+    _drag.active = true;
+    document.body.classList.add('dev-dragging');
+    _drag.ghost = document.createElement('div');
+    _drag.ghost.className = 'dev-drag-ghost';
+    _drag.ghost.textContent = _dragLabel(_drag.key, _drag.type);
+    document.body.appendChild(_drag.ghost);
+  }
+  e.preventDefault();
+  _drag.ghost.style.left = (e.clientX + 12) + 'px';
+  _drag.ghost.style.top = (e.clientY + 12) + 'px';
+  _computeDrop(e.clientX, e.clientY);
+}
+function _dragLabel(key, type) {
+  if (type === 'folder') { const f = _devGroups.find(x => 'folder:' + x.id === key); return '📁 ' + (f ? f.name : ''); }
+  const g = _lastGroupPids.find(x => x.pid === key); return g ? g.name : key;
+}
+function _computeDrop(x, y) {
+  _clearDropUI();
+  const items = [...document.querySelectorAll('#term-pane-list > .term-toplevel')];
+  if (!items.length) { _drag.target = null; return; }
+  let target = null;
+  for (const it of items) {
+    const r = it.getBoundingClientRect();
+    if (y < r.top || y > r.bottom) continue;
+    const hdr = it.querySelector('[data-drop-key]');
+    const hr = hdr.getBoundingClientRect();
+    const overHeader = y >= hr.top && y <= hr.bottom;
+    // 合并:源是项目、悬在另一项头部中段、不是自己
+    if (overHeader && _drag.type === 'project' && hdr.dataset.dropKey !== _drag.key) {
+      const hrel = (y - hr.top) / hr.height;
+      if (hrel > 0.28 && hrel < 0.72) {
+        target = { mode: 'merge', key: hdr.dataset.dropKey, dropType: hdr.dataset.dropType };
+        hdr.classList.add('drag-over');
+        break;
+      }
+    }
+    // 否则:排序,插到该项前/后
+    const before = (y - r.top) / r.height < 0.5;
+    target = { mode: 'reorder', beforeKey: before ? it.dataset.key : _nextKey(items, it) };
+    _showDropLine(it, before);
+    break;
+  }
+  if (!target) {
+    const last = items[items.length - 1];
+    if (y > last.getBoundingClientRect().bottom) { target = { mode: 'reorder', beforeKey: null }; _showDropLine(last, false); }
+  }
+  _drag.target = target;
+}
+function _nextKey(items, it) {
+  const i = items.indexOf(it);
+  return (i >= 0 && i + 1 < items.length) ? items[i + 1].dataset.key : null;
+}
+function _showDropLine(item, before) {
+  const listEl = document.getElementById('term-pane-list');
+  let line = document.getElementById('dev-drop-line');
+  if (!line) { line = document.createElement('div'); line.id = 'dev-drop-line'; line.className = 'dev-drop-line'; listEl.appendChild(line); }
+  line.style.top = (before ? item.offsetTop : item.offsetTop + item.offsetHeight) + 'px';
+  line.style.display = 'block';
+}
+function _clearDropUI() {
+  document.querySelectorAll('.term-group-header.drag-over, .term-folder-header.drag-over').forEach(el => el.classList.remove('drag-over'));
+  const line = document.getElementById('dev-drop-line'); if (line) line.style.display = 'none';
+}
+function _dragUp(e) {
+  window.removeEventListener('pointermove', _dragMove);
+  document.body.classList.remove('dev-dragging');
+  const st = _drag; _drag = null;
+  if (st && st.ghost) st.ghost.remove();
+  _clearDropUI();
+  if (!st || !st.active) return;
+  _suppressToggle = true; setTimeout(() => { _suppressToggle = false; }, 0);  // 抑制拖完那次 click 的折叠
+  if (!st.target) return;
+  if (st.target.mode === 'merge') {
+    if (st.target.dropType === 'folder') {
+      const f = _devGroups.find(x => 'folder:' + x.id === st.target.key);
+      if (f && f.projects.length) _confirmMerge(st.key, f.projects[0], f.name);
+    } else {
+      _confirmMerge(st.key, st.target.key, null);
+    }
+  } else {
+    let arr = _topLevelKeys.filter(k => k !== st.key);
+    if (st.target.beforeKey == null) arr.push(st.key);
+    else { const idx = arr.indexOf(st.target.beforeKey); if (idx < 0) arr.push(st.key); else arr.splice(idx, 0, st.key); }
+    _saveOrder(arr);
+  }
+}
+async function _saveOrder(arr) {
+  try {
+    const res = await fetch('/api/dev/order', { method: 'POST', headers: { 'Content-Type': 'application/json', ..._authHeaders() }, body: JSON.stringify({ order: arr }) });
+    if (!res.ok) return;
+    await loadDevGroups();
+    loadPanes(true);
+  } catch(e) {}
 }
 async function _confirmMerge(src, target, folderName) {
   const sName = _projName(src, src), tName = folderName || _projName(target, target);

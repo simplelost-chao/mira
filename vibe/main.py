@@ -2952,12 +2952,27 @@ def dev_panes_list(request: Request):
 
 @api.get("/api/dev/groups")
 def get_dev_groups(request: Request):
-    """返回 dev 侧栏的合并文件夹 + 项目自定义名。{groups:[{id,name,projects}], names:{pid:name}}"""
+    """返回 dev 侧栏分组/命名/排序。{groups, names, order:[顶层key,...]}"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     _, data = _read_vibe_yaml()
     return {"groups": data.get("dev_groups", []),
-            "names": data.get("dev_project_names", {})}
+            "names": data.get("dev_project_names", {}),
+            "order": data.get("dev_order", [])}
+
+
+@api.post("/api/dev/order")
+def set_dev_order(request: Request, body: dict):
+    """保存 dev 侧栏顶层项排序。order 是 key 列表(项目=project_id,文件夹='folder:'+id)。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    order = body.get("order")
+    if not isinstance(order, list):
+        raise HTTPException(status_code=400, detail="order 必须是列表")
+    cfg_path, data = _read_vibe_yaml()
+    data["dev_order"] = [str(x) for x in order]
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
 
 
 @api.post("/api/dev/groups/merge")

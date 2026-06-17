@@ -665,3 +665,25 @@ def test_dev_groups_get_returns_groups_and_names(tmp_path):
     body = r.json()
     assert body["groups"][0]["id"] == "g1"
     assert body["names"]["a"] == "Plan A"
+
+
+def test_dev_order_roundtrip(tmp_path):
+    fake, fake_read = _yaml_tmp(tmp_path, "{}\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/dev/order",
+                        json={"order": ["folder:g1", "argus", "mira"]},
+                        headers={"X-Admin-Token": "x"})
+        assert r.status_code == 200
+        g = client.get("/api/dev/groups", headers={"X-Admin-Token": "x"})
+    assert _load(fake)["dev_order"] == ["folder:g1", "argus", "mira"]
+    assert g.json()["order"] == ["folder:g1", "argus", "mira"]
+
+
+def test_dev_order_rejects_non_list(tmp_path):
+    fake, fake_read = _yaml_tmp(tmp_path, "{}\n")
+    with patch("vibe.main._is_admin", return_value=True), \
+         patch("vibe.main._read_vibe_yaml", side_effect=fake_read):
+        r = client.post("/api/dev/order", json={"order": "nope"},
+                        headers={"X-Admin-Token": "x"})
+    assert r.status_code == 400
