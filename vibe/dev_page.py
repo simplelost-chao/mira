@@ -223,6 +223,20 @@ def render_dev_page() -> str:
   .dev-ctx-item:hover { background: rgba(255,255,255,.07); }
   .dev-ctx-item.danger { color: var(--red); }
   .dev-ctx-item.danger:hover { background: color-mix(in srgb, var(--red) 12%, transparent); }
+  /* 页内重命名输入框(替代原生 prompt) */
+  .dev-rename-overlay { position: fixed; inset: 0; z-index: 8000; background: rgba(0,0,0,.5);
+    display: flex; align-items: center; justify-content: center; }
+  .dev-rename-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; width: 300px; max-width: 88vw; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+  .dev-rename-title { font-size: 13px; color: var(--text); font-weight: 600; margin-bottom: 12px; }
+  .dev-rename-input { width: 100%; box-sizing: border-box; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+    font-family: var(--mono); font-size: 14px; padding: 8px 10px; outline: none; }
+  .dev-rename-input:focus { border-color: var(--accent); }
+  .dev-rename-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .dev-rename-actions button { font-size: 12px; font-family: var(--mono); padding: 6px 16px;
+    border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .dev-rename-ok { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
   .term-group-body .term-pane-row { padding-left: 26px; }
 
   /* ── Remote host badge ── */
@@ -1498,17 +1512,40 @@ function _openFolderMenu(e, fid) {
     { label: '解散分组', danger: true, fn: () => _dissolveFolder(fid) },
   ]);
 }
+// 页内输入框(替代原生 prompt——Safari 会抑制重复弹窗,导致 prompt 被静默吞掉)
+function _inlinePrompt(title, cur, placeholder, onOk) {
+  const ov = document.createElement('div');
+  ov.className = 'dev-rename-overlay';
+  ov.innerHTML = `<div class="dev-rename-box">
+    <div class="dev-rename-title"></div>
+    <input class="dev-rename-input" type="text" placeholder="">
+    <div class="dev-rename-actions">
+      <button class="dev-rename-cancel">取消</button>
+      <button class="dev-rename-ok">确定</button>
+    </div>
+  </div>`;
+  ov.querySelector('.dev-rename-title').textContent = title;
+  const inp = ov.querySelector('.dev-rename-input');
+  inp.value = cur || ''; inp.placeholder = placeholder || '';
+  document.body.appendChild(ov);
+  setTimeout(() => { inp.focus(); inp.select(); }, 0);
+  function close() { ov.remove(); }
+  function ok() { const v = inp.value.trim(); close(); onOk(v); }
+  ov.querySelector('.dev-rename-cancel').onclick = close;
+  ov.querySelector('.dev-rename-ok').onclick = ok;
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); else if (e.key === 'Escape') close(); });
+}
 function _renameProject(pid) {
-  const cur = _devNames[pid] || '';
-  const v = prompt('项目显示名（留空恢复默认）:', cur);
-  if (v === null) return;
-  _devMutate('/api/dev/project-name', { project_id: pid, name: v.trim() });
+  _inlinePrompt('项目显示名', _devNames[pid] || '', '留空恢复默认', function(v) {
+    _devMutate('/api/dev/project-name', { project_id: pid, name: v });
+  });
 }
 function _renameFolder(fid) {
   const f = _devGroups.find(x => x.id === fid); if (!f) return;
-  const v = prompt('分组名:', f.name);
-  if (!v || !v.trim()) return;
-  _devMutate('/api/dev/groups/rename', { id: fid, name: v.trim() });
+  _inlinePrompt('分组名', f.name, '', function(v) {
+    if (v) _devMutate('/api/dev/groups/rename', { id: fid, name: v });
+  });
 }
 function _mergeIntoPicker(src) {
   const others = _lastGroupPids.filter(g => g.pid !== src);
