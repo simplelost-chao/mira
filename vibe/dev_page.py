@@ -72,7 +72,23 @@ def render_dev_page() -> str:
     padding: 0; transition: color .12s, border-color .12s;
   }
   .term-new-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .term-edit-btn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    height: 20px; padding: 0 9px; border-radius: var(--radius-sm);
+    font-size: 11px; font-family: var(--mono); letter-spacing: normal; text-transform: none; font-weight: 600;
+    cursor: pointer; transition: all .12s; line-height: 1;
+  }
+  .term-edit-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .term-edit-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   #term-pane-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; }
+  /* 抓手 / ⋯菜单 / 删除 默认隐藏,只在"编辑"模式显示 */
+  #term-pane-list:not(.edit-mode) .term-drag-handle,
+  #term-pane-list:not(.edit-mode) .term-group-menu,
+  #term-pane-list:not(.edit-mode) .term-pane-kill { display: none; }
+  #term-pane-list.edit-mode .term-drag-handle { opacity: .9; }
+  #term-pane-list.edit-mode .term-group-menu { opacity: 1; }
+  #term-pane-list.edit-mode .term-pane-kill { opacity: .8; }
+  #term-pane-list.edit-mode .term-single { cursor: text; }
   .term-pane-row {
     padding: 10px 14px; display: flex; align-items: flex-start; gap: 8px;
     cursor: pointer; border-left: 2px solid transparent; transition: background .12s, border-color .12s;
@@ -1255,6 +1271,7 @@ function _renderSingleProject(pid, grp, nested) {
 }
 function _singleSelect(rowEl) {
   if (_suppressToggle) return;   // 刚拖完那次 click 不当成点击打开
+  if (_editMode) { _renameProject(rowEl.dataset.group); return; }  // 编辑模式:点名字=重命名
   selectPane(rowEl.dataset.target, rowEl.dataset.cmd || '');
 }
 async function _killSingle(killEl) {
@@ -1299,8 +1316,17 @@ function _renderFolder(folder, groups) {
 // 监听一起拆掉。所以桌面(有鼠标)纯 mouse,触屏纯 pointer,各跑各的、互不干扰。
 var _drag = null;
 var _suppressToggle = false;
+var _editMode = false;
+function toggleEditMode() {
+  _editMode = !_editMode;
+  var list = document.getElementById('term-pane-list');
+  if (list) list.classList.toggle('edit-mode', _editMode);
+  var btn = document.getElementById('dev-edit-btn');
+  if (btn) { btn.classList.toggle('active', _editMode); btn.textContent = _editMode ? '完成' : '编辑'; }
+}
 // 触屏:抓手 onpointerdown 触发(忽略鼠标,鼠标走下面的 mousedown 委托)
 function _gripDown(e, key, type) {
+  if (!_editMode) return;
   if (e.pointerType === 'mouse') return;
   e.stopPropagation(); e.preventDefault();
   _startDrag(e, key, type, 'pointer');
@@ -3097,6 +3123,7 @@ async function init() {
       e.preventDefault();
     }
     // 桌面拖拽统一走 mouse 事件(Safari 的 pointer 不可靠)。抓手或行头都可拖。
+    if (!_editMode) return;       // 只有"编辑"模式才能拖
     if (e.button !== 0) return;
     var top = e.target.closest('#term-pane-list > .term-toplevel');
     if (!top) return;
@@ -3177,7 +3204,10 @@ init();
   <div class="term-sidebar">
     <div class="term-sidebar-header">
       <span>所有终端</span>
-      <button class="term-new-btn" onclick="openNewTermDialog()" title="新建终端窗口">+</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="term-edit-btn" id="dev-edit-btn" onclick="toggleEditMode()" title="编辑:拖拽排序 / 合并 / 重命名 / 删除">编辑</button>
+        <button class="term-new-btn" onclick="openNewTermDialog()" title="新建终端窗口">+</button>
+      </div>
     </div>
     <div id="term-pane-list">
       <div class="term-empty-sidebar">正在加载…</div>
