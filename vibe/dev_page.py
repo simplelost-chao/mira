@@ -1,5 +1,28 @@
 """Dev mode page — sidebar pane list + ttyd iframe."""
 
+_BUILD_ID = None
+
+
+def _build_id() -> str:
+    """运行中代码的 git 短提交号 + 启动分钟标记,用来在页面上核对'是否刷到最新版'。
+    模块加载时算一次;每次重启(无热重载)会重新导入、重算。"""
+    global _BUILD_ID
+    if _BUILD_ID is not None:
+        return _BUILD_ID
+    import subprocess
+    from pathlib import Path
+    try:
+        root = Path(__file__).resolve().parent.parent
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=2)
+        h = r.stdout.strip() or "unknown"
+        d = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                           capture_output=True, text=True, timeout=2)
+        _BUILD_ID = h + ("+dirty" if d.stdout.strip() else "")
+    except Exception:
+        _BUILD_ID = "unknown"
+    return _BUILD_ID
+
 
 def render_dev_page() -> str:
     from vibe.topbar import theme_vars_css, topbar_css, topbar_html, settings_overlay_html, topbar_js
@@ -10,6 +33,14 @@ def render_dev_page() -> str:
   html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; overscroll-behavior: none; width: 100%; max-width: 100vw; }
   /* Lock scroll when mobile terminal detail is open */
   body.detail-locked { position: fixed; width: 100%; touch-action: none; }
+  /* 部署版本号(右下角)—— 用来核对页面是否刷到最新代码 */
+  .dev-build-badge {
+    position: fixed; bottom: 6px; right: 8px; z-index: 6000;
+    font-size: 10px; font-family: var(--mono, monospace); color: var(--muted);
+    background: color-mix(in srgb, var(--panel) 85%, transparent);
+    border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px;
+    pointer-events: none; opacity: .75; letter-spacing: .3px; user-select: none;
+  }
 
   /* ── Main layout ── */
   .dev-page {
@@ -3206,5 +3237,7 @@ init();
         + "window._topbarUsageMode = null; // dev page manages usage in toolbar\n"
         + topbar_js() + "\n"
         + page_js
-        + "</script>\n</body>\n</html>\n"
+        + "</script>\n"
+        + f'<div class="dev-build-badge" title="当前部署版本(git 提交号);刷新后若变了说明已是新版">build {_build_id()}</div>\n'
+        + "</body>\n</html>\n"
     )
