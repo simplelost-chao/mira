@@ -1183,14 +1183,16 @@ async function loadPanes(forceRebuild) {
     // to avoid interrupting IME/voice input in the iframe
     var inDetail = document.getElementById('dev-page').classList.contains('detail-open');
     if (inDetail && !forceRebuild) {
-      // In detail view, update data-tool and badge on pane rows
+      // In detail view, update tool badge in place(pane 行 + 单行项目,避免跳过重建时漏更新)
       for (const p of panes) {
-        var row = document.querySelector('.term-pane-row[data-target="' + CSS.escape(p.target) + '"]');
-        if (!row || !p.tool) continue;
+        if (!p.tool) continue;
+        var row = document.querySelector('.term-pane-row[data-target="' + CSS.escape(p.target) + '"], .term-single[data-target="' + CSS.escape(p.target) + '"]');
+        if (!row) continue;
         row.dataset.tool = p.tool;
         var badge = row.querySelector('.term-pane-badge');
         if (badge && badge.classList.contains('unknown')) {
-          badge.className = 'term-pane-badge ' + p.tool;
+          var glow = badge.classList.contains('glow') ? ' glow' : '';
+          badge.className = 'term-pane-badge ' + p.tool + glow;
           badge.textContent = p.tool === 'codex' ? 'X' : 'C';
         }
       }
