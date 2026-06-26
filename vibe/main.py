@@ -41,7 +41,8 @@ def _sub_ttyd_port(open_id: str) -> int:
 
 
 def _ensure_sub_ttyd(open_id: str) -> int | None:
-    """确保该子账号有一个【只读】ttyd(无 --writable),挂在他自己的 session sub-<openid>。
+    """确保该子账号有一个【可写】ttyd,挂在他自己的 session sub-<openid>。
+    可写但安全:会话已禁用 tmux prefix + claude 跑在外壳脚本里,逃不到裸 shell。
     返回端口。base-path = /subterm/<port>,供 mira 反代时路径对齐。"""
     sess = _sub_session_name(open_id)
     if _tmux_run("has-session", "-t", sess).returncode != 0:
@@ -54,10 +55,10 @@ def _ensure_sub_ttyd(open_id: str) -> int | None:
     if not Path(ttyd).exists():
         return None
     base = f"/subterm/{port}"
-    cmd = [ttyd, "-p", str(port), "--base-path", base]   # 注意:不加 --writable = 只读
+    cmd = [ttyd, "-p", str(port), "--base-path", base, "--writable"]
     for opt in _TTYD_CLIENT_OPTIONS:
         cmd += ["--client-option", opt]
-    cmd += [_tmux_bin(), "attach", "-t", sess]   # attach(非 -A):只读连到已存在的 session
+    cmd += [_tmux_bin(), "attach", "-t", sess]
     _sub_ttyd_procs[open_id] = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return port
 
@@ -3186,6 +3187,7 @@ def sub_me(request: Request):
 # ── 子账号专属沙箱会话(每子账号一个 tmux session,进项目起加固 claude)──────────
 
 _HARDENED_SETTINGS = str(Path(__file__).parent / "sub_claude_settings.json")
+_SUB_LOOP = str(Path(__file__).parent / "sub_claude_loop.sh")
 
 
 def _sub_session_name(open_id: str) -> str:
@@ -3205,8 +3207,24 @@ def _tmux_run(*args):
     return subprocess.run([_TMUX_BIN, *args], env=_TMUX_ENV, capture_output=True, text=True)
 
 
+def _sub_claude_cmd(path: str) -> str:
+    """子账号窗口的 pane 命令:外壳脚本(claude 退出即重开,背后无裸 shell)。"""
+    import shlex
+    return f"{shlex.quote(_SUB_LOOP)} {shlex.quote(path)} {shlex.quote(_HARDENED_SETTINGS)}"
+
+
+def _harden_sub_session(sess: str) -> None:
+    """让可写 tmux attach 也逃不出去:禁用 prefix —— Ctrl-B 不再能开 shell 窗口或跑 tmux 命令。"""
+    _tmux_run("set-option", "-t", sess, "prefix", "None")
+    _tmux_run("set-option", "-t", sess, "prefix2", "None")
+    _tmux_run("set-option", "-t", sess, "status", "off")
+
+
 def _ensure_sub_session(open_id: str, project_id: str):
-    """确保 (子账号, 项目) 有一个加固 claude 窗口,返回 pane target;失败 None。"""
+    """确保 (子账号, 项目) 有一个加固 claude 窗口,返回 pane target;失败 None。
+
+    窗口的 pane 命令直接是外壳脚本(无交互 shell);session 级禁用 tmux prefix。
+    两层加固保证:子账号即便拿到可写终端,也退不出 claude、开不了裸 shell。"""
     path = _project_path(project_id)
     if not path or not Path(path).is_dir():
         return None
@@ -3218,16 +3236,17 @@ def _ensure_sub_session(open_id: str, project_id: str):
             nm, _, idx = line.partition("\t")
             if nm == win:
                 return f"{sess}:{idx}.0"   # 已有,复用
+    cmd = _sub_claude_cmd(path)
     if _tmux_run("has-session", "-t", sess).returncode != 0:
-        r = _tmux_run("new-session", "-d", "-s", sess, "-n", win, "-c", path, "-P", "-F", "#{window_index}")
+        r = _tmux_run("new-session", "-d", "-s", sess, "-n", win, "-c", path,
+                      "-P", "-F", "#{window_index}", cmd)
+        _harden_sub_session(sess)
     else:
-        r = _tmux_run("new-window", "-t", sess, "-n", win, "-c", path, "-P", "-F", "#{window_index}")
+        r = _tmux_run("new-window", "-t", sess, "-n", win, "-c", path,
+                      "-P", "-F", "#{window_index}", cmd)
     if r.returncode != 0 or not r.stdout.strip():
         return None
-    target = f"{sess}:{r.stdout.strip()}.0"
-    from vibe.tmux_bridge import send_keys
-    send_keys(target, f"claude --settings {_HARDENED_SETTINGS} --permission-mode dontAsk\n")
-    return target
+    return f"{sess}:{r.stdout.strip()}.0"
 
 
 def _sub_target_project(open_id: str, target: str):
