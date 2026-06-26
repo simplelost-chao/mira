@@ -53,8 +53,9 @@ def render_sub_page() -> str:
   .proj.active .proj-name {{ color: var(--accent); }}
 
   .main {{ flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }}
-  .out {{ flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--sub); }}
-  .placeholder {{ display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }}
+  .termwrap {{ flex: 1; min-height: 0; position: relative; background: var(--bg); }}
+  .term {{ position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }}
+  .placeholder {{ position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }}
   .inputbar {{ display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--panel); flex-shrink: 0; align-items: flex-end; }}
   .inputbar textarea {{ flex: 1; resize: none; min-height: 40px; max-height: 140px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: var(--mono); font-size: 15px; line-height: 1.45; padding: 9px 12px; outline: none; }}
   .inputbar textarea:focus {{ border-color: var(--accent); }}
@@ -70,7 +71,6 @@ def render_sub_page() -> str:
     #app:not(.chat-open) .hdr-av {{ display: block; }}
     #app.chat-open .hdr-av {{ display: none; }}
     .side {{ width: 100%; border-right: none; }}
-    .out {{ font-size: 13px; }}
   }}
 </style>
 </head>
@@ -79,11 +79,10 @@ def render_sub_page() -> str:
 <script>
 const TOKEN_KEY = 'mira-sub-token';
 const app = document.getElementById('app');
-let _cur = null, _curPid = null, _pollTimer = null, _projects = [], _me = null, _composing = false;
+let _cur = null, _curPid = null, _projects = [], _me = null, _composing = false;
 function tok() {{ return localStorage.getItem(TOKEN_KEY) || ''; }}
 function H() {{ const t = tok(); return t ? {{'X-Sub-Token': t}} : {{}}; }}
 function esc(s) {{ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }}
-function stripAnsi(s) {{ return String(s||'').replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g,'').replace(/\\x1b[\\]P^_].*?(\\x07|\\x1b\\\\)/g,'').replace(/[\\x00-\\x08\\x0b-\\x1f\\x7f]/g,''); }}
 
 // ── 移动键盘:动态 --app-h,输入栏始终贴可视区底 ──
 (function() {{
@@ -91,8 +90,6 @@ function stripAnsi(s) {{ return String(s||'').replace(/\\x1b\\[[0-9;?]*[ -/]*[@-
     var h = window.visualViewport ? Math.round(window.visualViewport.height) : window.innerHeight;
     document.documentElement.style.setProperty('--app-h', h + 'px');
     window.scrollTo(0, 0);
-    var out = document.getElementById('out');
-    if (out) out.scrollTop = out.scrollHeight;
   }}
   u();
   if (window.visualViewport) {{ window.visualViewport.addEventListener('resize', u); window.visualViewport.addEventListener('scroll', u); }}
@@ -138,7 +135,10 @@ function renderApp() {{
     <div class="body">
       <div class="side"><div class="side-title">项目</div><div id="projlist"><div class="side-title" style="text-transform:none;letter-spacing:0;color:var(--muted)">加载中…</div></div></div>
       <div class="main">
-        <div class="out placeholder" id="out">选一个项目,开始跟 Claude 协作</div>
+        <div class="termwrap">
+          <div class="placeholder" id="termph">选一个项目,开始跟 Claude 协作</div>
+          <iframe class="term" id="term" hidden></iframe>
+        </div>
         <div class="inputbar">
           <textarea id="inp" rows="1" enterkeyhint="send" placeholder="给 Claude 发一句话,回车发送(Shift+回车换行)" disabled></textarea>
           <button class="send" id="sendbtn" disabled onclick="send()">发送</button>
@@ -172,7 +172,12 @@ async function loadProjects() {{
 
 function backToList() {{
   app.classList.remove('chat-open');
-  if (_pollTimer) {{ clearInterval(_pollTimer); _pollTimer = null; }}
+}}
+
+function showPlaceholder(text) {{
+  const ph = document.getElementById('termph'), fr = document.getElementById('term');
+  if (ph) {{ ph.textContent = text; ph.hidden = false; }}
+  if (fr) {{ fr.hidden = true; fr.removeAttribute('src'); }}
 }}
 
 async function pickProject(pid) {{
@@ -181,30 +186,20 @@ async function pickProject(pid) {{
   const p = _projects.find(x => x.id === pid);
   const ht = document.getElementById('hdrTitle'); if (ht) ht.textContent = (p && p.name) || pid;
   loadProjects();
-  const out = document.getElementById('out'); out.classList.remove('placeholder'); out.textContent = '正在启动该项目的 Claude 会话…';
+  showPlaceholder('正在启动该项目的 Claude 会话…');
   const inp = document.getElementById('inp'), btn = document.getElementById('sendbtn');
   inp.disabled = true; btn.disabled = true;
   const res = await fetch(`/api/sub/project/${{encodeURIComponent(pid)}}/session`, {{method:'POST', headers: H()}}).catch(()=>null);
   if (pid !== _curPid) return;
-  if (!res || !res.ok) {{ out.textContent = res && res.status===403 ? '无权访问该项目' : '会话启动失败,稍后重试'; return; }}
-  _cur = (await res.json()).target;
+  if (!res || !res.ok) {{ showPlaceholder(res && res.status===403 ? '无权访问该项目' : '会话启动失败,稍后重试'); return; }}
+  const d = await res.json();
+  _cur = d.target;
+  // 只读终端:嵌入该项目的 ttyd(实时渲染,跟 dev 页一样;子账号无法在里面输入)
+  const fr = document.getElementById('term'), ph = document.getElementById('termph');
+  if (d.term_base) {{ fr.src = d.term_base; fr.hidden = false; if (ph) ph.hidden = true; }}
+  else if (ph) {{ ph.textContent = '终端暂不可用,可继续在下方发送消息'; ph.hidden = false; }}
   inp.disabled = false; btn.disabled = false;
   if (window.innerWidth > 760) inp.focus();
-  if (_pollTimer) clearInterval(_pollTimer);
-  pollOutput();
-  _pollTimer = setInterval(pollOutput, 1800);
-}}
-
-async function pollOutput() {{
-  if (!_cur) return;
-  const res = await fetch(`/api/sub/pane/${{encodeURIComponent(_cur)}}/output?lines=300`, {{headers: H()}}).catch(()=>null);
-  const out = document.getElementById('out');
-  if (!out || !_cur) return;
-  if (!res || !res.ok) {{ out.textContent = res && res.status===403 ? '无权访问该会话' : '读取失败'; return; }}
-  const d = await res.json();
-  const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 60;
-  out.textContent = stripAnsi(d.output || '') || '(会话正在启动…)';
-  if (atBottom) out.scrollTop = out.scrollHeight;
 }}
 
 async function send() {{
@@ -216,7 +211,7 @@ async function send() {{
     method:'POST', headers: {{'Content-Type':'application/json', ...H()}}, body: JSON.stringify({{text}})
   }}).catch(()=>null);
   btn.disabled = false;
-  if (res && res.ok) {{ inp.value = ''; inp.style.height = 'auto'; setTimeout(pollOutput, 300); }}
+  if (res && res.ok) {{ inp.value = ''; inp.style.height = 'auto'; }}
   else alert(res && res.status===403 ? '无权操作该会话' : '发送失败');
   inp.focus();
 }}

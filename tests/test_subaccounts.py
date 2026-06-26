@@ -168,6 +168,29 @@ def test_sub_session_name_isolation():
     assert a != b and a.startswith("sub-")
 
 
+# ── 只读终端作用域代理(/subterm)鉴权 ─────────────────────────────────────────
+
+def test_subterm_no_cookie_forbidden():
+    # 没 cookie → 403,代理不向本地 ttyd 转发
+    assert client.get("/subterm/7700/").status_code == 403
+
+
+def test_subterm_wrong_port_forbidden(tmp_path):
+    # 持有效会话,但请求的 port 不是该子账号的端口 → 403(防偷看别人终端)
+    _fake, _r, tok = _sub(tmp_path, ["proj-a"])
+    resp = client.get("/subterm/1/", headers={"Cookie": f"sub_term={tok}"})
+    assert resp.status_code == 403
+
+
+def test_subterm_valid_cookie_passes_auth(tmp_path):
+    # 鉴权通过 → 试图连本地 ttyd(未启动)→ 502,而非 403,证明鉴权放行
+    from vibe import main as m
+    _fake, _r, tok = _sub(tmp_path, ["proj-a"])
+    port = m._sub_ttyd_port("ou_s")
+    resp = client.get(f"/subterm/{port}/", headers={"Cookie": f"sub_term={tok}"})
+    assert resp.status_code == 502
+
+
 # ── 飞书 OAuth 回调 ───────────────────────────────────────────────────────────
 
 def _state():

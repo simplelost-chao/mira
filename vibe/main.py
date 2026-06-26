@@ -31,6 +31,36 @@ _TTYD_PORT = 7681
 _TTYD_CLIENT_OPTIONS = ("rendererType=canvas",)
 _ttyd_proc: subprocess.Popen | None = None
 
+# 子账号只读 ttyd:每子账号一个,端口由 open_id 哈希决定,挂在他自己的 tmux session(只读)。
+_SUB_TTYD_BASE = 7700
+_sub_ttyd_procs: dict = {}   # open_id -> Popen
+
+
+def _sub_ttyd_port(open_id: str) -> int:
+    return _SUB_TTYD_BASE + (int(hashlib.sha256(open_id.encode()).hexdigest(), 16) % 250)
+
+
+def _ensure_sub_ttyd(open_id: str) -> int | None:
+    """确保该子账号有一个【只读】ttyd(无 --writable),挂在他自己的 session sub-<openid>。
+    返回端口。base-path = /subterm/<port>,供 mira 反代时路径对齐。"""
+    sess = _sub_session_name(open_id)
+    if _tmux_run("has-session", "-t", sess).returncode != 0:
+        return None   # 还没有会话,先 _ensure_sub_session
+    port = _sub_ttyd_port(open_id)
+    proc = _sub_ttyd_procs.get(open_id)
+    if proc is not None and proc.poll() is None:
+        return port   # 已在跑
+    ttyd = _ttyd_bin()
+    if not Path(ttyd).exists():
+        return None
+    base = f"/subterm/{port}"
+    cmd = [ttyd, "-p", str(port), "--base-path", base]   # 注意:不加 --writable = 只读
+    for opt in _TTYD_CLIENT_OPTIONS:
+        cmd += ["--client-option", opt]
+    cmd += [_tmux_bin(), "attach", "-t", sess]   # attach(非 -A):只读连到已存在的 session
+    _sub_ttyd_procs[open_id] = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return port
+
 def _ttyd_bin() -> str:
     return shutil.which("ttyd") or "/opt/homebrew/bin/ttyd"
 
@@ -3230,18 +3260,28 @@ def sub_projects(request: Request):
 
 
 @api.post("/api/sub/project/{project_id}/session")
-def sub_open_session(request: Request, project_id: str):
-    """子账号:进入某授权项目 → 起/复用该项目的加固 claude 会话,返回 target。"""
+def sub_open_session(request: Request, project_id: str, response: Response):
+    """子账号:进入某授权项目 → 起/复用加固 claude 会话 + 只读 ttyd,返回 target 与终端端口。"""
     principal = _get_principal(request)
     if not principal or principal[0] != "sub":
         raise HTTPException(status_code=401, detail="需要子账号登录")
     from vibe.accounts import account_can_access_project
     if not account_can_access_project(principal[1], project_id):
         raise HTTPException(status_code=403, detail="无权访问该项目")
-    target = _ensure_sub_session(principal[1]["feishu_open_id"], project_id)
+    open_id = principal[1]["feishu_open_id"]
+    target = _ensure_sub_session(open_id, project_id)
     if not target:
         raise HTTPException(status_code=400, detail="项目不存在或无法创建会话")
-    return {"target": target}
+    # 让只读 ttyd 显示这个项目的窗口
+    _tmux_run("select-window", "-t", target.rsplit(".", 1)[0])
+    port = _ensure_sub_ttyd(open_id)
+    # 给只读终端代理发一个 cookie(= 子账号会话 token),供 /subterm 反代鉴权
+    sub_tok = request.headers.get("X-Sub-Token") or ""
+    if sub_tok:
+        response.set_cookie("sub_term", sub_tok, path="/subterm", httponly=True,
+                            samesite="lax", secure=True, max_age=7 * 24 * 3600)
+    return {"target": target, "term_port": port,
+            "term_base": (f"/subterm/{port}/" if port else None)}
 
 
 @api.get("/api/sub/pane/{target:path}/output")
@@ -4187,6 +4227,88 @@ async def ttyd_ws_proxy(websocket: WebSocket):
         try:
             # ttyd automatically reconnects abnormal closures. A normal 1000
             # close makes its UI wait for Enter instead.
+            await websocket.close(code=1012, reason="Terminal bridge reconnect")
+        except Exception:
+            pass
+
+
+# ── 子账号只读终端作用域代理(/subterm/<port>/…)────────────────────────────────
+# 每个子账号一个只读 ttyd(无 --writable),端口由 open_id 决定。代理用 cookie
+# (= 子账号会话 token)鉴权,只放行"端口 == 自己端口"的请求,杜绝偷看别人终端。
+
+def _subterm_open_id(cookie_token: str, port: int):
+    """校验 cookie 会话,且其端口 == 请求端口。通过返回 open_id,否则 None。"""
+    from vibe.accounts import session_open_id
+    oid = session_open_id(cookie_token or "")
+    if not oid or _sub_ttyd_port(oid) != port:
+        return None
+    return oid
+
+
+@api.api_route("/subterm/{port:int}/{path:path}", methods=["GET", "POST", "HEAD"])
+async def sub_ttyd_http_proxy(port: int, path: str, request: Request):
+    if not _subterm_open_id(request.cookies.get("sub_term"), port):
+        raise HTTPException(status_code=403, detail="无权访问该终端")
+    url = f"http://127.0.0.1:{port}/subterm/{port}/{path}"
+    params = str(request.url.query)
+    if params:
+        url += "?" + params
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
+    try:
+        resp = await _get_ttyd_http_client().request(
+            method=request.method, url=url, headers=headers, content=await request.body(),
+        )
+    except _httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="终端未运行")
+    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
+    out = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
+    return Response(content=resp.content, status_code=resp.status_code, headers=out)
+
+
+@api.websocket("/subterm/{port}/ws")
+async def sub_ttyd_ws_proxy(websocket: WebSocket, port: int):
+    import websockets as _ws
+    import logging
+    logger = logging.getLogger(__name__)
+    if not _subterm_open_id(websocket.cookies.get("sub_term"), int(port)):
+        await websocket.close(code=1008)
+        return
+    await websocket.accept(subprotocol="tty")
+    ttyd_url = f"ws://127.0.0.1:{int(port)}/subterm/{int(port)}/ws"
+    try:
+        async with _ws.connect(ttyd_url, subprotocols=["tty"], proxy=None, compression=None) as ttyd_ws:
+            async def browser_to_ttyd():
+                while True:
+                    msg = await websocket.receive()
+                    if msg.get("type") == "websocket.disconnect":
+                        break
+                    if msg.get("type") != "websocket.receive":
+                        continue
+                    if msg.get("bytes") is not None:
+                        await ttyd_ws.send(msg["bytes"])
+                    elif msg.get("text") is not None:
+                        await ttyd_ws.send(msg["text"])
+
+            async def ttyd_to_browser():
+                async for msg in ttyd_ws:
+                    if isinstance(msg, bytes):
+                        await websocket.send_bytes(msg)
+                    else:
+                        await websocket.send_text(msg)
+
+            t1 = asyncio.create_task(browser_to_ttyd())
+            t2 = asyncio.create_task(ttyd_to_browser())
+            done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                exc = task.exception()
+                if exc:
+                    raise exc
+    except Exception as e:
+        logger.warning("sub ttyd ws proxy closed: %s", e)
+    finally:
+        try:
             await websocket.close(code=1012, reason="Terminal bridge reconnect")
         except Exception:
             pass
