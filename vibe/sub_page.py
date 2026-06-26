@@ -1,7 +1,8 @@
-"""子账号页 /sub —— 飞书登录 + 聊天式"跟 Claude 对话"。
+"""子账号页 /sub —— 飞书登录 + 跟 Claude 协作(响应式,手机/电脑都适配)。
 
-无 owner 导航。所有接口用 X-Sub-Token(飞书会话 token,存 localStorage)。
-飞书回调会带 ?token= / ?status=pending / ?error= 跳到这里。
+无 owner 导航、无裸终端。所有接口用 X-Sub-Token。
+桌面:侧栏(项目)+ 主区(对话);手机:项目列表 → 点进去全屏对话 + 返回。
+移动键盘用 visualViewport 动态 --app-h,输入栏始终贴在可视区底部;输入处理 IME。
 """
 
 
@@ -11,55 +12,65 @@ def render_sub_page() -> str:
     return f'''<!DOCTYPE html>
 <html lang="zh"><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>协作 · Mira</title>
 <script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
   *,*::before,*::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  :root {{ --app-h: 100vh; }}
 {_theme}
-  html, body {{ height: 100vh; overflow: hidden; }}
-  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); display: flex; flex-direction: column; }}
-  #app {{ flex: 1; display: flex; flex-direction: column; min-height: 0; }}
+  html, body {{ height: 100%; overflow: hidden; }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); -webkit-tap-highlight-color: transparent; }}
+  #app {{ position: fixed; top: 0; left: 0; right: 0; height: var(--app-h); display: flex; flex-direction: column; }}
+
+  /* ── 登录 / 等待态 ── */
   .center {{ flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }}
   .logo {{ font-size: 22px; font-weight: 700; }}
   .logo .a {{ color: var(--accent); }}
   .msg {{ font-size: 13px; color: var(--sub); line-height: 1.7; max-width: 360px; }}
-  .feishu-btn {{ display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
-    background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 11px 22px; cursor: pointer; text-decoration: none; }}
-  .feishu-btn:hover {{ opacity: .9; }}
-  .ghost {{ font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--border);
-    border-radius: 6px; padding: 6px 12px; cursor: pointer; }}
-  /* app */
-  .hdr {{ display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border);
-    background: var(--panel); flex-shrink: 0; }}
-  .hdr-av {{ width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border); object-fit: cover; }}
-  .hdr-name {{ font-size: 13px; font-weight: 600; }}
-  .hdr-sp {{ flex: 1; }}
-  .layout {{ flex: 1; display: flex; min-height: 0; }}
-  .side {{ width: 240px; border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }}
-  .side-title {{ font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); padding: 12px 14px 6px; }}
-  .sess {{ display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; border-left: 2px solid transparent; font-size: 12px; }}
-  .sess:hover {{ background: rgba(255,255,255,.03); }}
-  .sess.active {{ background: rgba(var(--accent-rgb),.1); border-left-color: var(--accent); }}
-  .sess-badge {{ width: 18px; height: 18px; border-radius: 4px; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
-  .sess-badge.claude {{ background: rgba(var(--accent-rgb),.18); color: var(--accent); }}
-  .sess-badge.codex {{ background: rgba(92,208,138,.18); color: var(--green); }}
-  .sess-name {{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }}
-  .sess.waiting .sess-name::after {{ content: ' ●'; color: var(--orange); }}
+  .feishu-btn {{ display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;
+    background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 12px 26px; cursor: pointer; text-decoration: none; }}
+  .feishu-btn:active {{ opacity: .85; }}
+  .ghost {{ font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }}
+
+  /* ── 头部 ── */
+  .hdr {{ display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }}
+  .hdr-back {{ display: none; background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 4px 6px 4px 0; line-height: 1; }}
+  .hdr-av {{ width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border); object-fit: cover; background: var(--bg); flex-shrink: 0; }}
+  .hdr-title {{ font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+
+  /* ── 布局 ── */
+  .body {{ flex: 1; display: flex; min-height: 0; }}
+  .side {{ width: 250px; border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; -webkit-overflow-scrolling: touch; }}
+  .side-title {{ font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); padding: 14px 16px 8px; }}
+  .proj {{ display: flex; align-items: center; gap: 9px; padding: 12px 16px; cursor: pointer; border-left: 2px solid transparent; font-size: 13px; }}
+  .proj:active {{ background: rgba(255,255,255,.05); }}
+  .proj.active {{ background: rgba(var(--accent-rgb),.1); border-left-color: var(--accent); }}
+  .proj-badge {{ width: 20px; height: 20px; border-radius: 5px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: rgba(var(--accent-rgb),.18); color: var(--accent); }}
+  .proj-name {{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }}
+  .proj.active .proj-name {{ color: var(--accent); }}
+
   .main {{ flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }}
-  .out {{ flex: 1; overflow-y: auto; padding: 14px 16px; font-size: 12px; line-height: 1.5;
-    white-space: pre-wrap; word-break: break-word; color: var(--sub); }}
-  .inputbar {{ display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--panel); }}
-  .inputbar textarea {{ flex: 1; resize: none; height: 38px; max-height: 120px; background: var(--bg);
-    border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 13px; padding: 9px 11px; outline: none; }}
+  .out {{ flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--sub); }}
+  .placeholder {{ display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 24px; }}
+  .inputbar {{ display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--panel); flex-shrink: 0; align-items: flex-end; }}
+  .inputbar textarea {{ flex: 1; resize: none; min-height: 40px; max-height: 140px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: var(--mono); font-size: 15px; line-height: 1.45; padding: 9px 12px; outline: none; }}
   .inputbar textarea:focus {{ border-color: var(--accent); }}
-  .send {{ background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 0 18px; font-weight: 600; cursor: pointer; flex-shrink: 0; }}
-  .send:disabled {{ opacity: .5; cursor: default; }}
-  .placeholder {{ flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }}
-  @media (max-width: 700px) {{
-    .side {{ width: 140px; }}
+  .send {{ background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 18px; height: 40px; font-weight: 600; font-size: 14px; cursor: pointer; flex-shrink: 0; }}
+  .send:disabled {{ opacity: .45; }}
+
+  /* ── 手机:列表 / 对话 单视图切换 ── */
+  @media (max-width: 760px) {{
+    #app.chat-open .side {{ display: none; }}
+    #app:not(.chat-open) .main {{ display: none; }}
+    #app:not(.chat-open) .hdr-back {{ display: none; }}
+    #app.chat-open .hdr-back {{ display: block; }}
+    #app:not(.chat-open) .hdr-av {{ display: block; }}
+    #app.chat-open .hdr-av {{ display: none; }}
+    .side {{ width: 100%; border-right: none; }}
+    .out {{ font-size: 13px; }}
   }}
 </style>
 </head>
@@ -68,25 +79,37 @@ def render_sub_page() -> str:
 <script>
 const TOKEN_KEY = 'mira-sub-token';
 const app = document.getElementById('app');
-let _cur = null, _pollTimer = null, _panes = [];
+let _cur = null, _curPid = null, _pollTimer = null, _projects = [], _me = null, _composing = false;
 function tok() {{ return localStorage.getItem(TOKEN_KEY) || ''; }}
 function H() {{ const t = tok(); return t ? {{'X-Sub-Token': t}} : {{}}; }}
 function esc(s) {{ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }}
-function stripAnsi(s) {{ return String(s||'').replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\\x1b[\\]P^_].*?(\\x07|\\x1b\\\\)/g, '').replace(/[\\x00-\\x08\\x0b-\\x1f\\x7f]/g, ''); }}
+function stripAnsi(s) {{ return String(s||'').replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g,'').replace(/\\x1b[\\]P^_].*?(\\x07|\\x1b\\\\)/g,'').replace(/[\\x00-\\x08\\x0b-\\x1f\\x7f]/g,''); }}
+
+// ── 移动键盘:动态 --app-h,输入栏始终贴可视区底 ──
+(function() {{
+  function u() {{
+    var h = window.visualViewport ? Math.round(window.visualViewport.height) : window.innerHeight;
+    document.documentElement.style.setProperty('--app-h', h + 'px');
+    window.scrollTo(0, 0);
+    var out = document.getElementById('out');
+    if (out) out.scrollTop = out.scrollHeight;
+  }}
+  u();
+  if (window.visualViewport) {{ window.visualViewport.addEventListener('resize', u); window.visualViewport.addEventListener('scroll', u); }}
+  window.addEventListener('resize', u);
+}})();
 
 function renderLogin(msg) {{
-  app.innerHTML = `<div class="center">
-    <div class="logo"><span class="a">M</span>ira 协作</div>
-    ${{msg ? `<div class="msg">${{esc(msg)}}</div>` : '<div class="msg">用飞书登录,即可在被授权的项目里跟 Claude 一起干活。</div>'}}
-    <a class="feishu-btn" href="/auth/feishu/login">飞书登录</a>
-  </div>`;
+  app.className = '';
+  app.innerHTML = `<div class="center"><div class="logo"><span class="a">M</span>ira 协作</div>
+    ${{msg ? `<div class="msg">${{esc(msg)}}</div>` : '<div class="msg">用飞书登录,在被授权的项目里跟 Claude 一起干活。</div>'}}
+    <a class="feishu-btn" href="/auth/feishu/login">飞书登录</a></div>`;
 }}
 function renderPending() {{
-  app.innerHTML = `<div class="center">
-    <div class="logo"><span class="a">M</span>ira 协作</div>
+  app.className = '';
+  app.innerHTML = `<div class="center"><div class="logo"><span class="a">M</span>ira 协作</div>
     <div class="msg">登录成功,正在等待管理员批准并分配项目。<br>批准后刷新本页即可开始。</div>
-    <button class="ghost" onclick="logout()">退出</button>
-  </div>`;
+    <button class="ghost" onclick="logout()">退出</button></div>`;
 }}
 function logout() {{ localStorage.removeItem(TOKEN_KEY); location.href = '/sub'; }}
 
@@ -98,68 +121,89 @@ async function boot() {{
   if (!tok()) return renderLogin();
   const res = await fetch('/api/sub/me', {{headers: H()}}).catch(()=>null);
   if (!res || res.status === 401) {{ localStorage.removeItem(TOKEN_KEY); return renderLogin('登录已失效,请重新登录。'); }}
-  const me = await res.json();
-  renderApp(me);
+  _me = await res.json();
+  renderApp();
 }}
 
-function renderApp(me) {{
-  const av = me.avatar ? `<img class="hdr-av" src="${{esc(me.avatar)}}">` : '<div class="hdr-av"></div>';
-  app.innerHTML = `<div class="hdr">${{av}}<div class="hdr-name">${{esc(me.name||'我')}}</div><div class="hdr-sp"></div>
-      <button class="ghost" onclick="logout()">退出</button></div>
-    <div class="layout">
-      <div class="side"><div class="side-title">项目</div><div id="sesslist"></div></div>
-      <div class="main"><div class="out placeholder" id="out">从左侧选一个项目,开始跟 Claude 协作</div>
-        <div class="inputbar"><textarea id="inp" placeholder="给 Claude 发一句话,回车发送…" disabled></textarea>
-          <button class="send" id="sendbtn" disabled onclick="send()">发送</button></div>
+function renderApp() {{
+  const av = _me.avatar ? `<img class="hdr-av" src="${{esc(_me.avatar)}}">` : '<div class="hdr-av"></div>';
+  app.className = '';
+  app.innerHTML = `
+    <div class="hdr">
+      <button class="hdr-back" onclick="backToList()">‹</button>
+      ${{av}}
+      <div class="hdr-title" id="hdrTitle">${{esc(_me.name || '我')}}</div>
+      <button class="ghost" onclick="logout()">退出</button>
+    </div>
+    <div class="body">
+      <div class="side"><div class="side-title">项目</div><div id="projlist"><div class="side-title" style="text-transform:none;letter-spacing:0;color:var(--muted)">加载中…</div></div></div>
+      <div class="main">
+        <div class="out placeholder" id="out">选一个项目,开始跟 Claude 协作</div>
+        <div class="inputbar">
+          <textarea id="inp" rows="1" enterkeyhint="send" placeholder="给 Claude 发一句话,回车发送(Shift+回车换行)" disabled></textarea>
+          <button class="send" id="sendbtn" disabled onclick="send()">发送</button>
+        </div>
       </div>
     </div>`;
   const inp = document.getElementById('inp');
-  inp.addEventListener('keydown', e => {{ if (e.key === 'Enter' && !e.shiftKey) {{ e.preventDefault(); send(); }} }});
+  inp.addEventListener('compositionstart', () => {{ _composing = true; }});
+  inp.addEventListener('compositionend', () => {{ _composing = false; }});
+  inp.addEventListener('keydown', e => {{
+    if (e.key === 'Enter' && !e.shiftKey && !_composing && !e.isComposing) {{ e.preventDefault(); send(); }}
+  }});
+  inp.addEventListener('input', () => {{ inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 140) + 'px'; }});
+  document.addEventListener('keydown', e => {{ if (e.key === 'Escape') backToList(); }});
   loadProjects();
-  setInterval(loadProjects, 8000);
+  setInterval(loadProjects, 10000);
 }}
 
-let _curPid = null;
 async function loadProjects() {{
   const res = await fetch('/api/sub/projects', {{headers: H()}}).catch(()=>null);
   if (!res || !res.ok) return;
-  _panes = await res.json();
-  const list = document.getElementById('sesslist');
+  _projects = await res.json();
+  const list = document.getElementById('projlist');
   if (!list) return;
-  if (!_panes.length) {{ list.innerHTML = '<div class="side-title" style="color:var(--muted);text-transform:none;letter-spacing:0">还没有被授权的项目</div>'; return; }}
-  list.innerHTML = _panes.map(p =>
-    `<div class="sess${{_curPid===p.id?' active':''}}" onclick="pickProject('${{esc(p.id)}}')">
-      <span class="sess-badge claude">C</span><span class="sess-name">${{esc(p.name||p.id)}}</span></div>`
+  if (!_projects.length) {{ list.innerHTML = '<div class="side-title" style="text-transform:none;letter-spacing:0;color:var(--muted)">还没有被授权的项目</div>'; return; }}
+  list.innerHTML = _projects.map(p =>
+    `<div class="proj${{_curPid===p.id?' active':''}}" onclick="pickProject('${{esc(p.id)}}')">
+      <span class="proj-badge">C</span><span class="proj-name">${{esc(p.name||p.id)}}</span></div>`
   ).join('');
 }}
 
+function backToList() {{
+  app.classList.remove('chat-open');
+  if (_pollTimer) {{ clearInterval(_pollTimer); _pollTimer = null; }}
+}}
+
 async function pickProject(pid) {{
-  _curPid = pid;
+  _curPid = pid; _cur = null;
+  app.classList.add('chat-open');
+  const p = _projects.find(x => x.id === pid);
+  const ht = document.getElementById('hdrTitle'); if (ht) ht.textContent = (p && p.name) || pid;
   loadProjects();
   const out = document.getElementById('out'); out.classList.remove('placeholder'); out.textContent = '正在启动该项目的 Claude 会话…';
   const inp = document.getElementById('inp'), btn = document.getElementById('sendbtn');
   inp.disabled = true; btn.disabled = true;
-  // 起/复用加固会话
   const res = await fetch(`/api/sub/project/${{encodeURIComponent(pid)}}/session`, {{method:'POST', headers: H()}}).catch(()=>null);
-  if (!res || !res.ok) {{ out.textContent = res && res.status===403 ? '无权访问该项目' : '会话启动失败'; return; }}
-  const d = await res.json();
-  if (pid !== _curPid) return;   // 期间又切了项目
-  _cur = d.target;
-  inp.disabled = false; btn.disabled = false; inp.focus();
+  if (pid !== _curPid) return;
+  if (!res || !res.ok) {{ out.textContent = res && res.status===403 ? '无权访问该项目' : '会话启动失败,稍后重试'; return; }}
+  _cur = (await res.json()).target;
+  inp.disabled = false; btn.disabled = false;
+  if (window.innerWidth > 760) inp.focus();
   if (_pollTimer) clearInterval(_pollTimer);
   pollOutput();
-  _pollTimer = setInterval(pollOutput, 2000);
+  _pollTimer = setInterval(pollOutput, 1800);
 }}
 
 async function pollOutput() {{
   if (!_cur) return;
-  const res = await fetch(`/api/sub/pane/${{encodeURIComponent(_cur)}}/output?lines=200`, {{headers: H()}}).catch(()=>null);
+  const res = await fetch(`/api/sub/pane/${{encodeURIComponent(_cur)}}/output?lines=300`, {{headers: H()}}).catch(()=>null);
   const out = document.getElementById('out');
-  if (!out || _cur == null) return;
+  if (!out || !_cur) return;
   if (!res || !res.ok) {{ out.textContent = res && res.status===403 ? '无权访问该会话' : '读取失败'; return; }}
   const d = await res.json();
-  const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
-  out.textContent = stripAnsi(d.output || '');
+  const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 60;
+  out.textContent = stripAnsi(d.output || '') || '(会话正在启动…)';
   if (atBottom) out.scrollTop = out.scrollHeight;
 }}
 
@@ -169,10 +213,10 @@ async function send() {{
   if (!text || !_cur) return;
   btn.disabled = true;
   const res = await fetch(`/api/sub/pane/${{encodeURIComponent(_cur)}}/send`, {{
-    method: 'POST', headers: {{'Content-Type':'application/json', ...H()}}, body: JSON.stringify({{text}})
+    method:'POST', headers: {{'Content-Type':'application/json', ...H()}}, body: JSON.stringify({{text}})
   }}).catch(()=>null);
   btn.disabled = false;
-  if (res && res.ok) {{ inp.value = ''; setTimeout(pollOutput, 300); }}
+  if (res && res.ok) {{ inp.value = ''; inp.style.height = 'auto'; setTimeout(pollOutput, 300); }}
   else alert(res && res.status===403 ? '无权操作该会话' : '发送失败');
   inp.focus();
 }}
