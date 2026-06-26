@@ -3230,15 +3230,33 @@ def sub_pane_send(request: Request, target: str, body: dict):
 _feishu_states: dict[str, float] = {}   # state -> 过期时间(CSRF 校验)
 
 
+def _feishu_coo_env() -> dict:
+    """回落读 feishu-coo 的 .env 复用其自建应用(用户明确要求复用)。只取需要的几项。"""
+    env = {}
+    try:
+        p = Path.home() / "feishu-coo-run" / ".env"
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            env[k.strip()] = v.strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return env
+
+
 def _feishu_oauth_cfg() -> dict:
     from .config import load_global_config
     fo = (load_global_config().get("feishu_oauth") or {})
+    coo = _feishu_coo_env() if not fo.get("app_id") else {}
     pub = (fo.get("public_base_url") or "https://mira.zhuchao.life").rstrip("/")
     return {
-        "app_id": fo.get("app_id", ""),
-        "app_secret": fo.get("app_secret", ""),
-        "open_base_url": fo.get("open_base_url") or "https://open.feishu.cn/open-apis",
-        "scopes": fo.get("scopes", ""),
+        "app_id": fo.get("app_id") or coo.get("FEISHU_COO_APP_ID", ""),
+        "app_secret": fo.get("app_secret") or coo.get("FEISHU_COO_APP_SECRET", ""),
+        "open_base_url": (fo.get("open_base_url") or coo.get("FEISHU_COO_OPEN_BASE_URL")
+                          or "https://open.feishu.cn/open-apis"),
+        "scopes": fo.get("scopes") or coo.get("FEISHU_COO_USER_OAUTH_SCOPES", ""),
         "redirect_uri": pub + "/auth/feishu/callback",
     }
 
