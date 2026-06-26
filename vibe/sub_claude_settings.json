@@ -1,0 +1,19 @@
+{
+  "_comment": "子账号协作会话用的加固 Claude 设置。配 --permission-mode dontAsk 使用:普通开发命令照跑、危险/接管类命令硬 deny。实测(claude 2.1.177)deny 对命令有效。注意:这是防'接管/搞坏机器',不防'读项目外文件'(那需要 OS 沙箱)。",
+  "permissions": {
+    "allow": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"],
+    "deny": [
+      "Bash(sudo:*)", "Bash(su:*)", "Bash(doas:*)",
+      "Bash(launchctl:*)", "Bash(systemctl:*)", "Bash(launchd:*)",
+      "Bash(crontab:*)", "Bash(at:*)",
+      "Bash(shutdown:*)", "Bash(reboot:*)", "Bash(halt:*)", "Bash(poweroff:*)",
+      "Bash(diskutil:*)", "Bash(fdisk:*)", "Bash(mkfs:*)", "Bash(dd:*)",
+      "Bash(defaults:*)", "Bash(scutil:*)", "Bash(networksetup:*)", "Bash(pfctl:*)",
+      "Bash(killall:*)", "Bash(pkill:*)",
+      "Bash(visudo:*)", "Bash(dscl:*)", "Bash(sysadminctl:*)",
+      "Bash(rm:* /*)", "Bash(rm:* ~)", "Bash(rm:* /Users)", "Bash(rm:* /System)", "Bash(rm:* /Library)",
+      "Bash(chown:*)", "Bash(chmod:* /*)",
+      "Bash(brew:*install*)", "Bash(softwareupdate:*)"
+    ]
+  }
+}
