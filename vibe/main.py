@@ -874,6 +874,13 @@ def new_project_page(request: Request):
     return HTMLResponse(render_new_project_page(), headers=_NC)
 
 
+@api.get("/accounts", response_class=HTMLResponse)
+def accounts_page_route():
+    """owner 的子账号管理页(页面壳;数据/操作走 _is_admin 守卫的 /api/accounts)。"""
+    from vibe.accounts_page import render_accounts_page
+    return HTMLResponse(render_accounts_page(), headers=_NC)
+
+
 @api.get("/settings", response_class=HTMLResponse)
 def settings_console_page(request: Request):
     from vibe.settings_page import render_settings_page

@@ -181,6 +181,14 @@ def test_feishu_callback_bad_state_rejected(tmp_path):
     assert "error=state" in resp.headers["location"]
 
 
+def test_accounts_page_renders():
+    resp = client.get("/accounts")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert '/api/accounts' in body and 'saveGrant' in body
+
+
 def test_feishu_callback_pending_user_no_session(tmp_path):
     fake, r = _yaml(tmp_path, [{"feishu_open_id": "ou_p", "status": "pending", "projects": []}])
     s = _state()
