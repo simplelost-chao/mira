@@ -408,7 +408,9 @@ def render_dev_page() -> str:
   /* ── 子账号模式:复用 dev 全套 UI,藏掉 owner 专属入口 ── */
   .sub-mode .term-new-btn,
   .sub-mode .term-edit-btn,
-  .sub-mode .term-placeholder-btn { display: none !important; }
+  .sub-mode .term-placeholder-btn,
+  .sub-mode .topbar a.topbar-btn[href="/accounts"],
+  .sub-mode .topbar a.topbar-btn[href="/deploy"] { display: none !important; }
 
   @media (max-width: 900px) {
     .term-detail-header { display: none !important; }

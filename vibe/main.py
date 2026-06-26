@@ -40,6 +40,17 @@ def _sub_ttyd_port(open_id: str) -> int:
     return _SUB_TTYD_BASE + (int(hashlib.sha256(open_id.encode()).hexdigest(), 16) % 250)
 
 
+def _kill_port_listeners(port: int) -> None:
+    """杀掉监听该端口的进程(用于回收残留 ttyd,保证新实例能 bind)。"""
+    try:
+        r = subprocess.run(["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"],
+                           capture_output=True, text=True)
+        for pid in r.stdout.split():
+            subprocess.run(["kill", pid])
+    except Exception:
+        pass
+
+
 def _ensure_sub_ttyd(open_id: str) -> int | None:
     """确保该子账号有一个【可写】ttyd,挂在他自己的 session sub-<openid>。
     可写但安全:会话已禁用 tmux prefix + claude 跑在外壳脚本里,逃不到裸 shell。
@@ -54,6 +65,9 @@ def _ensure_sub_ttyd(open_id: str) -> int | None:
     ttyd = _ttyd_bin()
     if not Path(ttyd).exists():
         return None
+    # 清掉可能残留在该端口的旧 ttyd(如服务重启后遗留的实例),否则新的 --writable 实例 bind 失败,
+    # 反代会连回那个旧的只读实例 → 子账号能看不能输入。
+    _kill_port_listeners(port)
     base = f"/subterm/{port}"
     cmd = [ttyd, "-p", str(port), "--base-path", base, "--writable"]
     for opt in _TTYD_CLIENT_OPTIONS:
@@ -3743,8 +3757,11 @@ _UPLOAD_MAX = 50 * 1024 * 1024
 
 @api.post("/api/upload/image")
 async def upload_image(request: Request, file: UploadFile = File(...), host: str = ""):
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
+    principal = _get_principal(request)
+    if not principal:
+        raise HTTPException(status_code=401, detail="需要登录")
+    if principal[0] == "sub" and host:
+        raise HTTPException(status_code=403, detail="子账号不能访问远程主机")
     # 先验证类型，再读取完整内容
     ct = (file.content_type or "").split(";")[0].strip().lower()
     if ct in _UPLOAD_DENY_TYPES:
@@ -3780,8 +3797,12 @@ async def upload_image(request: Request, file: UploadFile = File(...), host: str
 
 @api.post("/api/terminals/{target:path}/send")
 async def terminals_send(request: Request, target: str, body: dict):
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
+    principal = _get_principal(request)
+    if not principal:
+        raise HTTPException(status_code=401, detail="需要登录")
+    # 子账号只能往自己 session 的 pane 发键(写键不净化:终端本就可写,会话已 shell-proof)
+    if principal[0] == "sub" and not _sub_target_project(principal[1]["feishu_open_id"], target):
+        raise HTTPException(status_code=403, detail="无权操作该会话")
     keys = body.get("keys", "")
     if not keys:
         raise HTTPException(status_code=400, detail="keys required")

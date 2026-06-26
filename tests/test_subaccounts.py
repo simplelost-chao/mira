@@ -274,6 +274,31 @@ def test_pane_tokens_sub_foreign_target_403(tmp_path):
     assert resp.status_code == 403
 
 
+def test_terminals_send_sub_foreign_403(tmp_path):
+    # 上传/快捷键走 /api/terminals/<t>/send:子账号发到别人 session → 403
+    _fake, r, tok = _sub(tmp_path, ["proj-a"])
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.main._sub_target_project", return_value=None):
+        resp = client.post("/api/terminals/owner:0.0/send", json={"keys": "ls\n"},
+                           headers={"X-Sub-Token": tok})
+    assert resp.status_code == 403
+
+
+def test_terminals_send_sub_own_raw(tmp_path):
+    # 自己 session:原样发键(可写终端不净化;安全靠 shell-proof 会话)
+    _fake, r, tok = _sub(tmp_path, ["proj-a"])
+    sent = {}
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.main._sub_target_project", return_value="proj-a"), \
+         patch("vibe.tmux_bridge.send_keys", side_effect=lambda t, k: sent.update(t=t, k=k)):
+        resp = client.post("/api/terminals/sub-ou_s:0.0/send", json={"keys": "echo hi\n"},
+                           headers={"X-Sub-Token": tok})
+    assert resp.status_code == 200
+    assert sent["k"] == "echo hi\n"
+
+
 def test_feishu_callback_pending_user_no_session(tmp_path):
     fake, r = _yaml(tmp_path, [{"feishu_open_id": "ou_p", "status": "pending", "projects": []}])
     s = _state()

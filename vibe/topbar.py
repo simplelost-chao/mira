@@ -292,8 +292,11 @@ function closeLoginModal() {
 }
 function logout() {
   _adminToken = '';
+  _subToken = '';
   _isAdmin = false;
+  _isSub = false;
   localStorage.removeItem('mira-admin-token');
+  localStorage.removeItem('mira-sub-token');
   location.reload();
 }
 async function doLogin() {
