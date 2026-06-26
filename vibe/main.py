@@ -3679,9 +3679,14 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
     # WS 认证：优先检查 header，兼容 query param（浏览器 WS 无法设 header）
     ws_token = ws.headers.get("x-admin-token") or ws.query_params.get("token", "")
     expected = _admin_token()
-    if expected and not hmac.compare_digest(ws_token, expected):
-        await ws.close(code=1008, reason="Unauthorized")
-        return
+    authed = (expected is None) or (bool(ws_token) and hmac.compare_digest(ws_token, expected))
+    if not authed:
+        # 子账号:token 对应有效会话,且 target 属于他自己的 session 才放行(只读输出)
+        from vibe.accounts import session_open_id
+        oid = session_open_id(ws_token)
+        if not (oid and _sub_target_project(oid, target)):
+            await ws.close(code=1008, reason="Unauthorized")
+            return
     await ws.accept()
 
     # 远程 WebSocket 代理：连接远程 Mira 的同名 WS 端点，双向转发

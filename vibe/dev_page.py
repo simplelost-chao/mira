@@ -449,11 +449,6 @@ def render_dev_page() -> str:
     .term-scroll-badge { display: none !important; }
     .term-iframe-wrap { flex: none; height: 0; min-height: 0; overflow: hidden; }
 
-    /* 子账号:移动端也用可写 iframe 终端(而不是 owner 的只读 stream 模式) */
-    .dev-page.sub-mode.detail-open .term-iframe-wrap { flex: 1; height: auto; min-height: 0; overflow: hidden; }
-    .dev-page.sub-mode #ttyd-frame { display: block !important; }
-    .dev-page.sub-mode .mobile-term-output { display: none !important; }
-
     /* Mobile terminal text output (WebSocket-fed, ANSI-colored) */
     .mobile-term-output.visible {
       display: block; flex: 1; min-height: 0;
@@ -2354,7 +2349,7 @@ function _connectTermWs(target) {
   _disconnectTermWs();
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var url = proto + '//' + location.host + '/ws/terminal/' + encodeURIComponent(target)
-            + '/stream?token=' + encodeURIComponent(_adminToken);
+            + '/stream?token=' + encodeURIComponent(_adminToken || _subToken);
   var termWs = new WebSocket(url);
   _termWs = termWs;
   var output = document.getElementById('mobile-term-output');
@@ -3187,6 +3182,7 @@ async function initSub() {
     var row = e.target.closest('.term-pane-row');
     if (row) selectSubProject(row.dataset.pid);
   });
+  _initMobileInput();
   _initUpload();
   await loadSubProjects();
   setInterval(loadSubProjects, 15000);
@@ -3246,17 +3242,38 @@ function _subTermError(msg) {
 }
 
 function showSubTerminal() {
-  if (!_subTermBase) { _subTermError('终端暂不可用,请重试'); return; }
   document.getElementById('term-placeholder').style.display = 'none';
   var toolbar = document.getElementById('term-toolbar'); if (toolbar) toolbar.classList.add('visible');
+  var devPage = document.getElementById('dev-page');
+  if (_isMobile) {
+    // 手机:跟 owner 完全一样用 stream 模式 —— 只读输出流 + 输入栏/按键行,
+    // 经 /api/terminals/send(已按 sub 作用域)。iframe 在手机上输入有问题,不用。
+    devPage.classList.add('stream-mode');
+    document.getElementById('ttyd-frame').classList.remove('visible');
+    document.getElementById('mobile-term-output').classList.add('visible');
+    document.getElementById('mobile-token-bar').classList.add('visible');
+    document.getElementById('mobile-input-bar').style.display = 'flex';
+    if (_currentTarget) _connectTermWs(_currentTarget);
+    return;
+  }
+  // 桌面:子账号自己的可写 ttyd(直接在终端里打字)
+  if (!_subTermBase) { _subTermError('终端暂不可用,请重试'); return; }
+  devPage.classList.remove('stream-mode');
   var frame = document.getElementById('ttyd-frame');
   if (!frame.src || !frame.src.endsWith(_subTermBase)) {
     frame.src = _subTermBase;
-    frame.addEventListener('load', function() { _applyTtydTheme(); });
+    frame.addEventListener('load', function() { _applyTtydTheme(); _focusTerm(); });
   }
   frame.classList.add('visible');
   document.getElementById('mobile-term-output').classList.remove('visible');
-  requestAnimationFrame(function() { _resizeTtydFrame(); setTimeout(_resizeTtydFrame, 250); });
+  requestAnimationFrame(function() { _resizeTtydFrame(); setTimeout(_resizeTtydFrame, 250); _focusTerm(); });
+}
+
+function _focusTerm() {
+  // 把键盘焦点交给终端 iframe,进去就能直接打字(不用先点一下)
+  var frame = document.getElementById('ttyd-frame');
+  try { frame.contentWindow.focus(); } catch (e) {}
+  try { frame.focus(); } catch (e) {}
 }
 
 function _subWaystation(msg, showLogin) {

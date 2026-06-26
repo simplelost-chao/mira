@@ -12,9 +12,9 @@
       "Bash(killall:*)", "Bash(pkill:*)",
       "Bash(visudo:*)", "Bash(dscl:*)", "Bash(sysadminctl:*)",
       "Bash(tmux:*)", "Bash(screen:*)", "Bash(script:*)", "Bash(ttyd:*)", "Bash(nohup:*)",
-      "Bash(rm:* /*)", "Bash(rm:* ~)", "Bash(rm:* /Users)", "Bash(rm:* /System)", "Bash(rm:* /Library)",
-      "Bash(chown:*)", "Bash(chmod:* /*)",
-      "Bash(brew:*install*)", "Bash(softwareupdate:*)"
+      "Bash(rm -rf /:*)", "Bash(rm -fr /:*)", "Bash(rm -rf ~:*)", "Bash(rm -fr ~:*)",
+      "Bash(chown:*)",
+      "Bash(brew install:*)", "Bash(softwareupdate:*)"
     ]
   }
 }
