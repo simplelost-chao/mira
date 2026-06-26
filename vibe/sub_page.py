@@ -21,6 +21,7 @@ def render_sub_page() -> str:
 {_theme}
   html, body {{ height: 100vh; overflow: hidden; }}
   body {{ background: var(--bg); color: var(--text); font-family: var(--mono); display: flex; flex-direction: column; }}
+  #app {{ flex: 1; display: flex; flex-direction: column; min-height: 0; }}
   .center {{ flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }}
   .logo {{ font-size: 22px; font-weight: 700; }}
   .logo .a {{ color: var(--accent); }}
@@ -47,7 +48,7 @@ def render_sub_page() -> str:
   .sess-badge.codex {{ background: rgba(92,208,138,.18); color: var(--green); }}
   .sess-name {{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }}
   .sess.waiting .sess-name::after {{ content: ' ●'; color: var(--orange); }}
-  .main {{ flex: 1; display: flex; flex-direction: column; min-width: 0; }}
+  .main {{ flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }}
   .out {{ flex: 1; overflow-y: auto; padding: 14px 16px; font-size: 12px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-word; color: var(--sub); }}
   .inputbar {{ display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--panel); }}
