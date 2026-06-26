@@ -208,7 +208,7 @@ def test_feishu_callback_new_user_pending(tmp_path):
          patch("vibe.feishu_oauth.exchange_code", return_value={"open_id": "ou_new", "name": "新人"}):
         resp = client.get(f"/auth/feishu/callback?code=c&state={s}", follow_redirects=False)
     assert resp.status_code in (302, 307)
-    assert "status=pending" in resp.headers["location"]
+    assert "sub_status=pending" in resp.headers["location"]
     import yaml
     accs = yaml.safe_load(fake.read_text())["accounts"]
     assert accs[0]["feishu_open_id"] == "ou_new" and accs[0]["status"] == "pending"
@@ -223,8 +223,8 @@ def test_feishu_callback_active_user_gets_session(tmp_path):
         resp = client.get(f"/auth/feishu/callback?code=c&state={s}", follow_redirects=False)
     assert resp.status_code in (302, 307)
     loc = resp.headers["location"]
-    assert "token=" in loc
-    tok = loc.split("token=")[1]
+    assert "sub_token=" in loc
+    tok = loc.split("sub_token=")[1]
     assert accounts.session_open_id(tok) == "ou_a"   # 会话真发了
 
 
@@ -234,7 +234,7 @@ def test_feishu_callback_bad_state_rejected(tmp_path):
          patch("vibe.feishu_oauth.exchange_code", return_value={"open_id": "x"}):
         resp = client.get("/auth/feishu/callback?code=c&state=bogus", follow_redirects=False)
     assert resp.status_code in (302, 307)
-    assert "error=state" in resp.headers["location"]
+    assert "sub_error=state" in resp.headers["location"]
 
 
 def test_accounts_page_renders():
@@ -245,12 +245,33 @@ def test_accounts_page_renders():
     assert '/api/accounts' in body and 'saveGrant' in body
 
 
-def test_sub_page_renders():
-    resp = client.get("/sub")
+def test_sub_path_redirects_to_dev():
+    # 子账号现在直接用 dev 页面;老 /sub 链接 302 到 /dev
+    resp = client.get("/sub", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == "/dev"
+
+
+def test_auth_check_reports_sub(tmp_path):
+    # dev 页面靠 /api/auth/check 认出自己是子账号
+    _fake, r, tok = _sub(tmp_path, ["proj-a"])
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r):
+        resp = client.get("/api/auth/check", headers={"X-Sub-Token": tok})
     assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-    body = resp.text
-    assert '/auth/feishu/login' in body and '/api/sub/projects' in body
+    body = resp.json()
+    assert body["admin"] is False
+    assert body.get("sub", {}).get("projects") == ["proj-a"]
+
+
+def test_pane_tokens_sub_foreign_target_403(tmp_path):
+    # 子账号查不属于自己 session 的 pane 用量 → 403(防泄漏 owner 其他项目)
+    _fake, r, tok = _sub(tmp_path, ["proj-a"])
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r):
+        resp = client.get("/api/dev/pane-tokens?target=owner:0.0&tool=claude",
+                          headers={"X-Sub-Token": tok})
+    assert resp.status_code == 403
 
 
 def test_feishu_callback_pending_user_no_session(tmp_path):
@@ -259,5 +280,5 @@ def test_feishu_callback_pending_user_no_session(tmp_path):
     with patch("vibe.main._read_vibe_yaml", side_effect=r), \
          patch("vibe.feishu_oauth.exchange_code", return_value={"open_id": "ou_p", "name": "P"}):
         resp = client.get(f"/auth/feishu/callback?code=c&state={s}", follow_redirects=False)
-    assert "status=pending" in resp.headers["location"]
+    assert "sub_status=pending" in resp.headers["location"]
     assert "token=" not in resp.headers["location"]

@@ -901,11 +901,10 @@ def accounts_page_route():
     return HTMLResponse(render_accounts_page(), headers=_NC)
 
 
-@api.get("/sub", response_class=HTMLResponse)
-def sub_page_route():
-    """子账号页(飞书登录 + 跟 Claude 对话);所有数据走 X-Sub-Token 守卫的 /api/sub/*。"""
-    from vibe.sub_page import render_sub_page
-    return HTMLResponse(render_sub_page(), headers=_NC)
+@api.get("/sub")
+def sub_page_redirect():
+    """旧 /sub 链接 → 统一到 dev 页(子账号现在直接用 dev 页面)。"""
+    return RedirectResponse(url="/dev", status_code=302)
 
 
 @api.get("/settings", response_class=HTMLResponse)
@@ -1595,8 +1594,9 @@ _CLAUDE_USAGE_TTL = 300  # seconds
 @api.get("/api/claude-usage")
 def claude_usage(request: Request):
     """Get Claude Code usage via Anthropic OAuth usage API (TTL-cached, stale-on-error)."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
+    # 账号级用量是共享账号的(子账号也用这个账号),owner / sub 都可读
+    if not _get_principal(request):
+        raise HTTPException(status_code=401, detail="需要登录")
 
     import time as _time
     now = _time.time()
@@ -1745,8 +1745,8 @@ def _calc_local_7d_usage_cached() -> dict:
 @api.get("/api/codex-usage")
 def codex_usage(request: Request):
     """Get Codex rate limit info from its local SQLite logs."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
+    if not _get_principal(request):
+        raise HTTPException(status_code=401, detail="需要登录")
     import sqlite3, re, json as _json
     db_path = Path.home() / ".codex" / "logs_2.sqlite"
     if not db_path.exists():
@@ -2085,7 +2085,17 @@ def auth_login(request: Request, body: dict):
 @api.get("/api/auth/check")
 def auth_check(request: Request):
     token = _admin_token()
-    return {"admin": _is_admin(request), "auth_required": token is not None}
+    out = {"admin": _is_admin(request), "auth_required": token is not None}
+    if not out["admin"]:
+        principal = _get_principal(request)
+        if principal and principal[0] == "sub":
+            acc = principal[1]
+            out["sub"] = {
+                "name": acc.get("name") or "",
+                "avatar": acc.get("avatar") or "",
+                "projects": acc.get("projects") or [],
+            }
+    return out
 
 
 @api.get("/api/hosts")
@@ -3397,17 +3407,17 @@ def feishu_callback(code: str = "", state: str = ""):
     """飞书授权回调:换码拿用户 → 找/建账号 → active 发会话,否则进待批准。"""
     exp = _feishu_states.pop(state, None)
     if not exp or exp < time.time():
-        return RedirectResponse("/sub?error=state")
+        return RedirectResponse("/dev?sub_error=state")
     from vibe.feishu_oauth import exchange_code
     from vibe.accounts import new_session
     cfg = _feishu_oauth_cfg()
     try:
         user = exchange_code(cfg, code)
     except Exception:
-        return RedirectResponse("/sub?error=exchange")
+        return RedirectResponse("/dev?sub_error=exchange")
     open_id = user.get("open_id")
     if not open_id:
-        return RedirectResponse("/sub?error=nouser")
+        return RedirectResponse("/dev?sub_error=nouser")
     cfg_path, data = _read_vibe_yaml()
     accounts_list = data.get("accounts", [])
     acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
@@ -3420,16 +3430,16 @@ def feishu_callback(code: str = "", state: str = ""):
         })
         data["accounts"] = accounts_list
         _write_vibe_yaml(cfg_path, data)
-        return RedirectResponse("/sub?status=pending")
+        return RedirectResponse("/dev?sub_status=pending")
     # 已有账号:刷新姓名/头像
     acc["name"] = user.get("name", acc.get("name", ""))
     acc["avatar"] = user.get("avatar_url", acc.get("avatar", ""))
     data["accounts"] = accounts_list
     _write_vibe_yaml(cfg_path, data)
     if acc.get("status") != "active":
-        return RedirectResponse("/sub?status=" + (acc.get("status") or "pending"))
+        return RedirectResponse("/dev?sub_status=" + (acc.get("status") or "pending"))
     token = new_session(open_id)
-    return RedirectResponse(f"/sub?token={token}")
+    return RedirectResponse(f"/dev?sub_token={token}")
 
 
 @api.get("/api/dev/project-options")
@@ -3461,10 +3471,14 @@ def dev_project_options(request: Request):
 @api.get("/api/dev/pane-tokens")
 def dev_pane_tokens(request: Request, target: str = "", tool: str = ""):
     """Return token stats for the latest session in this pane's CWD."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
+    principal = _get_principal(request)
+    if not principal:
+        raise HTTPException(status_code=401, detail="需要登录")
     if not target:
         raise HTTPException(status_code=400, detail="target required")
+    # 子账号只能查自己 session 里的 pane,否则会泄漏 owner 其他项目的用量
+    if principal[0] == "sub" and not _sub_target_project(principal[1]["feishu_open_id"], target):
+        raise HTTPException(status_code=403, detail="无权访问该会话")
     from vibe.tmux_bridge import list_panes
     pane = next((p for p in list_panes() if p["target"] == target), None)
     if not pane:

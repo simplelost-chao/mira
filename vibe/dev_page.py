@@ -405,6 +405,11 @@ def render_dev_page() -> str:
   .mobile-input-bar { display: none; }
 
   /* ── Mobile ── */
+  /* ── 子账号模式:复用 dev 全套 UI,藏掉 owner 专属入口 ── */
+  .sub-mode .term-new-btn,
+  .sub-mode .term-edit-btn,
+  .sub-mode .term-placeholder-btn { display: none !important; }
+
   @media (max-width: 900px) {
     .term-detail-header { display: none !important; }
     .dev-page.detail-open { height: calc(var(--app-h, 100dvh) - 52px); }
@@ -441,6 +446,11 @@ def render_dev_page() -> str:
     .term-touch-overlay { display: none !important; }
     .term-scroll-badge { display: none !important; }
     .term-iframe-wrap { flex: none; height: 0; min-height: 0; overflow: hidden; }
+
+    /* 子账号:移动端也用可写 iframe 终端(而不是 owner 的只读 stream 模式) */
+    .dev-page.sub-mode.detail-open .term-iframe-wrap { flex: 1; height: auto; min-height: 0; overflow: hidden; }
+    .dev-page.sub-mode #ttyd-frame { display: block !important; }
+    .dev-page.sub-mode .mobile-term-output { display: none !important; }
 
     /* Mobile terminal text output (WebSocket-fed, ANSI-colored) */
     .mobile-term-output.visible {
@@ -3162,8 +3172,113 @@ window.addEventListener('message', function(e) {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// ── 子账号视图:复用 dev 页全套(皮肤/终端/快捷键/上传/topbar 用量),只换数据源与权限 ──
+// 终端用子账号自己的【可写】ttyd(/subterm/<port>/),会话已加固到拿不到裸 shell。
+let _subTermBase = '';
+
+async function initSub() {
+  document.getElementById('dev-page').classList.add('sub-mode');
+  document.body.classList.add('sub-mode');
+  new MutationObserver(function() { _applyTtydTheme(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  document.getElementById('term-pane-list').addEventListener('click', function(e) {
+    var row = e.target.closest('.term-pane-row');
+    if (row) selectSubProject(row.dataset.pid);
+  });
+  _initUpload();
+  await loadSubProjects();
+  setInterval(loadSubProjects, 15000);
+}
+
+async function loadSubProjects() {
+  var projs = (_sub && _sub.projects) ? _sub.projects.map(function(id){ return {id:id, name:id}; }) : [];
+  var res = await fetch('/api/sub/projects', { headers: _authHeaders() }).catch(function(){ return null; });
+  if (res && res.ok) projs = await res.json();
+  var list = document.getElementById('term-pane-list');
+  if (!list) return;
+  if (!projs.length) {
+    list.innerHTML = '<div class="term-empty-sidebar">还没有被授权的项目<br><br>等管理员在后台勾选授权</div>';
+    return;
+  }
+  var cur = _currentSubPid || '';
+  list.innerHTML = projs.map(function(p) {
+    var pid = escHtml(p.id), name = escHtml(p.name || p.id);
+    return '<div class="term-pane-row term-single' + (pid === cur ? ' active' : '') + '" data-pid="' + pid + '">'
+      + '<div class="term-pane-badge claude">C</div>'
+      + '<span class="term-pane-name"><span class="term-pane-name-text">' + name + '</span></span>'
+      + '</div>';
+  }).join('');
+}
+
+var _currentSubPid = '';
+async function selectSubProject(pid) {
+  if (!pid) return;
+  _currentSubPid = pid;
+  _currentTarget = null;
+  document.querySelectorAll('.term-pane-row').forEach(function(r){ r.classList.toggle('active', r.dataset.pid === pid); });
+  document.getElementById('dev-page').classList.add('detail-open');
+  if (_isMobile) {
+    document.body.classList.add('detail-locked');
+    document.querySelectorAll('.topbar .topbar-btn').forEach(function(b){ b.style.display = 'none'; });
+    document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b){ b.style.display = 'inline-flex'; });
+  }
+  var row = document.querySelector('.term-pane-row[data-pid="' + CSS.escape(pid) + '"]');
+  var name = row ? ((row.querySelector('.term-pane-name-text') || {}).textContent || pid) : pid;
+  var titleEl = document.getElementById('term-detail-title'); if (titleEl) titleEl.textContent = name;
+  var pageTitle = document.querySelector('.topbar-page-title'); if (pageTitle && _isMobile) pageTitle.textContent = name;
+  document.getElementById('term-placeholder').style.display = 'none';
+  var res = await fetch('/api/sub/project/' + encodeURIComponent(pid) + '/session', { method: 'POST', headers: _authHeaders() }).catch(function(){ return null; });
+  if (!res || !res.ok) { _subTermError(res && res.status === 403 ? '无权访问该项目' : '会话启动失败,稍后重试'); return; }
+  var d = await res.json();
+  _currentTarget = d.target;
+  _subTermBase = d.term_base || '';
+  showSubTerminal();
+  if (d.target) { _loadPaneTokens(d.target, 'claude'); _updateTopbarUsage('claude'); _startTokenRefresh(d.target, 'claude'); }
+}
+
+function _subTermError(msg) {
+  var ph = document.getElementById('term-placeholder');
+  if (!ph) return;
+  ph.style.display = '';
+  if (ph.firstElementChild) ph.firstElementChild.textContent = msg;
+}
+
+function showSubTerminal() {
+  if (!_subTermBase) { _subTermError('终端暂不可用,请重试'); return; }
+  document.getElementById('term-placeholder').style.display = 'none';
+  var toolbar = document.getElementById('term-toolbar'); if (toolbar) toolbar.classList.add('visible');
+  var frame = document.getElementById('ttyd-frame');
+  if (!frame.src || !frame.src.endsWith(_subTermBase)) {
+    frame.src = _subTermBase;
+    frame.addEventListener('load', function() { _applyTtydTheme(); });
+  }
+  frame.classList.add('visible');
+  document.getElementById('mobile-term-output').classList.remove('visible');
+  requestAnimationFrame(function() { _resizeTtydFrame(); setTimeout(_resizeTtydFrame, 250); });
+}
+
+function _subWaystation(msg, showLogin) {
+  document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;flex-direction:column;'
+    + 'align-items:center;justify-content:center;gap:18px;text-align:center;padding:24px;'
+    + 'background:var(--bg);color:var(--text);font-family:var(--mono)">'
+    + '<div style="font-size:20px;font-weight:700"><span style="color:var(--accent)">M</span>ira 协作</div>'
+    + '<div style="font-size:13px;color:var(--sub);line-height:1.7;max-width:360px">' + msg + '</div>'
+    + (showLogin ? '<a href="/auth/feishu/login" style="font-size:15px;font-weight:600;background:var(--accent);'
+        + 'color:#fff;border-radius:10px;padding:12px 26px;text-decoration:none">飞书登录</a>' : '')
+    + '</div>';
+}
+
 async function init() {
+  // 飞书回调的中转态(用 dev 页本身承载,不另起页面)
+  var _sp = new URLSearchParams(location.search);
+  if (_sp.get('sub_status') && _sp.get('sub_status') !== 'active') {
+    return _subWaystation('登录成功,正在等待管理员批准并分配项目。<br>批准后刷新本页即可开始。', false);
+  }
+  if (_sp.get('sub_error')) {
+    return _subWaystation('登录失败,请重试。', true);
+  }
   await _initAuth();
+  if (_isSub) { return initSub(); }
   if (!_isAdmin) { openLoginModal(init); return; }
   // Event delegation: bind click once on the container, survives innerHTML rebuilds
   // Prevent sidebar clicks from stealing focus away from the terminal iframe

@@ -218,6 +218,9 @@ def settings_overlay_html() -> str:
       <button onclick="closeLoginModal()" style="background:none;border:1px solid var(--border);color:var(--sub);padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:var(--mono)">取消</button>
       <button onclick="doLogin()" style="background:var(--accent);border:none;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;font-family:var(--mono)">登录</button>
     </div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <a href="/auth/feishu/login" style="font-size:12px;color:var(--sub);text-decoration:none">协作者?<span style="color:var(--accent)">用飞书登录 →</span></a>
+    </div>
   </div>
 </div>
 
@@ -235,24 +238,39 @@ def topbar_js() -> str:
     return """\
 // ── Auth ─────────────────────────────────────────────────────────────────────
 let _adminToken = localStorage.getItem('mira-admin-token') || '';
+let _subToken = localStorage.getItem('mira-sub-token') || '';
 let _isAdmin = false;
+let _isSub = false;
+let _sub = null;   // 子账号信息 {name, avatar, projects}
 
 function _authHeaders(extra) {
   extra = extra || {};
-  return _adminToken ? {'X-Admin-Token': _adminToken, ...extra} : extra;
+  if (_adminToken) return {'X-Admin-Token': _adminToken, ...extra};
+  if (_subToken) return {'X-Sub-Token': _subToken, ...extra};
+  return extra;
 }
 
 async function _initAuth() {
+  // 飞书回调把子账号 token 放在 URL 上,落地后存起来并清掉地址栏
+  const _q = new URLSearchParams(location.search);
+  if (_q.get('sub_token')) {
+    _subToken = _q.get('sub_token');
+    localStorage.setItem('mira-sub-token', _subToken);
+    history.replaceState({}, '', location.pathname);
+  }
   try {
-    const { admin, auth_required } = await fetch('/api/auth/check', {headers: _authHeaders()}).then(r => r.json());
-    _isAdmin = admin;
-    if (!admin) { _adminToken = ''; localStorage.removeItem('mira-admin-token'); }
-    if (auth_required && !admin) {
+    const r = await fetch('/api/auth/check', {headers: _authHeaders()}).then(r => r.json());
+    _isAdmin = r.admin;
+    _isSub = !!r.sub;
+    _sub = r.sub || null;
+    if (!r.admin) { _adminToken = ''; localStorage.removeItem('mira-admin-token'); }
+    if (!_isSub) { _subToken = ''; localStorage.removeItem('mira-sub-token'); }
+    if (r.auth_required && !r.admin && !_isSub) {
       openLoginModal();
       return false;
     }
   } catch(_) {
-    _isAdmin = false;
+    _isAdmin = false; _isSub = false;
     openLoginModal();
     return false;
   }
