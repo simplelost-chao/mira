@@ -87,68 +87,85 @@ def test_disabled_sub_unauthorized(tmp_path):
         assert client.get("/api/sub/me", headers={"X-Sub-Token": tok}).status_code == 401
 
 
-def test_sub_panes_only_granted_claude(tmp_path):
-    fake, r, tok = _sub(tmp_path, ["proj-a"])
-    panes = [
-        {"target": "s:1.0", "project_id": "proj-a", "command": "claude", "label": "claude/a"},
-        {"target": "s:2.0", "project_id": "proj-OTHER", "command": "claude", "label": "claude/o"},
-        {"target": "s:3.0", "project_id": "proj-a", "command": "bash", "label": "bash"},
-    ]
+def test_sub_projects_returns_granted_existing(tmp_path):
+    fake, r, tok = _sub(tmp_path, ["proj-a", "gone"])
+    projs = [{"id": "proj-a", "name": "Alpha", "path": "/p/a"}]
     with patch("vibe.main._is_admin", return_value=False), \
          patch("vibe.main._read_vibe_yaml", side_effect=r), \
-         patch("vibe.terminal_monitor.get_panes", return_value=panes):
-        resp = client.get("/api/sub/panes", headers={"X-Sub-Token": tok})
+         patch("vibe.main.get_all_projects", return_value=projs):
+        resp = client.get("/api/sub/projects", headers={"X-Sub-Token": tok})
     assert resp.status_code == 200
-    targets = [p["target"] for p in resp.json()]
-    assert targets == ["s:1.0"]   # 只有被授权项目的 claude pane
+    assert resp.json() == [{"id": "proj-a", "name": "Alpha"}]   # gone 不存在,过滤掉
 
 
-def test_sub_can_read_granted_claude_pane(tmp_path):
+def test_sub_open_session_granted(tmp_path):
     fake, r, tok = _sub(tmp_path, ["proj-a"])
-    panes = [{"target": "s:1.0", "project_id": "proj-a", "command": "claude"}]
     with patch("vibe.main._is_admin", return_value=False), \
          patch("vibe.main._read_vibe_yaml", side_effect=r), \
-         patch("vibe.terminal_monitor.get_panes", return_value=panes), \
+         patch("vibe.main._ensure_sub_session", return_value="sub-ou_s:0.0"):
+        resp = client.post("/api/sub/project/proj-a/session", headers={"X-Sub-Token": tok})
+    assert resp.status_code == 200
+    assert resp.json()["target"] == "sub-ou_s:0.0"
+
+
+def test_sub_open_session_non_granted_403(tmp_path):
+    fake, r, tok = _sub(tmp_path, ["proj-a"])
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r):
+        resp = client.post("/api/sub/project/proj-OTHER/session", headers={"X-Sub-Token": tok})
+    assert resp.status_code == 403
+
+
+def test_sub_output_own_session(tmp_path):
+    fake, r, tok = _sub(tmp_path, ["proj-a"])
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.main._sub_target_project", return_value="proj-a"), \
          patch("vibe.tmux_bridge.capture_pane", return_value="claude says hi"):
-        resp = client.get("/api/sub/pane/s:1.0/output", headers={"X-Sub-Token": tok})
+        resp = client.get("/api/sub/pane/sub-ou_s:0.0/output", headers={"X-Sub-Token": tok})
     assert resp.status_code == 200
     assert "claude says hi" in resp.json()["output"]
 
 
-def test_sub_denied_non_granted_project(tmp_path):
+def test_sub_output_not_own_session_403(tmp_path):
     fake, r, tok = _sub(tmp_path, ["proj-a"])
-    panes = [{"target": "s:2.0", "project_id": "proj-OTHER", "command": "claude"}]
+    # _sub_target_project 返回 None = target 不属于他的 session / 无法映射项目
     with patch("vibe.main._is_admin", return_value=False), \
          patch("vibe.main._read_vibe_yaml", side_effect=r), \
-         patch("vibe.terminal_monitor.get_panes", return_value=panes):
-        resp = client.get("/api/sub/pane/s:2.0/output", headers={"X-Sub-Token": tok})
+         patch("vibe.main._sub_target_project", return_value=None):
+        resp = client.get("/api/sub/pane/sub-OTHER:0.0/output", headers={"X-Sub-Token": tok})
     assert resp.status_code == 403
 
 
 def test_sub_send_sanitizes_and_submits(tmp_path):
     fake, r, tok = _sub(tmp_path, ["proj-a"])
-    panes = [{"target": "s:1.0", "project_id": "proj-a", "command": "claude"}]
     sent = {}
     with patch("vibe.main._is_admin", return_value=False), \
          patch("vibe.main._read_vibe_yaml", side_effect=r), \
-         patch("vibe.terminal_monitor.get_panes", return_value=panes), \
+         patch("vibe.main._sub_target_project", return_value="proj-a"), \
          patch("vibe.tmux_bridge.send_keys", side_effect=lambda t, k: sent.update(target=t, keys=k)):
-        resp = client.post("/api/sub/pane/s:1.0/send", json={"text": "hi\x03 claude"},
+        resp = client.post("/api/sub/pane/sub-ou_s:0.0/send", json={"text": "hi\x03 claude"},
                            headers={"X-Sub-Token": tok})
     assert resp.status_code == 200
     assert "\x03" not in sent["keys"]
-    assert sent["keys"].endswith("\n")              # 补了回车提交
+    assert sent["keys"].endswith("\n")
     assert "hi" in sent["keys"] and "claude" in sent["keys"]
 
 
-def test_sub_send_to_non_claude_pane_denied(tmp_path):
+def test_sub_send_denied_not_own(tmp_path):
     fake, r, tok = _sub(tmp_path, ["proj-a"])
-    panes = [{"target": "s:9.0", "project_id": "proj-a", "command": "bash"}]  # 非 claude/codex
     with patch("vibe.main._is_admin", return_value=False), \
          patch("vibe.main._read_vibe_yaml", side_effect=r), \
-         patch("vibe.terminal_monitor.get_panes", return_value=panes):
-        resp = client.post("/api/sub/pane/s:9.0/send", json={"text": "x"}, headers={"X-Sub-Token": tok})
+         patch("vibe.main._sub_target_project", return_value=None):
+        resp = client.post("/api/sub/pane/sub-OTHER:0.0/send", json={"text": "x"}, headers={"X-Sub-Token": tok})
     assert resp.status_code == 403
+
+
+def test_sub_session_name_isolation():
+    from vibe import main as m
+    a = m._sub_session_name("ou_aaa")
+    b = m._sub_session_name("ou_bbb")
+    assert a != b and a.startswith("sub-")
 
 
 # ── 飞书 OAuth 回调 ───────────────────────────────────────────────────────────
@@ -210,7 +227,7 @@ def test_sub_page_renders():
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     body = resp.text
-    assert '/auth/feishu/login' in body and '/api/sub/panes' in body
+    assert '/auth/feishu/login' in body and '/api/sub/projects' in body
 
 
 def test_feishu_callback_pending_user_no_session(tmp_path):

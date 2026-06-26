@@ -337,17 +337,6 @@ def _get_principal(request: Request):
     return None
 
 
-def _sub_pane_project(target: str):
-    """该 pane 属于哪个项目、是什么 AI 工具。只认 claude/codex pane;
-    其它(裸 shell 等)返回 (None, None) —— 子账号不能碰。"""
-    from vibe.terminal_monitor import get_panes
-    for p in get_panes():
-        if p.get("target") == target:
-            cmd = p.get("command")
-            if cmd in ("claude", "codex"):
-                return p.get("project_id"), cmd
-            return None, None
-    return None, None
 
 
 _BLOCKED_PATTERNS = [
@@ -3164,33 +3153,105 @@ def sub_me(request: Request):
             "projects": acc.get("projects") or []}
 
 
-@api.get("/api/sub/panes")
-def sub_panes(request: Request):
-    """子账号:列出被授权项目下的 claude/codex 会话(可对话的对象)。"""
+# ── 子账号专属沙箱会话(每子账号一个 tmux session,进项目起加固 claude)──────────
+
+_HARDENED_SETTINGS = str(Path(__file__).parent / "sub_claude_settings.json")
+
+
+def _sub_session_name(open_id: str) -> str:
+    """每个子账号一个独立 tmux session,天然隔离(他只能碰自己 session 的窗口)。"""
+    return "sub-" + re.sub(r"[^A-Za-z0-9_]", "", open_id)[:16]
+
+
+def _project_path(project_id: str):
+    for p in get_all_projects():
+        if p.get("id") == project_id:
+            return p.get("path")
+    return None
+
+
+def _tmux_run(*args):
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    return subprocess.run([_TMUX_BIN, *args], env=_TMUX_ENV, capture_output=True, text=True)
+
+
+def _ensure_sub_session(open_id: str, project_id: str):
+    """确保 (子账号, 项目) 有一个加固 claude 窗口,返回 pane target;失败 None。"""
+    path = _project_path(project_id)
+    if not path or not Path(path).is_dir():
+        return None
+    sess = _sub_session_name(open_id)
+    win = re.sub(r"[^A-Za-z0-9_-]", "", project_id)[:24] or "proj"
+    lw = _tmux_run("list-windows", "-t", sess, "-F", "#{window_name}\t#{window_index}")
+    if lw.returncode == 0:
+        for line in lw.stdout.splitlines():
+            nm, _, idx = line.partition("\t")
+            if nm == win:
+                return f"{sess}:{idx}.0"   # 已有,复用
+    if _tmux_run("has-session", "-t", sess).returncode != 0:
+        r = _tmux_run("new-session", "-d", "-s", sess, "-n", win, "-c", path, "-P", "-F", "#{window_index}")
+    else:
+        r = _tmux_run("new-window", "-t", sess, "-n", win, "-c", path, "-P", "-F", "#{window_index}")
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    target = f"{sess}:{r.stdout.strip()}.0"
+    from vibe.tmux_bridge import send_keys
+    send_keys(target, f"claude --settings {_HARDENED_SETTINGS} --permission-mode dontAsk\n")
+    return target
+
+
+def _sub_target_project(open_id: str, target: str):
+    """target 必须属于该子账号自己的 session;返回其 cwd 对应的 project_id,否则 None。
+    双重保险:既校验 session 归属(隔离),又把 pane 当前目录映射回项目(配合授权校验)。"""
+    if target.split(":")[0] != _sub_session_name(open_id):
+        return None
+    r = _tmux_run("display-message", "-t", target, "-p", "#{pane_current_path}")
+    if r.returncode != 0:
+        return None
+    cwd = r.stdout.strip()
+    best = None
+    for p in get_all_projects():
+        pp = p.get("path") or ""
+        if pp and (cwd == pp or cwd.startswith(pp + "/")):
+            if best is None or len(pp) > len(best[1]):
+                best = (p["id"], pp)
+    return best[0] if best else None
+
+
+@api.get("/api/sub/projects")
+def sub_projects(request: Request):
+    """子账号:被授权且当前存在的项目列表。"""
     principal = _get_principal(request)
     if not principal or principal[0] != "sub":
         raise HTTPException(status_code=401, detail="需要子账号登录")
-    granted = set(principal[1].get("projects") or [])
-    from vibe.terminal_monitor import get_panes
-    out = []
-    for p in get_panes():
-        if p.get("command") in ("claude", "codex") and p.get("project_id") in granted:
-            out.append({
-                "target": p["target"], "project_id": p.get("project_id"),
-                "label": p.get("label", ""), "tool": p.get("command"),
-                "waiting": bool(p.get("waiting")),
-            })
-    return out
+    granted = principal[1].get("projects") or []
+    by_id = {p["id"]: p for p in get_all_projects()}
+    return [{"id": pid, "name": by_id[pid].get("name", pid)} for pid in granted if pid in by_id]
+
+
+@api.post("/api/sub/project/{project_id}/session")
+def sub_open_session(request: Request, project_id: str):
+    """子账号:进入某授权项目 → 起/复用该项目的加固 claude 会话,返回 target。"""
+    principal = _get_principal(request)
+    if not principal or principal[0] != "sub":
+        raise HTTPException(status_code=401, detail="需要子账号登录")
+    from vibe.accounts import account_can_access_project
+    if not account_can_access_project(principal[1], project_id):
+        raise HTTPException(status_code=403, detail="无权访问该项目")
+    target = _ensure_sub_session(principal[1]["feishu_open_id"], project_id)
+    if not target:
+        raise HTTPException(status_code=400, detail="项目不存在或无法创建会话")
+    return {"target": target}
 
 
 @api.get("/api/sub/pane/{target:path}/output")
 def sub_pane_output(request: Request, target: str, lines: int = 200):
-    """子账号:读被授权项目里某 claude/codex pane 的输出(只读)。"""
+    """子账号:读自己会话里某 pane 的输出(只读)。"""
     principal = _get_principal(request)
     if not principal or principal[0] != "sub":
         raise HTTPException(status_code=401, detail="需要子账号登录")
-    pid, _tool = _sub_pane_project(target)
     from vibe.accounts import account_can_access_project
+    pid = _sub_target_project(principal[1]["feishu_open_id"], target)
     if not pid or not account_can_access_project(principal[1], pid):
         raise HTTPException(status_code=403, detail="无权访问该终端")
     from vibe.tmux_bridge import capture_pane
@@ -3203,13 +3264,12 @@ def sub_pane_output(request: Request, target: str, lines: int = 200):
 
 @api.post("/api/sub/pane/{target:path}/send")
 def sub_pane_send(request: Request, target: str, body: dict):
-    """子账号:向被授权项目的 claude/codex pane 发送一句话(消毒后补回车提交)。
-    不给裸 shell:控制字符全剥掉,且只能发给被识别为 claude/codex 的 pane。"""
+    """子账号:向自己会话里的 claude 发一句话(消毒后补回车提交)。无裸 shell。"""
     principal = _get_principal(request)
     if not principal or principal[0] != "sub":
         raise HTTPException(status_code=401, detail="需要子账号登录")
-    pid, _tool = _sub_pane_project(target)
     from vibe.accounts import account_can_access_project, sanitize_text
+    pid = _sub_target_project(principal[1]["feishu_open_id"], target)
     if not pid or not account_can_access_project(principal[1], pid):
         raise HTTPException(status_code=403, detail="无权操作该终端")
     text = sanitize_text(body.get("text", ""))
@@ -3219,7 +3279,7 @@ def sub_pane_send(request: Request, target: str, body: dict):
         raise HTTPException(status_code=400, detail="内容过长")
     from vibe.tmux_bridge import send_keys
     try:
-        send_keys(target, text + "\n")   # 文本 + 回车 = 提交给 claude
+        send_keys(target, text + "\n")
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}

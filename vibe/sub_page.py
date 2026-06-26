@@ -107,41 +107,45 @@ function renderApp(me) {{
   app.innerHTML = `<div class="hdr">${{av}}<div class="hdr-name">${{esc(me.name||'我')}}</div><div class="hdr-sp"></div>
       <button class="ghost" onclick="logout()">退出</button></div>
     <div class="layout">
-      <div class="side"><div class="side-title">会话</div><div id="sesslist"></div></div>
-      <div class="main"><div class="out placeholder" id="out">从左侧选一个 Claude 会话开始</div>
+      <div class="side"><div class="side-title">项目</div><div id="sesslist"></div></div>
+      <div class="main"><div class="out placeholder" id="out">从左侧选一个项目,开始跟 Claude 协作</div>
         <div class="inputbar"><textarea id="inp" placeholder="给 Claude 发一句话,回车发送…" disabled></textarea>
           <button class="send" id="sendbtn" disabled onclick="send()">发送</button></div>
       </div>
     </div>`;
   const inp = document.getElementById('inp');
   inp.addEventListener('keydown', e => {{ if (e.key === 'Enter' && !e.shiftKey) {{ e.preventDefault(); send(); }} }});
-  loadPanes();
-  setInterval(loadPanes, 5000);
+  loadProjects();
+  setInterval(loadProjects, 8000);
 }}
 
-async function loadPanes() {{
-  const res = await fetch('/api/sub/panes', {{headers: H()}}).catch(()=>null);
+let _curPid = null;
+async function loadProjects() {{
+  const res = await fetch('/api/sub/projects', {{headers: H()}}).catch(()=>null);
   if (!res || !res.ok) return;
   _panes = await res.json();
   const list = document.getElementById('sesslist');
   if (!list) return;
-  if (!_panes.length) {{ list.innerHTML = '<div class="side-title" style="color:var(--muted);text-transform:none;letter-spacing:0">暂无可用会话</div>'; return; }}
-  list.innerHTML = _panes.map(p => {{
-    const name = esc((p.label || p.project_id).replace(/^[^/]*\\//, '') || p.project_id);
-    const b = p.tool === 'codex' ? 'codex' : 'claude';
-    const bt = p.tool === 'codex' ? 'X' : 'C';
-    return `<div class="sess${{_cur===p.target?' active':''}}${{p.waiting?' waiting':''}}" onclick="pick('${{esc(p.target)}}')">
-      <span class="sess-badge ${{b}}">${{bt}}</span><span class="sess-name">${{name}}</span></div>`;
-  }}).join('');
+  if (!_panes.length) {{ list.innerHTML = '<div class="side-title" style="color:var(--muted);text-transform:none;letter-spacing:0">还没有被授权的项目</div>'; return; }}
+  list.innerHTML = _panes.map(p =>
+    `<div class="sess${{_curPid===p.id?' active':''}}" onclick="pickProject('${{esc(p.id)}}')">
+      <span class="sess-badge claude">C</span><span class="sess-name">${{esc(p.name||p.id)}}</span></div>`
+  ).join('');
 }}
 
-function pick(target) {{
-  _cur = target;
-  document.querySelectorAll('.sess').forEach(s => s.classList.toggle('active', false));
-  loadPanes();
+async function pickProject(pid) {{
+  _curPid = pid;
+  loadProjects();
+  const out = document.getElementById('out'); out.classList.remove('placeholder'); out.textContent = '正在启动该项目的 Claude 会话…';
   const inp = document.getElementById('inp'), btn = document.getElementById('sendbtn');
+  inp.disabled = true; btn.disabled = true;
+  // 起/复用加固会话
+  const res = await fetch(`/api/sub/project/${{encodeURIComponent(pid)}}/session`, {{method:'POST', headers: H()}}).catch(()=>null);
+  if (!res || !res.ok) {{ out.textContent = res && res.status===403 ? '无权访问该项目' : '会话启动失败'; return; }}
+  const d = await res.json();
+  if (pid !== _curPid) return;   // 期间又切了项目
+  _cur = d.target;
   inp.disabled = false; btn.disabled = false; inp.focus();
-  const out = document.getElementById('out'); out.classList.remove('placeholder'); out.textContent = '加载中…';
   if (_pollTimer) clearInterval(_pollTimer);
   pollOutput();
   _pollTimer = setInterval(pollOutput, 2000);
