@@ -13,7 +13,7 @@ import uuid
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from urllib.parse import urlparse
@@ -320,6 +320,34 @@ def _is_admin(request: Request) -> bool:
         return True  # No password configured → open access
     req_token = request.headers.get("X-Admin-Token") or ""
     return hmac.compare_digest(req_token, token)
+
+
+def _get_principal(request: Request):
+    """鉴权主体:('owner', None) / ('sub', account) / None。
+    owner = 密码 token;sub = 飞书会话 token(X-Sub-Token)对应的 active 子账号。"""
+    if _is_admin(request):
+        return ("owner", None)
+    from vibe.accounts import session_open_id, find_account
+    open_id = session_open_id(request.headers.get("X-Sub-Token") or "")
+    if open_id:
+        _, data = _read_vibe_yaml()
+        acc = find_account(data.get("accounts", []), open_id)
+        if acc and acc.get("status") == "active":
+            return ("sub", acc)
+    return None
+
+
+def _sub_pane_project(target: str):
+    """该 pane 属于哪个项目、是什么 AI 工具。只认 claude/codex pane;
+    其它(裸 shell 等)返回 (None, None) —— 子账号不能碰。"""
+    from vibe.terminal_monitor import get_panes
+    for p in get_panes():
+        if p.get("target") == target:
+            cmd = p.get("command")
+            if cmd in ("claude", "codex"):
+                return p.get("project_id"), cmd
+            return None, None
+    return None, None
 
 
 _BLOCKED_PATTERNS = [
@@ -3060,6 +3088,178 @@ def set_dev_project_name(request: Request, body: dict):
     data["dev_project_names"] = names
     _write_vibe_yaml(cfg_path, data)
     return {"ok": True}
+
+
+# ── 子账号(多用户):owner 管理 + 子账号作用域受限访问 ──────────────────────────
+
+@api.get("/api/accounts")
+def list_accounts(request: Request):
+    """owner 列出所有子账号(含 pending,用于审批)。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    _, data = _read_vibe_yaml()
+    return data.get("accounts", [])
+
+
+def _update_account(open_id: str, mutate):
+    """读 vibe.yaml,对匹配 open_id 的账号执行 mutate,写回。找不到则 404。"""
+    cfg_path, data = _read_vibe_yaml()
+    accounts_list = data.get("accounts", [])
+    acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
+    if not acc:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    mutate(acc)
+    data["accounts"] = accounts_list
+    _write_vibe_yaml(cfg_path, data)
+    return {"ok": True}
+
+
+@api.post("/api/accounts/{open_id}/approve")
+def approve_account(request: Request, open_id: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    return _update_account(open_id, lambda a: a.update(status="active"))
+
+
+@api.post("/api/accounts/{open_id}/disable")
+def disable_account(request: Request, open_id: str):
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    return _update_account(open_id, lambda a: a.update(status="disabled"))
+
+
+@api.put("/api/accounts/{open_id}/projects")
+def set_account_projects(request: Request, open_id: str, body: dict):
+    """设置某子账号被授权的项目列表。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    projects = body.get("projects")
+    if not isinstance(projects, list):
+        raise HTTPException(status_code=400, detail="projects 必须是列表")
+    return _update_account(open_id, lambda a: a.update(projects=[str(p) for p in projects]))
+
+
+@api.get("/api/sub/me")
+def sub_me(request: Request):
+    """子账号:返回自己的信息 + 被授权项目。"""
+    principal = _get_principal(request)
+    if not principal or principal[0] != "sub":
+        raise HTTPException(status_code=401, detail="需要子账号登录")
+    acc = principal[1]
+    return {"name": acc.get("name"), "avatar": acc.get("avatar"),
+            "projects": acc.get("projects") or []}
+
+
+@api.get("/api/sub/pane/{target:path}/output")
+def sub_pane_output(request: Request, target: str, lines: int = 200):
+    """子账号:读被授权项目里某 claude/codex pane 的输出(只读)。"""
+    principal = _get_principal(request)
+    if not principal or principal[0] != "sub":
+        raise HTTPException(status_code=401, detail="需要子账号登录")
+    pid, _tool = _sub_pane_project(target)
+    from vibe.accounts import account_can_access_project
+    if not pid or not account_can_access_project(principal[1], pid):
+        raise HTTPException(status_code=403, detail="无权访问该终端")
+    from vibe.tmux_bridge import capture_pane
+    try:
+        text = capture_pane(target, lines=lines)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"target": target, "output": text}
+
+
+@api.post("/api/sub/pane/{target:path}/send")
+def sub_pane_send(request: Request, target: str, body: dict):
+    """子账号:向被授权项目的 claude/codex pane 发送一句话(消毒后补回车提交)。
+    不给裸 shell:控制字符全剥掉,且只能发给被识别为 claude/codex 的 pane。"""
+    principal = _get_principal(request)
+    if not principal or principal[0] != "sub":
+        raise HTTPException(status_code=401, detail="需要子账号登录")
+    pid, _tool = _sub_pane_project(target)
+    from vibe.accounts import account_can_access_project, sanitize_text
+    if not pid or not account_can_access_project(principal[1], pid):
+        raise HTTPException(status_code=403, detail="无权操作该终端")
+    text = sanitize_text(body.get("text", ""))
+    if not text:
+        raise HTTPException(status_code=400, detail="内容为空")
+    if len(text) > 4096:
+        raise HTTPException(status_code=400, detail="内容过长")
+    from vibe.tmux_bridge import send_keys
+    try:
+        send_keys(target, text + "\n")   # 文本 + 回车 = 提交给 claude
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+# ── 飞书 OAuth 登录(复用 feishu-coo 应用)────────────────────────────────────
+
+_feishu_states: dict[str, float] = {}   # state -> 过期时间(CSRF 校验)
+
+
+def _feishu_oauth_cfg() -> dict:
+    from .config import load_global_config
+    fo = (load_global_config().get("feishu_oauth") or {})
+    pub = (fo.get("public_base_url") or "https://mira.zhuchao.life").rstrip("/")
+    return {
+        "app_id": fo.get("app_id", ""),
+        "app_secret": fo.get("app_secret", ""),
+        "open_base_url": fo.get("open_base_url") or "https://open.feishu.cn/open-apis",
+        "scopes": fo.get("scopes", ""),
+        "redirect_uri": pub + "/auth/feishu/callback",
+    }
+
+
+@api.get("/auth/feishu/login")
+def feishu_login():
+    """跳转飞书授权页。"""
+    from vibe.feishu_oauth import build_authorize_url
+    cfg = _feishu_oauth_cfg()
+    if not cfg["app_id"]:
+        raise HTTPException(status_code=503, detail="未配置飞书应用(feishu_oauth)")
+    state = secrets.token_urlsafe(16)
+    _feishu_states[state] = time.time() + 600
+    return RedirectResponse(build_authorize_url(cfg, state))
+
+
+@api.get("/auth/feishu/callback")
+def feishu_callback(code: str = "", state: str = ""):
+    """飞书授权回调:换码拿用户 → 找/建账号 → active 发会话,否则进待批准。"""
+    exp = _feishu_states.pop(state, None)
+    if not exp or exp < time.time():
+        return RedirectResponse("/sub?error=state")
+    from vibe.feishu_oauth import exchange_code
+    from vibe.accounts import new_session
+    cfg = _feishu_oauth_cfg()
+    try:
+        user = exchange_code(cfg, code)
+    except Exception:
+        return RedirectResponse("/sub?error=exchange")
+    open_id = user.get("open_id")
+    if not open_id:
+        return RedirectResponse("/sub?error=nouser")
+    cfg_path, data = _read_vibe_yaml()
+    accounts_list = data.get("accounts", [])
+    acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
+    if acc is None:
+        # 陌生人:建为 pending、零权限,等 owner 后台批准
+        accounts_list.append({
+            "feishu_open_id": open_id, "name": user.get("name", ""),
+            "avatar": user.get("avatar_url", ""), "status": "pending",
+            "projects": [], "created_at": int(time.time()),
+        })
+        data["accounts"] = accounts_list
+        _write_vibe_yaml(cfg_path, data)
+        return RedirectResponse("/sub?status=pending")
+    # 已有账号:刷新姓名/头像
+    acc["name"] = user.get("name", acc.get("name", ""))
+    acc["avatar"] = user.get("avatar_url", acc.get("avatar", ""))
+    data["accounts"] = accounts_list
+    _write_vibe_yaml(cfg_path, data)
+    if acc.get("status") != "active":
+        return RedirectResponse("/sub?status=" + (acc.get("status") or "pending"))
+    token = new_session(open_id)
+    return RedirectResponse(f"/sub?token={token}")
 
 
 @api.get("/api/dev/project-options")
