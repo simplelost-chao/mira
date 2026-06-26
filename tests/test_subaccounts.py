@@ -87,6 +87,22 @@ def test_disabled_sub_unauthorized(tmp_path):
         assert client.get("/api/sub/me", headers={"X-Sub-Token": tok}).status_code == 401
 
 
+def test_sub_panes_only_granted_claude(tmp_path):
+    fake, r, tok = _sub(tmp_path, ["proj-a"])
+    panes = [
+        {"target": "s:1.0", "project_id": "proj-a", "command": "claude", "label": "claude/a"},
+        {"target": "s:2.0", "project_id": "proj-OTHER", "command": "claude", "label": "claude/o"},
+        {"target": "s:3.0", "project_id": "proj-a", "command": "bash", "label": "bash"},
+    ]
+    with patch("vibe.main._is_admin", return_value=False), \
+         patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.terminal_monitor.get_panes", return_value=panes):
+        resp = client.get("/api/sub/panes", headers={"X-Sub-Token": tok})
+    assert resp.status_code == 200
+    targets = [p["target"] for p in resp.json()]
+    assert targets == ["s:1.0"]   # 只有被授权项目的 claude pane
+
+
 def test_sub_can_read_granted_claude_pane(tmp_path):
     fake, r, tok = _sub(tmp_path, ["proj-a"])
     panes = [{"target": "s:1.0", "project_id": "proj-a", "command": "claude"}]
@@ -187,6 +203,14 @@ def test_accounts_page_renders():
     assert "text/html" in resp.headers["content-type"]
     body = resp.text
     assert '/api/accounts' in body and 'saveGrant' in body
+
+
+def test_sub_page_renders():
+    resp = client.get("/sub")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert '/auth/feishu/login' in body and '/api/sub/panes' in body
 
 
 def test_feishu_callback_pending_user_no_session(tmp_path):

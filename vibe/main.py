@@ -881,6 +881,13 @@ def accounts_page_route():
     return HTMLResponse(render_accounts_page(), headers=_NC)
 
 
+@api.get("/sub", response_class=HTMLResponse)
+def sub_page_route():
+    """子账号页(飞书登录 + 跟 Claude 对话);所有数据走 X-Sub-Token 守卫的 /api/sub/*。"""
+    from vibe.sub_page import render_sub_page
+    return HTMLResponse(render_sub_page(), headers=_NC)
+
+
 @api.get("/settings", response_class=HTMLResponse)
 def settings_console_page(request: Request):
     from vibe.settings_page import render_settings_page
@@ -3155,6 +3162,25 @@ def sub_me(request: Request):
     acc = principal[1]
     return {"name": acc.get("name"), "avatar": acc.get("avatar"),
             "projects": acc.get("projects") or []}
+
+
+@api.get("/api/sub/panes")
+def sub_panes(request: Request):
+    """子账号:列出被授权项目下的 claude/codex 会话(可对话的对象)。"""
+    principal = _get_principal(request)
+    if not principal or principal[0] != "sub":
+        raise HTTPException(status_code=401, detail="需要子账号登录")
+    granted = set(principal[1].get("projects") or [])
+    from vibe.terminal_monitor import get_panes
+    out = []
+    for p in get_panes():
+        if p.get("command") in ("claude", "codex") and p.get("project_id") in granted:
+            out.append({
+                "target": p["target"], "project_id": p.get("project_id"),
+                "label": p.get("label", ""), "tool": p.get("command"),
+                "waiting": bool(p.get("waiting")),
+            })
+    return out
 
 
 @api.get("/api/sub/pane/{target:path}/output")
