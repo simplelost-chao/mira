@@ -244,6 +244,81 @@
 }
 [data-theme="dyson"] .topbar-title { font-family: 'Chakra Petch', var(--font-mono); letter-spacing: 2px; }
 
+/* ── dyson HUD 化:极小圆角 + 四角角标 + 发光 + 设计过的按钮 ── */
+/* 戴森球几乎不用圆角 → 全局收紧 */
+[data-theme="dyson"] .kpi-card,
+[data-theme="dyson"] .project-card,
+[data-theme="dyson"] .new-project-card,
+[data-theme="dyson"] .trend-card,
+[data-theme="dyson"] .topbar-btn,
+[data-theme="dyson"] .topbar-icon-btn,
+[data-theme="dyson"] .topbar-dev-btn,
+[data-theme="dyson"] .tab-btn,
+[data-theme="dyson"] .filter-btn,
+[data-theme="dyson"] .refresh-btn,
+[data-theme="dyson"] .host-filter-btn,
+[data-theme="dyson"] .card-port-badge,
+[data-theme="dyson"] .card-dev-btn { border-radius: 2px !important; }
+
+/* 面板:深空底 + 顶部青色径向辉光 + glow 阴影 */
+[data-theme="dyson"] .kpi-card,
+[data-theme="dyson"] .project-card,
+[data-theme="dyson"] .new-project-card,
+[data-theme="dyson"] .trend-card {
+  position: relative;
+  background:
+    radial-gradient(130% 100% at 50% 0%, rgba(56,230,255,.06), transparent 60%),
+    var(--card);
+  box-shadow: inset 0 0 0 1px rgba(56,230,255,.04), 0 8px 30px rgba(0,0,0,.45);
+}
+[data-theme="dyson"] .project-card { overflow: visible; }
+@media (hover: hover) {
+  [data-theme="dyson"] .project-card:hover {
+    box-shadow: 0 0 18px rgba(56,230,255,.28), 0 8px 24px rgba(0,0,0,.5);
+  }
+}
+/* 四角 L 形 HUD 角标(单个 ::after + 8 条背景线画 4 个角)*/
+[data-theme="dyson"] .kpi-card::after,
+[data-theme="dyson"] .project-card::after,
+[data-theme="dyson"] .new-project-card::after,
+[data-theme="dyson"] .trend-card::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+  background:
+    linear-gradient(var(--accent), var(--accent)) top left / 13px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top left / 1px 13px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top right / 13px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top right / 1px 13px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom left / 13px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom left / 1px 13px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom right / 13px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom right / 1px 13px no-repeat;
+  opacity: .5;
+}
+
+/* 按钮:青色描边 + 大写宽字距 + 发光(戴森球签名按钮)*/
+[data-theme="dyson"] .topbar-btn,
+[data-theme="dyson"] .tab-btn,
+[data-theme="dyson"] .filter-btn,
+[data-theme="dyson"] .refresh-btn,
+[data-theme="dyson"] .host-filter-btn {
+  text-transform: uppercase; letter-spacing: .1em;
+  border-color: rgba(56,230,255,.3);
+}
+[data-theme="dyson"] .topbar-btn:hover,
+[data-theme="dyson"] .topbar-icon-btn:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(56,230,255,.3);
+}
+/* 选中态:实心青光 */
+[data-theme="dyson"] .tab-btn.active,
+[data-theme="dyson"] .filter-btn.active {
+  background: rgba(56,230,255,.14) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 0 14px rgba(56,230,255,.3), inset 0 0 10px rgba(56,230,255,.05);
+  text-shadow: 0 0 8px rgba(56,230,255,.5);
+}
+
 html { overflow-x: hidden; }
 
 body {

@@ -84,7 +84,7 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "    --accent: #38e6ff; --accent-rgb: 56,230,255;\n"
         "    --green: #2de0a6; --orange: #ffb627; --red: #ff4d6d; --yellow: #ffd37a;\n"
         "    --purple: #9d7cff; --gold: #ffb627;\n"
-        "    --radius: 6px; --radius-sm: 4px;\n"
+        "    --radius: 2px; --radius-sm: 1px;\n"
         "    --mono: 'Space Mono', 'JetBrains Mono', monospace;\n"
         "    --display: 'Chakra Petch', 'Space Mono', monospace;\n"
         "    --ansi-0:#070b15; --ansi-1:#ff4d6d; --ansi-2:#2de0a6; --ansi-3:#ffd37a;\n"
@@ -100,6 +100,8 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "  }\n"
         "  [data-theme=\"dyson\"] .topbar-logo,\n"
         "  [data-theme=\"dyson\"] .topbar-page-title { font-family: var(--display); letter-spacing: 2px; }\n"
+        "  [data-theme=\"dyson\"] .topbar-btn, [data-theme=\"dyson\"] .topbar-detail-btn { text-transform: uppercase; letter-spacing: .08em; }\n"
+        "  [data-theme=\"dyson\"] .topbar-btn:hover, [data-theme=\"dyson\"] .topbar-detail-btn:hover { box-shadow: 0 0 12px rgba(56,230,255,.3); text-shadow: 0 0 8px rgba(56,230,255,.5); }\n"
         "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-top: 52px; }\n"
     )
 

@@ -40,6 +40,30 @@ def render_stats_page() -> str:
   .summary-val { font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
   .summary-lbl { font-size: 11px; color: var(--sub); }
 
+  /* ── dyson: 面板四角 HUD 角标 ── */
+  [data-theme="dyson"] .summary-card, [data-theme="dyson"] .chart-card,
+  [data-theme="dyson"] .trend-card, [data-theme="dyson"] .heatmap-card,
+  [data-theme="dyson"] .ranking-card, [data-theme="dyson"] .token-card,
+  [data-theme="dyson"] .scatter-card, [data-theme="dyson"] .token-stack-card,
+  [data-theme="dyson"] .table-card, [data-theme="dyson"] .gh-card { position: relative; }
+  [data-theme="dyson"] .summary-card::after, [data-theme="dyson"] .chart-card::after,
+  [data-theme="dyson"] .trend-card::after, [data-theme="dyson"] .heatmap-card::after,
+  [data-theme="dyson"] .ranking-card::after, [data-theme="dyson"] .token-card::after,
+  [data-theme="dyson"] .scatter-card::after, [data-theme="dyson"] .token-stack-card::after,
+  [data-theme="dyson"] .table-card::after, [data-theme="dyson"] .gh-card::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+    background:
+      linear-gradient(var(--accent),var(--accent)) top left/13px 1px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) top left/1px 13px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) top right/13px 1px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) top right/1px 13px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) bottom left/13px 1px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) bottom left/1px 13px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) bottom right/13px 1px no-repeat,
+      linear-gradient(var(--accent),var(--accent)) bottom right/1px 13px no-repeat;
+    opacity: .5;
+  }
+
   /* chart row */
   .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
   .chart-card { background: var(--panel); border: 1px solid var(--border);
