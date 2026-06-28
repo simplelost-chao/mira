@@ -1606,6 +1606,45 @@ _claude_usage_cache = {"ts": 0.0, "data": None}
 _CLAUDE_USAGE_TTL = 300  # seconds
 
 
+_WEEKLY_USAGE_FILE = Path.home() / ".vibe-manager" / "weekly_usage.json"
+
+
+def _record_weekly_usage(utilization, resets_at) -> None:
+    """记录某一周的真实占用率。key=该周起始日(重置时间-7天),存所见最大值
+    (周内 utilization 单调递增,max=临近重置的最终值)。供趋势图显示真实 %。"""
+    if utilization is None or not resets_at:
+        return
+    try:
+        import json as _json
+        from datetime import datetime as _dtm, timedelta as _td
+        key = (_dtm.fromtimestamp(resets_at) - _td(days=7)).strftime("%Y-%m-%d")
+        _WEEKLY_USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if _WEEKLY_USAGE_FILE.exists():
+            try:
+                data = _json.loads(_WEEKLY_USAGE_FILE.read_text()) or {}
+            except Exception:
+                data = {}
+        prev = (data.get(key) or {}).get("util", 0)
+        data[key] = {"util": max(prev, float(utilization)), "updated": int(time.time())}
+        _WEEKLY_USAGE_FILE.write_text(_json.dumps(data))
+    except Exception:
+        pass
+
+
+@api.get("/api/weekly-usage-history")
+def weekly_usage_history(request: Request):
+    """已记录的每周真实占用率 { 周起始日: 0~1 }。从开始记录起才有数据。"""
+    if not _get_principal(request):
+        raise HTTPException(status_code=401, detail="需要登录")
+    import json as _json
+    try:
+        data = _json.loads(_WEEKLY_USAGE_FILE.read_text()) if _WEEKLY_USAGE_FILE.exists() else {}
+    except Exception:
+        data = {}
+    return {k: (v or {}).get("util", 0) for k, v in (data or {}).items()}
+
+
 @api.get("/api/claude-usage")
 def claude_usage(request: Request):
     """Get Claude Code usage via Anthropic OAuth usage API (TTL-cached, stale-on-error)."""
@@ -1671,6 +1710,8 @@ def claude_usage(request: Request):
             result[key] = win
     _claude_usage_cache["ts"] = now
     _claude_usage_cache["data"] = result
+    _wk = result.get("weekly") or {}
+    _record_weekly_usage(_wk.get("utilization"), _wk.get("resets_at"))
     return result
 
 
