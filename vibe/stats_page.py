@@ -573,9 +573,10 @@ function _renderDailyPage() {
 }
 
 // ── Token 消耗趋势(每天 / 每周,按类型堆叠)──────────────────────────────────
-var _tokTrend = null;        // [{date, inp, out, cw, cr, total}] 升序
+var _tokTrend = null;        // [{date, inp, out, cw, cr, cost, total}] 升序
 var _tokTrendMode = 'day';   // 'day' | 'week'
 var _weekResetDow = 4;       // 每周重置在星期几(0=周日);默认周四,会被 claude-usage 覆盖
+var _weeklyUtil = null;      // 本周真实占用率(0~1),来自 claude-usage,用来反推周限额
 
 function _buildTokTrend(data) {
   _tokTrend = null;
@@ -586,11 +587,12 @@ function _buildTokTrend(data) {
     Object.keys(days).forEach(function(d) {
       var e = days[d];
       if (!e || typeof e === 'number') return;  // 旧格式无类型,跳过
-      var b = byDate[d] || (byDate[d] = { inp:0, out:0, cw:0, cr:0 });
+      var b = byDate[d] || (byDate[d] = { inp:0, out:0, cw:0, cr:0, cost:0 });
       b.inp += e.input_tokens || 0;
       b.out += e.output_tokens || 0;
       b.cw  += e.cache_creation_tokens || 0;
       b.cr  += e.cache_read_tokens || 0;
+      b.cost += e.cost || 0;
     });
   });
   _tokTrend = Object.keys(byDate).sort().map(function(d) {
@@ -611,8 +613,8 @@ function _aggWeekly(daily) {
   var byWeek = {};
   daily.forEach(function(b) {
     var k = _weekStart(b.date);
-    var w = byWeek[k] || (byWeek[k] = { date:k, inp:0, out:0, cw:0, cr:0 });
-    w.inp += b.inp; w.out += b.out; w.cw += b.cw; w.cr += b.cr;
+    var w = byWeek[k] || (byWeek[k] = { date:k, inp:0, out:0, cw:0, cr:0, cost:0 });
+    w.inp += b.inp; w.out += b.out; w.cw += b.cw; w.cr += b.cr; w.cost += (b.cost || 0);
   });
   return Object.keys(byWeek).sort().map(function(k) {
     var w = byWeek[k]; w.total = w.inp + w.out + w.cw + w.cr; return w;
@@ -651,6 +653,12 @@ function _renderTokTrendChart(mode) {
   var names = { inp:'输入', out:'输出', cw:'缓存写入', cr:'缓存读取' };
   var segs = [['cr','#5cd08a'], ['cw','#fbbf24'], ['out','#f0a050'], ['inp','#4e9eff']]; // 从下往上
   var labStep = n <= 12 ? 1 : Math.ceil(n / 10);
+  // 反推周限额:本周(最新桶)真实占用率 ↔ 本周花费 → 限额;再算各周估算占用 %
+  var weekBudget = 0;
+  if (_tokTrendMode === 'week' && _weeklyUtil > 0 && rows.length) {
+    var lastWk = rows[rows.length - 1];
+    if (lastWk.cost > 0) weekBudget = lastWk.cost / _weeklyUtil;
+  }
   var html = '';
   // Y 轴:刻度线 + 数值标尺(0 / ¼ / ½ / ¾ / 顶)
   for (var k = 0; k <= 4; k++) {
@@ -674,8 +682,17 @@ function _renderTokTrendChart(mode) {
               '<title>' + tip + '\n' + names[s[0]] + ': ' + _fmtNum(v) + '</title></rect>';
     });
     if (r.total > 0 && barW >= 20) {
-      html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (y - 3).toFixed(1) +
-              '" text-anchor="middle" font-size="9" style="fill:var(--sub)">' + _fmtNum(r.total) + '</text>';
+      var ly = Math.max(y - 4, 11);
+      if (_tokTrendMode === 'week' && weekBudget > 0) {
+        var pct = Math.round(r.cost / weekBudget * 100);
+        html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + ly.toFixed(1) +
+                '" text-anchor="middle" font-size="11" style="fill:var(--accent)">' +
+                '<tspan font-weight="700">' + pct + '%</tspan>' +
+                '<tspan font-size="9" style="fill:var(--sub)"> · ' + _fmtNum(r.total) + '</tspan></text>';
+      } else {
+        html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + ly.toFixed(1) +
+                '" text-anchor="middle" font-size="9" style="fill:var(--sub)">' + _fmtNum(r.total) + '</text>';
+      }
     }
     if (i % labStep === 0) {
       html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (H - 6) +
@@ -685,18 +702,18 @@ function _renderTokTrendChart(mode) {
   svg.innerHTML = html;
   var note = document.getElementById('tok-trend-note');
   if (note) note.textContent = _tokTrendMode === 'week'
-    ? ('每周按 Claude 用量重置对齐(每周 ' + ['日','一','二','三','四','五','六'][_weekResetDow] + ' 起)')
+    ? ('每周按 Claude 用量重置对齐(每周 ' + ['日','一','二','三','四','五','六'][_weekResetDow] + ' 起)' +
+       (weekBudget > 0 ? ';顶部 % 为按本周真实占用反推的周限额估算(本周为当前进度)' : ''))
     : '';
 }
 
-// 取每周重置星期几(用 claude-usage 的 weekly.resets_at)
+// 取每周重置星期几 + 本周真实占用率(用 claude-usage)
 (function _initWeekReset() {
   fetch('/api/claude-usage', { headers: _authHeaders() }).then(function(r){ return r.json(); }).then(function(u) {
-    var ts = u && u.weekly && u.weekly.resets_at;
-    if (ts) {
-      _weekResetDow = new Date(ts * 1000).getDay();
-      if (_tokTrendMode === 'week') _renderTokTrendChart();
-    }
+    var w = u && u.weekly;
+    if (w && w.resets_at) _weekResetDow = new Date(w.resets_at * 1000).getDay();
+    if (w && typeof w.utilization === 'number') _weeklyUtil = w.utilization;
+    if (_tokTrendMode === 'week') _renderTokTrendChart();
   }).catch(function(){});
 })();
 
