@@ -998,6 +998,7 @@ def render_dev_page() -> str:
     border-bottom: 1px solid rgba(56,230,255,.25);
     color: #7df9ff; letter-spacing: 2px; text-transform: uppercase;
     text-shadow: 0 0 10px rgba(56,230,255,.5);
+    font-family: 'Chakra Petch', var(--mono);
   }
   [data-theme="dyson"] .term-group-name { color: rgba(174,188,212,.95); letter-spacing: .5px; }
   [data-theme="dyson"] .term-group-arrow { color: rgba(56,230,255,.5); }

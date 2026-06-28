@@ -85,6 +85,8 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "    --green: #2de0a6; --orange: #ffb627; --red: #ff4d6d; --yellow: #ffd37a;\n"
         "    --purple: #9d7cff; --gold: #ffb627;\n"
         "    --radius: 6px; --radius-sm: 4px;\n"
+        "    --mono: 'Space Mono', 'JetBrains Mono', monospace;\n"
+        "    --display: 'Chakra Petch', 'Space Mono', monospace;\n"
         "    --ansi-0:#070b15; --ansi-1:#ff4d6d; --ansi-2:#2de0a6; --ansi-3:#ffd37a;\n"
         "    --ansi-4:#38e6ff; --ansi-5:#9d7cff; --ansi-6:#7df9ff; --ansi-7:#eaf2ff;\n"
         "    --ansi-8:#36486b; --ansi-12:#7df9ff; --ansi-13:#b6a4ff; --ansi-14:#b6fbff; --ansi-15:#ffffff;\n"
@@ -96,6 +98,8 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "      repeating-linear-gradient(0deg, rgba(56,230,255,.022) 0px, rgba(56,230,255,.022) 1px, transparent 1px, transparent 3px);\n"
         "    background-attachment: fixed;\n"
         "  }\n"
+        "  [data-theme=\"dyson\"] .topbar-logo,\n"
+        "  [data-theme=\"dyson\"] .topbar-page-title { font-family: var(--display); letter-spacing: 2px; }\n"
         "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-top: 52px; }\n"
     )
 
