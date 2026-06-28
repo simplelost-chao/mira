@@ -46,6 +46,8 @@ def render_stats_page() -> str:
     color: #04060c !important; font-weight: 700;
     box-shadow: 0 0 12px rgba(56,230,255,.4);
   }
+  /* ── dyson: HUD readout 大数字自发光(学 thoth)── */
+  [data-theme="dyson"] .summary-val { text-shadow: 0 0 9px currentColor; }
   /* ── dyson: 面板四角 HUD 角标 ── */
   [data-theme="dyson"] .summary-card, [data-theme="dyson"] .chart-card,
   [data-theme="dyson"] .trend-card, [data-theme="dyson"] .heatmap-card,

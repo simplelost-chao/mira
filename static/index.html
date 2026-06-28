@@ -266,6 +266,13 @@
 [data-theme="dyson"] .project-card { border-left-width: 1px !important; }
 /* 统计卡左边那条粗彩条 → 收细 */
 [data-theme="dyson"] .kpi-accent-bar { width: 2px !important; }
+/* HUD readout 神韵:大数字带自发光(学 thoth 的 .dsp-stat__value)*/
+[data-theme="dyson"] .kpi-value,
+[data-theme="dyson"] .ccm-val,
+[data-theme="dyson"] .ccx-val,
+[data-theme="dyson"] .balance-val,
+[data-theme="dyson"] .ov-stat-val,
+[data-theme="dyson"] .mini-stat-value { text-shadow: 0 0 9px currentColor; }
 @media (hover: hover) {
   [data-theme="dyson"] .kpi-card:hover,
   [data-theme="dyson"] .balance-card:hover,
