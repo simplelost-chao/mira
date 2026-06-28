@@ -605,9 +605,11 @@ function _buildTokTrend(data) {
 }
 
 function _weekStart(dateStr) {
-  // 该日期所属"重置周"的起始日(最近一个 <= date 的重置星期几)
+  // 重置在"重置日晚上",所以一周从重置日的【次日】算起(重置日是上一周的最后一天)。
+  // 例:周五晚重置 → 一周 = 周六…周五,周五白天归上一周。
+  var startDow = (_weekResetDow + 1) % 7;
   var dt = new Date(dateStr + 'T00:00:00');
-  var diff = (dt.getDay() - _weekResetDow + 7) % 7;
+  var diff = (dt.getDay() - startDow + 7) % 7;
   dt.setDate(dt.getDate() - diff);
   var m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
   return dt.getFullYear() + '-' + m + '-' + day;
@@ -704,7 +706,8 @@ function _renderTokTrendChart(mode) {
   svg.innerHTML = html;
   var note = document.getElementById('tok-trend-note');
   if (note) note.textContent = _tokTrendMode === 'week'
-    ? ('每周按 Claude 用量重置对齐(每周 ' + ['日','一','二','三','四','五','六'][_weekResetDow] + ' 起)' +
+    ? ('每周对齐 Claude 用量重置(周' + ['日','一','二','三','四','五','六'][_weekResetDow] + '晚重置,周' +
+       ['日','一','二','三','四','五','六'][(_weekResetDow + 1) % 7] + '起算)' +
        (hasUtil ? ';顶部 % 为该周真实占用(从开始记录起累积,临近重置时最准)' : ''))
     : '';
 }

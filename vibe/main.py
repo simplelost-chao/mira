@@ -1610,14 +1610,15 @@ _WEEKLY_USAGE_FILE = Path.home() / ".vibe-manager" / "weekly_usage.json"
 
 
 def _record_weekly_usage(utilization, resets_at) -> None:
-    """记录某一周的真实占用率。key=该周起始日(重置时间-7天),存所见最大值
-    (周内 utilization 单调递增,max=临近重置的最终值)。供趋势图显示真实 %。"""
+    """记录某一周的真实占用率。key=该周起始日(=重置日次日,因重置在重置日晚上;
+    resets_at 是本周末重置时间,起始日=resets_at-6天)。存所见最大值(周内
+    utilization 单调递增,max=临近重置的最终值)。供趋势图显示真实 %。"""
     if utilization is None or not resets_at:
         return
     try:
         import json as _json
         from datetime import datetime as _dtm, timedelta as _td
-        key = (_dtm.fromtimestamp(resets_at) - _td(days=7)).strftime("%Y-%m-%d")
+        key = (_dtm.fromtimestamp(resets_at) - _td(days=6)).strftime("%Y-%m-%d")
         _WEEKLY_USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {}
         if _WEEKLY_USAGE_FILE.exists():
