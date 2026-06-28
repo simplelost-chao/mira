@@ -102,6 +102,12 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "  [data-theme=\"dyson\"] .topbar-page-title { font-family: var(--display); letter-spacing: 2px; }\n"
         "  [data-theme=\"dyson\"] .topbar-btn, [data-theme=\"dyson\"] .topbar-detail-btn { text-transform: uppercase; letter-spacing: .08em; }\n"
         "  [data-theme=\"dyson\"] .topbar-btn:hover, [data-theme=\"dyson\"] .topbar-detail-btn:hover { box-shadow: 0 0 12px rgba(56,230,255,.3); text-shadow: 0 0 8px rgba(56,230,255,.5); }\n"
+        # 亮青底的实心按钮/选中态:白字看不清 → 统一改深色字(跨页面通用类)
+        "  [data-theme=\"dyson\"] .stats-btn.active, [data-theme=\"dyson\"] .dash-btn.active,\n"
+        "  [data-theme=\"dyson\"] .btn.primary, [data-theme=\"dyson\"] .cfg-btn.primary,\n"
+        "  [data-theme=\"dyson\"] .term-edit-btn.active, [data-theme=\"dyson\"] .dev-rename-ok,\n"
+        "  [data-theme=\"dyson\"] .modal-actions button.primary,\n"
+        "  [data-theme=\"dyson\"] .upload-confirm-btns button.primary { color: #04060c !important; }\n"
         "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-top: 52px; }\n"
     )
 

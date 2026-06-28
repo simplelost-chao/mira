@@ -40,6 +40,12 @@ def render_stats_page() -> str:
   .summary-val { font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
   .summary-lbl { font-size: 11px; color: var(--sub); }
 
+  /* ── dyson: 选中 tab 亮青底 → 深色字(白字在亮青上看不清)── */
+  [data-theme="dyson"] .stats-btn.active,
+  [data-theme="dyson"] .stats-btn.green.active {
+    color: #04060c !important; font-weight: 700;
+    box-shadow: 0 0 12px rgba(56,230,255,.4);
+  }
   /* ── dyson: 面板四角 HUD 角标 ── */
   [data-theme="dyson"] .summary-card, [data-theme="dyson"] .chart-card,
   [data-theme="dyson"] .trend-card, [data-theme="dyson"] .heatmap-card,
@@ -759,6 +765,11 @@ function _renderClaudeHeatmap(heatmap) {
     weeks.push(week);
   }
   function _ic(v) {
+    if (document.documentElement.dataset.theme === 'dyson') {
+      // 戴森球:亮青绿,用透明度表强度(底色透出来),低活跃也看得见
+      if (v <= 0) return 'rgba(56,230,255,.06)';
+      return 'rgba(45,224,166,' + (0.3 + 0.7 * v).toFixed(2) + ')';
+    }
     if (v <= 0) return 'rgba(255,255,255,.05)';
     return 'rgb(' + Math.round(92*v) + ',' + Math.round(208*(0.3+0.7*v)) + ',' + Math.round(138*v) + ')';
   }
@@ -839,6 +850,10 @@ function _renderCodexHeatmap(heatmap) {
     weeks.push(week);
   }
   function _ic(v) {
+    if (document.documentElement.dataset.theme === 'dyson') {
+      if (v <= 0) return 'rgba(56,230,255,.06)';
+      return 'rgba(45,224,166,' + (0.3 + 0.7 * v).toFixed(2) + ')';
+    }
     if (v <= 0) return 'rgba(255,255,255,.05)';
     return 'rgb(' + Math.round(34*v) + ',' + Math.round(197*(0.3+0.7*v)) + ',' + Math.round(94*v) + ')';
   }
