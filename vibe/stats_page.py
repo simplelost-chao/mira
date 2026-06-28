@@ -619,6 +619,14 @@ function _aggWeekly(daily) {
   });
 }
 
+function _niceMax(v) {
+  // 取一个整齐的 Y 轴上限,让刻度数值好看
+  if (v <= 0) return 1;
+  var exp = Math.floor(Math.log10(v)), base = Math.pow(10, exp), f = v / base;
+  var nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nice * base;
+}
+
 function _renderTokTrendChart(mode) {
   if (mode) _tokTrendMode = mode;
   var card = document.getElementById('tok-trend-card');
@@ -631,27 +639,44 @@ function _renderTokTrendChart(mode) {
   var rows = _tokTrendMode === 'week' ? _aggWeekly(_tokTrend) : _tokTrend;
   var svg = document.getElementById('tok-trend-svg');
   if (!svg) return;
-  var W = Math.max(280, svg.parentElement.clientWidth - 32), H = 170, padB = 20, padT = 8;
+  var W = Math.max(300, svg.parentElement.clientWidth - 32), H = 180;
+  var padL = 46, padR = 8, padT = 16, padB = 20;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var plotW = W - padL - padR, plotH = H - padT - padB, baseY = H - padB;
   var maxV = Math.max.apply(null, rows.map(function(r) { return r.total; }).concat([1]));
-  var n = rows.length, slot = W / n;
-  var gap = _tokTrendMode === 'week' ? 8 : (n > 40 ? 1 : 2);
+  var niceMax = _niceMax(maxV);
+  var n = rows.length, slot = plotW / n;
+  var gap = _tokTrendMode === 'week' ? 10 : (n > 40 ? 1 : 2);
   var barW = Math.max(2, slot - gap);
   var names = { inp:'输入', out:'输出', cw:'缓存写入', cr:'缓存读取' };
   var segs = [['cr','#5cd08a'], ['cw','#fbbf24'], ['out','#f0a050'], ['inp','#4e9eff']]; // 从下往上
   var labStep = n <= 12 ? 1 : Math.ceil(n / 10);
   var html = '';
+  // Y 轴:刻度线 + 数值标尺(0 / ¼ / ½ / ¾ / 顶)
+  for (var k = 0; k <= 4; k++) {
+    var lv = k / 4, gy = baseY - lv * plotH;
+    html += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) +
+            '" stroke="var(--border)" stroke-width="1" opacity="0.45"/>';
+    html += '<text x="' + (padL - 6) + '" y="' + (gy + 3).toFixed(1) +
+            '" text-anchor="end" font-size="9" style="fill:var(--muted)">' +
+            (k === 0 ? '0' : _fmtNum(Math.round(niceMax * lv))) + '</text>';
+  }
+  // 堆叠柱 + 柱顶合计数
   rows.forEach(function(r, i) {
-    var x = i * slot + (slot - barW) / 2, y = H - padB;
+    var x = padL + i * slot + (slot - barW) / 2, y = baseY;
     var tip = r.date + ' · 合计 ' + _fmtNum(r.total);
     segs.forEach(function(s) {
       var v = r[s[0]]; if (!v) return;
-      var bh = (v / maxV) * (H - padB - padT);
+      var bh = (v / niceMax) * plotH;
       y -= bh;
       html += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) +
               '" height="' + bh.toFixed(1) + '" fill="' + s[1] + '" opacity="0.9">' +
               '<title>' + tip + '\n' + names[s[0]] + ': ' + _fmtNum(v) + '</title></rect>';
     });
+    if (r.total > 0 && barW >= 20) {
+      html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (y - 3).toFixed(1) +
+              '" text-anchor="middle" font-size="9" style="fill:var(--sub)">' + _fmtNum(r.total) + '</text>';
+    }
     if (i % labStep === 0) {
       html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (H - 6) +
               '" text-anchor="middle" font-size="9" style="fill:var(--muted)">' + r.date.slice(5) + '</text>';
@@ -1393,7 +1418,7 @@ _initAuth().then(function() {
           <button class="stats-btn" id="tok-trend-week">每周</button>
         </div>
       </div>
-      <svg id="tok-trend-svg" class="chart-svg" height="170"></svg>
+      <svg id="tok-trend-svg" class="chart-svg" height="180"></svg>
       <div class="trend-legend" style="margin-top:10px">
         <span><span class="trend-legend-dot" style="background:#4e9eff"></span>输入</span>
         <span><span class="trend-legend-dot" style="background:#f0a050"></span>输出</span>
