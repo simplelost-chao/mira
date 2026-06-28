@@ -273,6 +273,16 @@
 [data-theme="dyson"] .balance-val,
 [data-theme="dyson"] .ov-stat-val,
 [data-theme="dyson"] .mini-stat-value { text-shadow: 0 0 9px currentColor; }
+/* thoth 细节:标题/名称用 Chakra Petch(display 字),数字才用 Space Mono */
+[data-theme="dyson"] [class*="-title"],
+[data-theme="dyson"] [class*="-name"] { font-family: 'Chakra Petch', var(--font-mono); }
+/* 小标签:大写 + 宽字距(HUD eyebrow,主要影响英文)*/
+[data-theme="dyson"] [class*="-label"],
+[data-theme="dyson"] [class*="-lbl"] { text-transform: uppercase; letter-spacing: .06em; }
+/* 按钮/卡片按下微动(thoth :active) */
+[data-theme="dyson"] button:active,
+[data-theme="dyson"] [class*="-btn"]:active,
+[data-theme="dyson"] .project-card:active { transform: translateY(1px) scale(.99); }
 @media (hover: hover) {
   [data-theme="dyson"] .kpi-card:hover,
   [data-theme="dyson"] .balance-card:hover,

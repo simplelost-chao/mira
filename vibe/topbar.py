@@ -108,6 +108,10 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "  [data-theme=\"dyson\"] .term-edit-btn.active, [data-theme=\"dyson\"] .dev-rename-ok,\n"
         "  [data-theme=\"dyson\"] .modal-actions button.primary,\n"
         "  [data-theme=\"dyson\"] .upload-confirm-btns button.primary { color: #04060c !important; }\n"
+        # thoth 细节:标题用 Chakra Petch;小标签大写宽字距;按钮按下微动
+        "  [data-theme=\"dyson\"] [class*=\"-title\"], [data-theme=\"dyson\"] [class*=\"-name\"] { font-family: var(--display); }\n"
+        "  [data-theme=\"dyson\"] [class*=\"-label\"], [data-theme=\"dyson\"] [class*=\"-lbl\"] { text-transform: uppercase; letter-spacing: .06em; }\n"
+        "  [data-theme=\"dyson\"] button:active, [data-theme=\"dyson\"] [class*=\"-btn\"]:active { transform: translateY(1px) scale(.99); }\n"
         "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-top: 52px; }\n"
     )
 
