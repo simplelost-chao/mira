@@ -409,7 +409,7 @@ function _renderClaudeSummary(t) {
 function _renderBarChart(svgId, days, valFn, labelFn, color) {
   var svg = document.getElementById(svgId);
   if (!svg || !days || !days.length) return;
-  var W = svg.parentElement.clientWidth - 32;
+  var W = Math.max(280, svg.parentElement.clientWidth - 32);
   var H = 80;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   var vals = days.map(valFn);
@@ -434,7 +434,7 @@ function _renderClaudeTrend(data) {
   var legend = document.getElementById('trend-legend');
   if (!el || !data || !data.project_days || !data.days) return;
   document.getElementById('trend-card').style.display = '';
-  var W = el.parentElement.clientWidth - 32;
+  var W = Math.max(280, el.parentElement.clientWidth - 32);
   var H = 120;
   el.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   var days = data.days.map(function(d) { return d.date; });
@@ -878,7 +878,7 @@ function _renderCodexTrend(stats) {
   var topList = stats.project_trend || [];
   if (!topList.length) return;
   document.getElementById('trend-card').style.display = '';
-  var W = el.parentElement.clientWidth - 32;
+  var W = Math.max(280, el.parentElement.clientWidth - 32);
   var H = 120;
   el.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   var maxCost = Math.max.apply(null, topList.map(function(p) { return p.total_cost_usd; }).concat([0.001]));
@@ -927,7 +927,7 @@ function _renderCodexRanking(stats) {
   }).join('');
   var svg = document.getElementById('chart-hours');
   if (svg) {
-    var W=svg.parentElement.clientWidth-32, H=80, maxS=Math.max.apply(null,list.map(function(p){return p.sessions;}).concat([1]));
+    var W=Math.max(280,svg.parentElement.clientWidth-32), H=80, maxS=Math.max.apply(null,list.map(function(p){return p.sessions;}).concat([1]));
     svg.setAttribute('viewBox','0 0 '+W+' '+H);
     var barW=Math.max(2,(W/list.length)-1);
     svg.innerHTML=list.map(function(p,i){
@@ -937,7 +937,7 @@ function _renderCodexRanking(stats) {
   }
   var svg2 = document.getElementById('chart-cost');
   if (svg2) {
-    var W2=svg2.parentElement.clientWidth-32, H2=80, maxC2=maxCost;
+    var W2=Math.max(280,svg2.parentElement.clientWidth-32), H2=80, maxC2=maxCost;
     svg2.setAttribute('viewBox','0 0 '+W2+' '+H2);
     var barW2=Math.max(2,(W2/list.length)-1);
     svg2.innerHTML=list.map(function(p,i){
@@ -1052,7 +1052,7 @@ function _renderTokenCards(data) {
 function _renderScatter(data) {
   var svg = document.getElementById('scatter-svg');
   if (!svg || !data.length) return;
-  var W = svg.parentElement.clientWidth - 32;
+  var W = Math.max(280, svg.parentElement.clientWidth - 32);
   var H = 200;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   var PAD=40;

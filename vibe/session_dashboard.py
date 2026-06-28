@@ -303,7 +303,7 @@ function renderTokenStacks(data) {
 function renderScatter(data) {
   var svg = document.getElementById('scatter-svg');
   if (!svg || !data.length) return;
-  var W = svg.parentElement.clientWidth - 32;
+  var W = Math.max(280, svg.parentElement.clientWidth - 32);
   var H = 200;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
