@@ -160,8 +160,8 @@ def topbar_css() -> str:
         "  .skin-name { font-size: 11px; color: var(--sub); text-align: center; }\n"
         "  /* ── Version badge ── */\n"
         "  .version-badge {\n"
-        "    position: fixed; bottom: 6px; right: 10px; z-index: 50;\n"
-        "    font-size: 10px; color: var(--text); opacity: 0.15;\n"
+        "    position: fixed; bottom: 6px; left: 10px; z-index: 50;\n"
+        "    font-size: 10px; color: var(--text); opacity: 0.2;\n"
         "    font-family: var(--mono); pointer-events: none; user-select: none;\n"
         "  }\n"
     )
@@ -252,7 +252,7 @@ def settings_overlay_html() -> str:
 <div class="version-badge" id="version-badge"></div>
 <script>
 fetch('/api/version').then(r=>r.json()).then(d=>{
-  document.getElementById('version-badge').textContent='v'+d.version;
+  document.getElementById('version-badge').textContent='v'+d.version+(d.build?' · '+d.build:'');
 }).catch(()=>{});
 </script>"""
 

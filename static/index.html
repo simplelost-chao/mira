@@ -3570,10 +3570,10 @@ async function _doSearch(q) {
 </div>
 </div><!-- /app-wrap -->
 <!-- Version badge -->
-<div id="version-badge" style="position:fixed;bottom:6px;right:10px;z-index:50;font-size:10px;color:var(--text);opacity:0.15;font-family:var(--font-mono);pointer-events:none;user-select:none"></div>
+<div id="version-badge" style="position:fixed;bottom:6px;left:10px;z-index:50;font-size:10px;color:var(--text);opacity:0.2;font-family:var(--font-mono);pointer-events:none;user-select:none"></div>
 <script>
 fetch('/api/version').then(r=>r.json()).then(d=>{
-  document.getElementById('version-badge').textContent='v'+d.version;
+  document.getElementById('version-badge').textContent='v'+d.version+(d.build?' · '+d.build:'');
 }).catch(()=>{});
 </script>
 </body>

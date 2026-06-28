@@ -307,7 +307,8 @@ def _read_version() -> str:
 
 @api.get("/api/version")
 def get_version():
-    return {"version": _read_version()}
+    from vibe.dev_page import _build_id
+    return {"version": _read_version(), "build": _build_id()}
 
 if STATIC_DIR.exists():
     api.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

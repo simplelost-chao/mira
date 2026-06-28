@@ -34,14 +34,6 @@ def render_dev_page() -> str:
   /* Lock scroll when mobile terminal detail is open */
   body.detail-locked { position: fixed; width: 100%; touch-action: none; }
   /* 部署版本号(右下角)—— 用来核对页面是否刷到最新代码 */
-  .dev-build-badge {
-    position: fixed; bottom: 6px; left: 8px; z-index: 6000;
-    font-size: 10px; font-family: var(--mono, monospace); color: var(--muted);
-    background: color-mix(in srgb, var(--panel) 85%, transparent);
-    border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px;
-    pointer-events: none; opacity: .75; letter-spacing: .3px; user-select: none;
-  }
-
   /* ── Main layout ── */
   .dev-page {
     margin-top: 52px;
@@ -435,7 +427,7 @@ def render_dev_page() -> str:
     .dev-page.detail-open .term-sidebar { display: none; }
     /* 手机进终端详情时,版本号 badge 跟着隐藏(badge 是 body 直接子元素、
        是 #dev-page 的兄弟,所以用 ~ 兄弟选择器,不能用后代选择器)。 */
-    .dev-page.detail-open ~ .dev-build-badge { display: none; }
+    .dev-page.detail-open ~ .version-badge { display: none; }
     .dev-page.detail-open .term-main {
       display: flex; position: fixed; left: 0; right: 0; bottom: 0; top: 52px;
       height: calc(var(--app-h, 100dvh) - 52px); z-index: 90;
@@ -3572,6 +3564,5 @@ init();
         + topbar_js() + "\n"
         + page_js
         + "</script>\n"
-        + f'<div class="dev-build-badge" title="当前部署版本(git 提交号);刷新后若变了说明已是新版">build {_build_id()}</div>\n'
         + "</body>\n</html>\n"
     )
