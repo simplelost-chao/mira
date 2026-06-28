@@ -211,6 +211,39 @@
   --font-mono: 'SF Mono', Consolas, monospace;
 }
 
+[data-theme="dyson"] {
+  --bg: #0a0f1c;
+  --card: #111a2e;
+  --card-deep: #070b15;
+  --border: rgba(56,230,255,.16);
+  --border-subtle-rgb: 56,230,255;
+  --accent: #38e6ff;
+  --accent-dim: #00a0c4;
+  --accent-rgb: 56,230,255;
+  --accent-light: #7df9ff;
+  --accent-light-rgb: 125,249,255;
+  --text: #eaf2ff;
+  --text-sec: #aebcd4;
+  --text-muted: #6b7e99;
+  --text-deep: #3a4a66;
+  --green: #2de0a6;
+  --green-dim: #25b88a;
+  --orange: #ffb627;
+  --red: #ff4d6d;
+  --purple: #9d7cff;
+  --yellow: #ffd37a;
+  --font-ui: 'Space Mono', 'JetBrains Mono', monospace;
+  --font-mono: 'Space Mono', 'JetBrains Mono', monospace;
+}
+[data-theme="dyson"] body {
+  background-image:
+    radial-gradient(ellipse 130% 100% at 50% -10%, rgba(56,230,255,.06), transparent 55%),
+    radial-gradient(ellipse 90% 80% at 50% 110%, rgba(255,182,39,.04), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(56,230,255,.022) 0px, rgba(56,230,255,.022) 1px, transparent 1px, transparent 3px);
+  background-attachment: fixed;
+}
+[data-theme="dyson"] .topbar-title { font-family: 'Chakra Petch', var(--font-mono); letter-spacing: 2px; }
+
 html { overflow-x: hidden; }
 
 body {
@@ -1885,7 +1918,7 @@ body {
 </div>
 
 <!-- Settings overlay (shared module) -->
-<script src="/static/settings.js"></script>
+<script src="/static/settings.js?v=3"></script>
 <script>initSettings();</script>
 
 <!-- MAIN PAGE -->
