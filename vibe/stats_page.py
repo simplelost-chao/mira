@@ -30,7 +30,7 @@ def render_stats_page() -> str:
   .filter-input::placeholder { color: var(--sub); }
 
   /* main layout */
-  .stats-main { max-width: 1060px; margin: 0 auto; padding: 24px 20px 60px; }
+  .stats-main { width: 100%; margin: 0; padding: 24px 28px 60px; }
 
   /* summary cards */
   .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
@@ -191,6 +191,7 @@ def render_stats_page() -> str:
   .empty-state { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 14px; }
 
   @media (max-width: 640px) {
+    .stats-main  { padding: 16px 12px 48px; }
     .summary-row { grid-template-columns: repeat(2, 1fr); }
     .token-row   { grid-template-columns: repeat(2, 1fr); }
     .chart-row   { grid-template-columns: 1fr; }
@@ -344,6 +345,7 @@ function _clearAgg() {
   });
   document.getElementById('trend-card').style.display        = 'none';
   document.getElementById('daily-stack-card').style.display  = 'none';
+  var _tt = document.getElementById('tok-trend-card'); if (_tt) _tt.style.display = 'none';
   document.getElementById('heatmap-card').style.display      = 'none';
 }
 
@@ -371,6 +373,8 @@ async function loadClaudeStats() {
         function(v) { return '$' + v.toFixed(2); }, '#4e9eff');
       _renderClaudeTrend(data);
       _renderDailyProjectStack(data);
+      _buildTokTrend(data);
+      _renderTokTrendChart();
       _renderClaudeHeatmap(data.heatmap || {});
     });
     _renderClaudeRanking(data.projects);
@@ -567,6 +571,116 @@ function _renderDailyPage() {
   var totalTok = items.reduce(function(s, it) { return s + it.inp + it.out + it.cw + it.cr; }, 0);
   document.getElementById('daily-total').textContent = '合计: ' + _fmtCost(total) + ' · ' + _fmtNum(totalTok) + ' tokens';
 }
+
+// ── Token 消耗趋势(每天 / 每周,按类型堆叠)──────────────────────────────────
+var _tokTrend = null;        // [{date, inp, out, cw, cr, total}] 升序
+var _tokTrendMode = 'day';   // 'day' | 'week'
+var _weekResetDow = 4;       // 每周重置在星期几(0=周日);默认周四,会被 claude-usage 覆盖
+
+function _buildTokTrend(data) {
+  _tokTrend = null;
+  if (!data || !data.project_days) return;
+  var byDate = {};
+  Object.keys(data.project_days).forEach(function(pid) {
+    var days = data.project_days[pid];
+    Object.keys(days).forEach(function(d) {
+      var e = days[d];
+      if (!e || typeof e === 'number') return;  // 旧格式无类型,跳过
+      var b = byDate[d] || (byDate[d] = { inp:0, out:0, cw:0, cr:0 });
+      b.inp += e.input_tokens || 0;
+      b.out += e.output_tokens || 0;
+      b.cw  += e.cache_creation_tokens || 0;
+      b.cr  += e.cache_read_tokens || 0;
+    });
+  });
+  _tokTrend = Object.keys(byDate).sort().map(function(d) {
+    var b = byDate[d]; b.date = d; b.total = b.inp + b.out + b.cw + b.cr; return b;
+  });
+}
+
+function _weekStart(dateStr) {
+  // 该日期所属"重置周"的起始日(最近一个 <= date 的重置星期几)
+  var dt = new Date(dateStr + 'T00:00:00');
+  var diff = (dt.getDay() - _weekResetDow + 7) % 7;
+  dt.setDate(dt.getDate() - diff);
+  var m = String(dt.getMonth() + 1).padStart(2, '0'), day = String(dt.getDate()).padStart(2, '0');
+  return dt.getFullYear() + '-' + m + '-' + day;
+}
+
+function _aggWeekly(daily) {
+  var byWeek = {};
+  daily.forEach(function(b) {
+    var k = _weekStart(b.date);
+    var w = byWeek[k] || (byWeek[k] = { date:k, inp:0, out:0, cw:0, cr:0 });
+    w.inp += b.inp; w.out += b.out; w.cw += b.cw; w.cr += b.cr;
+  });
+  return Object.keys(byWeek).sort().map(function(k) {
+    var w = byWeek[k]; w.total = w.inp + w.out + w.cw + w.cr; return w;
+  });
+}
+
+function _renderTokTrendChart(mode) {
+  if (mode) _tokTrendMode = mode;
+  var card = document.getElementById('tok-trend-card');
+  if (!_tokTrend || !_tokTrend.length) { if (card) card.style.display = 'none'; return; }
+  if (card) card.style.display = '';
+  var dayBtn = document.getElementById('tok-trend-day'), wkBtn = document.getElementById('tok-trend-week');
+  if (dayBtn) dayBtn.classList.toggle('active', _tokTrendMode === 'day');
+  if (wkBtn)  wkBtn.classList.toggle('active', _tokTrendMode === 'week');
+
+  var rows = _tokTrendMode === 'week' ? _aggWeekly(_tokTrend) : _tokTrend;
+  var svg = document.getElementById('tok-trend-svg');
+  if (!svg) return;
+  var W = Math.max(280, svg.parentElement.clientWidth - 32), H = 170, padB = 20, padT = 8;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var maxV = Math.max.apply(null, rows.map(function(r) { return r.total; }).concat([1]));
+  var n = rows.length, slot = W / n;
+  var gap = _tokTrendMode === 'week' ? 8 : (n > 40 ? 1 : 2);
+  var barW = Math.max(2, slot - gap);
+  var names = { inp:'输入', out:'输出', cw:'缓存写入', cr:'缓存读取' };
+  var segs = [['cr','#5cd08a'], ['cw','#fbbf24'], ['out','#f0a050'], ['inp','#4e9eff']]; // 从下往上
+  var labStep = n <= 12 ? 1 : Math.ceil(n / 10);
+  var html = '';
+  rows.forEach(function(r, i) {
+    var x = i * slot + (slot - barW) / 2, y = H - padB;
+    var tip = r.date + ' · 合计 ' + _fmtNum(r.total);
+    segs.forEach(function(s) {
+      var v = r[s[0]]; if (!v) return;
+      var bh = (v / maxV) * (H - padB - padT);
+      y -= bh;
+      html += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) +
+              '" height="' + bh.toFixed(1) + '" fill="' + s[1] + '" opacity="0.9">' +
+              '<title>' + tip + '\n' + names[s[0]] + ': ' + _fmtNum(v) + '</title></rect>';
+    });
+    if (i % labStep === 0) {
+      html += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (H - 6) +
+              '" text-anchor="middle" font-size="9" style="fill:var(--muted)">' + r.date.slice(5) + '</text>';
+    }
+  });
+  svg.innerHTML = html;
+  var note = document.getElementById('tok-trend-note');
+  if (note) note.textContent = _tokTrendMode === 'week'
+    ? ('每周按 Claude 用量重置对齐(每周 ' + ['日','一','二','三','四','五','六'][_weekResetDow] + ' 起)')
+    : '';
+}
+
+// 取每周重置星期几(用 claude-usage 的 weekly.resets_at)
+(function _initWeekReset() {
+  fetch('/api/claude-usage', { headers: _authHeaders() }).then(function(r){ return r.json(); }).then(function(u) {
+    var ts = u && u.weekly && u.weekly.resets_at;
+    if (ts) {
+      _weekResetDow = new Date(ts * 1000).getDay();
+      if (_tokTrendMode === 'week') _renderTokTrendChart();
+    }
+  }).catch(function(){});
+})();
+
+(function _bindTokTrendToggle() {
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.id === 'tok-trend-day') _renderTokTrendChart('day');
+    if (e.target && e.target.id === 'tok-trend-week') _renderTokTrendChart('week');
+  });
+})();
 
 function _renderClaudeHeatmap(heatmap) {
   var el = document.getElementById('heatmap-container');
@@ -1270,6 +1384,23 @@ _initAuth().then(function() {
         <span><span class="trend-legend-dot" style="background:#fbbf24"></span>缓存写入</span>
         <span><span class="trend-legend-dot" style="background:#5cd08a"></span>缓存读取</span>
       </div>
+    </div>
+    <div class="trend-card" id="tok-trend-card" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div class="chart-title" style="margin-bottom:0">Token 消耗趋势</div>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="stats-btn" id="tok-trend-day">每天</button>
+          <button class="stats-btn" id="tok-trend-week">每周</button>
+        </div>
+      </div>
+      <svg id="tok-trend-svg" class="chart-svg" height="170"></svg>
+      <div class="trend-legend" style="margin-top:10px">
+        <span><span class="trend-legend-dot" style="background:#4e9eff"></span>输入</span>
+        <span><span class="trend-legend-dot" style="background:#f0a050"></span>输出</span>
+        <span><span class="trend-legend-dot" style="background:#fbbf24"></span>缓存写入</span>
+        <span><span class="trend-legend-dot" style="background:#5cd08a"></span>缓存读取</span>
+      </div>
+      <div id="tok-trend-note" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
     </div>
     <div class="heatmap-card" id="heatmap-card" style="display:none">
       <div class="chart-title" style="margin-bottom:8px">活动热力图（近一年）</div>
