@@ -983,6 +983,81 @@ def render_dev_page() -> str:
   [data-theme="pixel-cyber"] .mobile-cmd-input:focus { border-color: #00d4ff; box-shadow: 0 0 8px rgba(0,212,255,.2); }
   [data-theme="pixel-cyber"] .mobile-send-btn { background: #00d4ff; color: #020c1a; }
   [data-theme="pixel-cyber"] .mobile-attach-btn { border-color: rgba(0,212,255,.3); color: #00d4ff; }
+
+  /* ── dyson: 深空 HUD + 青色发光 + 琥珀能量 + 扫描线 ── */
+  [data-theme="dyson"] .term-sidebar {
+    border-right: 1px solid rgba(56,230,255,.22);
+    box-shadow: 2px 0 24px rgba(56,230,255,.12), inset -1px 0 0 rgba(56,230,255,.25);
+  }
+  [data-theme="dyson"] .term-sidebar::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, #38e6ff, #ffb627, #38e6ff, transparent);
+    box-shadow: 0 0 8px rgba(56,230,255,.6); z-index: 1;
+  }
+  [data-theme="dyson"] .term-sidebar-header {
+    border-bottom: 1px solid rgba(56,230,255,.25);
+    color: #7df9ff; letter-spacing: 2px; text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(56,230,255,.5);
+  }
+  [data-theme="dyson"] .term-group-name { color: rgba(174,188,212,.95); letter-spacing: .5px; }
+  [data-theme="dyson"] .term-group-arrow { color: rgba(56,230,255,.5); }
+  [data-theme="dyson"] .term-pane-badge.claude { box-shadow: 0 0 8px rgba(56,230,255,.45); }
+  [data-theme="dyson"] .term-pane-badge.codex  { box-shadow: 0 0 8px rgba(45,224,166,.4); }
+  [data-theme="dyson"] .term-pane-row.active {
+    background: rgba(56,230,255,.08);
+    border-left-color: #38e6ff;
+    box-shadow: inset 3px 0 14px rgba(56,230,255,.22);
+  }
+  [data-theme="dyson"] .term-pane-row.active .term-pane-name-text {
+    color: #7df9ff; text-shadow: 0 0 8px rgba(56,230,255,.6);
+  }
+  [data-theme="dyson"] .term-pane-row:hover { background: rgba(56,230,255,.045); }
+  [data-theme="dyson"] .term-toolbar {
+    border-bottom: 1px solid rgba(56,230,255,.18);
+    box-shadow: 0 2px 12px rgba(56,230,255,.07);
+    background: rgba(10,15,28,.96);
+  }
+  [data-theme="dyson"] .term-iframe-wrap::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(56,230,255,.02) 2px, rgba(56,230,255,.02) 3px);
+  }
+  [data-theme="dyson"] #ttyd-frame { background: #070b15; }
+  [data-theme="dyson"] .term-group-count { background: rgba(56,230,255,.12); color: #7df9ff; border: 1px solid rgba(56,230,255,.3); }
+  [data-theme="dyson"] .term-host-badge { border: 1px solid rgba(56,230,255,.5); color: #7df9ff; }
+  [data-theme="dyson"] .term-placeholder {
+    background: radial-gradient(ellipse at center, rgba(56,230,255,.06) 0%, transparent 65%);
+  }
+  [data-theme="dyson"] .term-placeholder-btn {
+    border-color: rgba(56,230,255,.4); color: #7df9ff;
+    text-shadow: 0 0 8px rgba(56,230,255,.5);
+    box-shadow: 0 0 12px rgba(56,230,255,.15), inset 0 0 8px rgba(56,230,255,.05);
+  }
+  [data-theme="dyson"] .term-placeholder-btn:hover {
+    border-color: #38e6ff;
+    box-shadow: 0 0 20px rgba(56,230,255,.35), inset 0 0 12px rgba(56,230,255,.1);
+  }
+  [data-theme="dyson"] .term-detail-header {
+    background: rgba(10,15,28,.98); border-bottom: 1px solid rgba(56,230,255,.25);
+    box-shadow: 0 1px 12px rgba(56,230,255,.12);
+  }
+  [data-theme="dyson"] .term-detail-back,
+  [data-theme="dyson"] .term-switch-btn { border-color: rgba(56,230,255,.35); color: #7df9ff; }
+  [data-theme="dyson"] .term-detail-title { color: #7df9ff; text-shadow: 0 0 8px rgba(56,230,255,.5); }
+  [data-theme="dyson"] .mobile-term-output.visible { background: #070b15; color: #eaf2ff; }
+  [data-theme="dyson"] .mobile-input-bar {
+    background: rgba(10,15,28,.98); border-top: 1px solid rgba(56,230,255,.25);
+    box-shadow: 0 -1px 12px rgba(56,230,255,.1);
+  }
+  [data-theme="dyson"] .mobile-key-btn {
+    background: rgba(56,230,255,.06); border-color: rgba(56,230,255,.25); color: #7df9ff;
+  }
+  [data-theme="dyson"] .mobile-key-btn:active { background: rgba(56,230,255,.2); border-color: #38e6ff; }
+  [data-theme="dyson"] .mobile-cmd-input {
+    background: rgba(56,230,255,.04); border-color: rgba(56,230,255,.3); color: #eaf2ff;
+  }
+  [data-theme="dyson"] .mobile-cmd-input:focus { border-color: #38e6ff; box-shadow: 0 0 8px rgba(56,230,255,.25); }
+  [data-theme="dyson"] .mobile-send-btn { background: #38e6ff; color: #070b15; }
+  [data-theme="dyson"] .mobile-attach-btn { border-color: rgba(56,230,255,.3); color: #7df9ff; }
 """
 
     page_js = r"""

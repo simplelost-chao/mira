@@ -136,6 +136,7 @@ const SKINS = [
   { id: 'claude-dark',   name: '黑曜',    preview: ['#131313', '#09B83E'] },
   { id: 'neon-pixel',   name: '霓虹像素', preview: ['#0a0a0a', '#ff00ff'] },
   { id: 'pixel-cyber',  name: '像素赛博', preview: ['#000d1a', '#ff0066'] },
+  { id: 'dyson',        name: '戴森球',   preview: ['#0a0f1c', '#38e6ff'] },
 ];
 
 function applySkin(id) {

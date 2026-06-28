@@ -78,6 +78,24 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "    --ansi-0:#1a1a1a; --ansi-4:#4e9eff; --ansi-5:#c792ea; --ansi-6:#56b6c2;\n"
         "    --ansi-7:#ededed; --ansi-8:#3a3a3a; --ansi-12:#82aaff; --ansi-13:#d9a0f5; --ansi-14:#89ddff; --ansi-15:#ffffff;\n"
         "  }\n"
+        "  [data-theme=\"dyson\"] {\n"
+        "    --bg: #0a0f1c; --panel: rgba(17,26,46,.92); --border: rgba(56,230,255,.16);\n"
+        "    --text: #eaf2ff; --sub: #aebcd4; --muted: #6b7e99;\n"
+        "    --accent: #38e6ff; --accent-rgb: 56,230,255;\n"
+        "    --green: #2de0a6; --orange: #ffb627; --red: #ff4d6d; --yellow: #ffd37a;\n"
+        "    --purple: #9d7cff; --gold: #ffb627;\n"
+        "    --radius: 6px; --radius-sm: 4px;\n"
+        "    --ansi-0:#070b15; --ansi-1:#ff4d6d; --ansi-2:#2de0a6; --ansi-3:#ffd37a;\n"
+        "    --ansi-4:#38e6ff; --ansi-5:#9d7cff; --ansi-6:#7df9ff; --ansi-7:#eaf2ff;\n"
+        "    --ansi-8:#36486b; --ansi-12:#7df9ff; --ansi-13:#b6a4ff; --ansi-14:#b6fbff; --ansi-15:#ffffff;\n"
+        "  }\n"
+        "  [data-theme=\"dyson\"] body {\n"
+        "    background-image:\n"
+        "      radial-gradient(ellipse 130% 100% at 50% -10%, rgba(56,230,255,.06), transparent 55%),\n"
+        "      radial-gradient(ellipse 90% 80% at 50% 110%, rgba(255,182,39,.04), transparent 60%),\n"
+        "      repeating-linear-gradient(0deg, rgba(56,230,255,.022) 0px, rgba(56,230,255,.022) 1px, transparent 1px, transparent 3px);\n"
+        "    background-attachment: fixed;\n"
+        "  }\n"
         "  body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-top: 52px; }\n"
     )
 
@@ -202,7 +220,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
 def settings_overlay_html() -> str:
     """Shared settings JS + login overlay."""
     return """\
-<script src="/static/settings.js?v=2"></script>
+<script src="/static/settings.js?v=3"></script>
 <script>initSettings();</script>
 
 <!-- Login overlay -->
