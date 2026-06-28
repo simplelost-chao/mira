@@ -45,7 +45,10 @@ def render_stats_page() -> str:
   [data-theme="dyson"] .trend-card, [data-theme="dyson"] .heatmap-card,
   [data-theme="dyson"] .ranking-card, [data-theme="dyson"] .token-card,
   [data-theme="dyson"] .scatter-card, [data-theme="dyson"] .token-stack-card,
-  [data-theme="dyson"] .table-card, [data-theme="dyson"] .gh-card { position: relative; }
+  [data-theme="dyson"] .table-card, [data-theme="dyson"] .gh-card {
+    position: relative; border-color: rgba(56,230,255,.22);
+    box-shadow: 0 0 0 1px rgba(56,230,255,.12), 0 0 16px rgba(56,230,255,.09), 0 6px 22px rgba(0,0,0,.4);
+  }
   [data-theme="dyson"] .summary-card::after, [data-theme="dyson"] .chart-card::after,
   [data-theme="dyson"] .trend-card::after, [data-theme="dyson"] .heatmap-card::after,
   [data-theme="dyson"] .ranking-card::after, [data-theme="dyson"] .token-card::after,
