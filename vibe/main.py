@@ -33,11 +33,27 @@ _ttyd_proc: subprocess.Popen | None = None
 
 # 子账号只读 ttyd:每子账号一个,端口由 open_id 哈希决定,挂在他自己的 tmux session(只读)。
 _SUB_TTYD_BASE = 7700
+_SUB_TTYD_RANGE = 250
 _sub_ttyd_procs: dict = {}   # open_id -> Popen
+_sub_ttyd_ports: dict = {}   # open_id -> 已分配端口(本进程内稳定、互不碰撞)
+_sub_ttyd_port_lock = threading.Lock()
 
 
 def _sub_ttyd_port(open_id: str) -> int:
-    return _SUB_TTYD_BASE + (int(hashlib.sha256(open_id.encode()).hexdigest(), 16) % 250)
+    """给每个子账号分配一个【互不碰撞】的 ttyd 端口。
+    旧实现用 hash%250,两个子账号可能撞同一端口 → 互相杀 ttyd、串到对方终端。
+    改为按 open_id 在范围内分配第一个未占用端口,进程内稳定。"""
+    with _sub_ttyd_port_lock:
+        if open_id in _sub_ttyd_ports:
+            return _sub_ttyd_ports[open_id]
+        used = set(_sub_ttyd_ports.values())
+        for off in range(_SUB_TTYD_RANGE):
+            p = _SUB_TTYD_BASE + off
+            if p not in used:
+                _sub_ttyd_ports[open_id] = p
+                return p
+        # 兜底:子账号超过 250 个(几乎不可能)→ 回退 hash
+        return _SUB_TTYD_BASE + (int(hashlib.sha256(open_id.encode()).hexdigest(), 16) % _SUB_TTYD_RANGE)
 
 
 def _kill_port_listeners(port: int) -> None:
