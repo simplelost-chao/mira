@@ -237,6 +237,13 @@ def render_dev_page() -> str:
     background: rgba(var(--accent-rgb),.15); color: var(--accent);
     white-space: nowrap; flex-shrink: 0; line-height: 14px;
   }
+  /* 子账号开的进程标识 */
+  .term-sub-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 6px;
+    background: rgba(229,166,80,.18); color: var(--orange, #e5a650);
+    border: 1px solid rgba(229,166,80,.4);
+    white-space: nowrap; flex-shrink: 0; line-height: 12px; font-weight: 700;
+  }
   .term-host-badge.offline {
     background: rgba(255,255,255,.06); color: var(--muted);
   }
@@ -1152,6 +1159,7 @@ function _renderPaneRow(p, st) {
     <div class="term-pane-info">
       <div class="term-pane-name">
         <span class="term-pane-name-text">${escHtml((p.label || p.target).replace(/^.*\//, ''))}</span>
+        ${p.sub ? `<span class="term-sub-badge" title="子账号开的进程${p.sub_name ? ': ' + escHtml(p.sub_name) : ''}">子</span>` : ''}
         ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
         <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation(); killPane(this);">×</span>
       </div>
@@ -1365,6 +1373,7 @@ function _renderSingleProject(pid, grp, nested) {
       ${grip}
       ${badge}
       <span class="term-group-name">${escHtml(name)}</span>
+      ${p.sub ? `<span class="term-sub-badge" title="子账号开的进程${p.sub_name ? ': ' + escHtml(p.sub_name) : ''}">子</span>` : ''}
       ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
       <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation();_killSingle(this)">×</span>
       <span class="term-group-menu" onclick="event.stopPropagation();_openGroupMenu(event,'${escHtml(pid)}')" title="更多">⋯</span>

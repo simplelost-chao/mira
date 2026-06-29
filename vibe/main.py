@@ -3031,10 +3031,20 @@ def dev_panes_list(request: Request):
     # Build a lookup so we can return each project's display name (vibe.yaml `name`)
     projects = get_all_projects()
     proj_by_path = {pr["path"]: pr for pr in projects}
+    # 子账号会话标记:tmux session 名是 sub-<openid>,映射回子账号显示名
+    _, _vy = _read_vibe_yaml()
+    sub_sessions = {}
+    for acc in (_vy.get("accounts") or []):
+        oid = acc.get("feishu_open_id")
+        if oid:
+            sub_sessions[_sub_session_name(oid)] = acc.get("name") or oid
     all_panes = list_panes()
     result = []
     for p in all_panes:
         target = p["target"]
+        sess = p.get("session", "")
+        is_sub = sess.startswith("sub-")
+        sub_name = sub_sessions.get(sess)
         mon = monitored.get(target, {})
         label = mon.get("label") or f"{p['command']}/{Path(p['cwd']).name}"
         # Match cwd to a project by longest-path-prefix
@@ -3063,6 +3073,8 @@ def dev_panes_list(request: Request):
             "project_id": project_id,
             "project_name": project_name,
             "tool": tool,
+            "sub": is_sub,
+            "sub_name": sub_name,
         })
     # 合并远程 pane（加 alias 前缀）
     for host in _remote_hosts:
