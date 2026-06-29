@@ -360,7 +360,24 @@ function initSettings() {
 
 /* ── Open / close / save ───────────────────────────────────────────────────── */
 async function openSettings() {
-  if (!_isAdmin) { openLoginModal(openSettings); return; }
+  if (!_isAdmin && !(typeof _isSub !== 'undefined' && _isSub)) { openLoginModal(openSettings); return; }
+  // 子账号:只开"外观 → 皮肤"。皮肤即点即生效(applySkin 写 localStorage),
+  // 无需保存;终端列表/音效/API/主机/安全都是 owner 的,隐藏。
+  if (!_isAdmin) {
+    _renderSettingsSkins();
+    switchSettingsTab('appearance', document.querySelector('.settings-tab'));
+    [...document.querySelectorAll('.settings-tabs .settings-tab')].forEach(function(t) {
+      if (/'(api|hosts|security)'/.test(t.getAttribute('onclick') || '')) t.style.display = 'none';
+    });
+    [...document.querySelectorAll('#settings-panel-appearance .settings-group')].forEach(function(g, i) {
+      g.style.display = i === 0 ? '' : 'none';
+    });
+    var _lo = document.getElementById('settings-logout-btn'); if (_lo) _lo.style.display = 'none';
+    var _adv = document.querySelector('.settings-footer a.settings-btn-cancel'); if (_adv) _adv.style.display = 'none';
+    var _save = document.querySelector('.settings-footer .settings-btn-save'); if (_save) _save.style.display = 'none';
+    document.getElementById('settings-overlay').classList.add('open');
+    return;
+  }
   _clearedKeys.clear();
   const [data, provData, soundData] = await Promise.all([
     fetch('/api/settings', { headers: _authHeaders() }).then(r => r.json()),

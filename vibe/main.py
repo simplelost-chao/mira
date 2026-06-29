@@ -4364,7 +4364,14 @@ async def sub_ttyd_http_proxy(port: int, path: str, request: Request):
         raise HTTPException(status_code=502, detail="终端未运行")
     skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
     out = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
-    return Response(content=resp.content, status_code=resp.status_code, headers=out)
+    content = resp.content
+    # 让子账号的终端也跟随 Mira 皮肤(注入主题同步脚本,与 owner 终端一致)
+    if "text/html" in resp.headers.get("content-type", ""):
+        if b"</head>" in content:
+            content = content.replace(b"</head>", _TTYD_CONNECTION_INJECT.encode() + b"</head>", 1)
+        if b"</body>" in content:
+            content = content.replace(b"</body>", _TTYD_THEME_INJECT.encode() + b"</body>", 1)
+    return Response(content=content, status_code=resp.status_code, headers=out)
 
 
 @api.websocket("/subterm/{port}/ws")
