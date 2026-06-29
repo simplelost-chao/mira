@@ -64,6 +64,10 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS daily_stats_project_date
                 ON daily_stats(project_id, date);
+            -- prompts/sessions 查询提速:messages 表 15 万行,之前全表扫描
+            CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+            CREATE INDEX IF NOT EXISTS idx_messages_role_ts ON messages(role, ts);
+            CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
         """)
         # Migrate existing installations: add cache token columns if missing
         for col, defn in [
@@ -521,10 +525,14 @@ def get_prompts(project_id: str, limit: int = 200) -> list[dict]:
                 """,
                 (project_id, limit),
             ).fetchall()
-        return [
-            {"text": r["text"], "date": str(r["ts"] // 1000)}
-            for r in rows
-        ]
+        # 截断超长 prompt(有人会把大文件贴进 prompt,单条几百 KB 会把前端渲染卡死)
+        out = []
+        for r in rows:
+            t = r["text"] or ""
+            if len(t) > 4000:
+                t = t[:4000] + "\n\n…… [已截断,完整 {:,} 字符]".format(len(t))
+            out.append({"text": t, "date": str(r["ts"] // 1000)})
+        return out
     except sqlite3.OperationalError:
         return []
 
@@ -564,7 +572,10 @@ def get_all_project_prompts(limit_per_project: int = 50) -> list[dict]:
         entry = grouped[pid]
         entry["id"] = pid
         entry["name"] = r["project_name"] or pid
-        entry["prompts"].append({"text": r["text"], "date": str(r["ts"] // 1000)})
+        _t = r["text"] or ""
+        if len(_t) > 4000:
+            _t = _t[:4000] + "\n\n…… [已截断,完整 {:,} 字符]".format(len(_t))
+        entry["prompts"].append({"text": _t, "date": str(r["ts"] // 1000)})
 
     return [v for v in grouped.values() if v["prompts"]]
 
