@@ -308,6 +308,9 @@ async def _lifespan(app: FastAPI):
         _ttyd_proc.terminate()
 
 api = FastAPI(title="Vibe Manager", lifespan=_lifespan)
+# gzip 压缩:页面 HTML(dev 页 ~180KB)、stats/prompts 等大 JSON 响应都能省 ~5-8 倍带宽
+from starlette.middleware.gzip import GZipMiddleware
+api.add_middleware(GZipMiddleware, minimum_size=600)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 VERSION_FILE = Path(__file__).parent.parent / "version.json"
