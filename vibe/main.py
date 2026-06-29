@@ -4474,22 +4474,22 @@ def terminal_focus(request: Request, body: dict):
     subprocess.run([_TMUX_BIN, "select-pane", "-t", target],
                    env=_TMUX_ENV, capture_output=True)
 
-    # 把【非子账号】的 tmux 客户端切到目标窗口。
-    # 关键:绝不能切子账号(sub-*)会话的客户端,否则两人同时在线时,owner 切项目
-    # 会把子账号的终端也拽到 owner 的窗口(子账号看到 owner 的面板)。
-    # 用 list-clients 直接拿到 (tty, 会话),按会话名过滤,比扫 ttyd 进程更准。
-    clients = subprocess.run(
-        [_TMUX_BIN, "list-clients", "-F", "#{client_tty}\t#{client_session}"],
-        env=_TMUX_ENV, capture_output=True, text=True,
-    )
+    # 只切 owner 的【全局 ttyd】(监听 7681)派生的 tmux 客户端,按【进程身份】识别,
+    # 不按"当前在哪个会话"判断——因为 admin 点开子账号面板时,自己的 ttyd 会临时
+    # 连到 sub-* 会话;若按会话过滤会把 admin 自己也跳过 → 切不回来(乱了)。
+    # 子账号 ttyd 监听 7700+,永远不在这里,自然不会被切。
+    owner_ttys: set[str] = set()
+    lsof = subprocess.run(["lsof", f"-tiTCP:{_TTYD_PORT}", "-sTCP:LISTEN"],
+                          capture_output=True, text=True)
+    for pid in lsof.stdout.split():
+        ch = subprocess.run(["pgrep", "-P", pid.strip()], capture_output=True, text=True)
+        for cpid in ch.stdout.split():
+            t = subprocess.run(["ps", "-p", cpid.strip(), "-o", "tty="],
+                               capture_output=True, text=True).stdout.strip()
+            if t and t != "??":
+                owner_ttys.add(f"/dev/{t}")
     switched = 0
-    for line in clients.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) != 2:
-            continue
-        tty, csess = parts[0].strip(), parts[1].strip()
-        if not tty or csess.startswith("sub-"):
-            continue   # 子账号自己的终端,不跟随 owner 焦点
+    for tty in owner_ttys:
         subprocess.run(
             [_TMUX_BIN, "switch-client", "-c", tty, "-t", f"{session}:{window}"],
             env=_TMUX_ENV, capture_output=True,
