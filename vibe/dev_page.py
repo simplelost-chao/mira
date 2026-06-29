@@ -999,7 +999,7 @@ def render_dev_page() -> str:
     text-shadow: 0 0 10px rgba(56,230,255,.5);
     font-family: 'Chakra Petch', var(--mono);
   }
-  [data-theme="dyson"] .term-group-name { color: rgba(174,188,212,.95); letter-spacing: .5px; }
+  [data-theme="dyson"] .term-group-name { color: rgba(174,188,212,.95); letter-spacing: .5px; font-size: 12.5px; }
   [data-theme="dyson"] .term-group-arrow { color: rgba(56,230,255,.5); }
   [data-theme="dyson"] .term-pane-badge.claude { box-shadow: 0 0 8px rgba(56,230,255,.45); }
   [data-theme="dyson"] .term-pane-badge.codex  { box-shadow: 0 0 8px rgba(45,224,166,.4); }
