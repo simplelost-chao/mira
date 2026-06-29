@@ -4458,44 +4458,28 @@ def terminal_focus(request: Request, body: dict):
     subprocess.run([_TMUX_BIN, "select-pane", "-t", target],
                    env=_TMUX_ENV, capture_output=True)
 
-    # Collect TTYs of all ttyd-spawned tmux clients.
-    # Strategy: find child processes of any running ttyd process (not just the
-    # one Mira started — it may have been orphaned after a restart).
-    ttyd_ttys: set[str] = set()
-
-    def _collect_ttyd_ttys(parent_pid: str) -> None:
-        child_res = subprocess.run(
-            ["pgrep", "-P", parent_pid],
-            capture_output=True, text=True,
-        )
-        for child_pid in child_res.stdout.strip().splitlines():
-            tty_res = subprocess.run(
-                ["ps", "-p", child_pid.strip(), "-o", "tty="],
-                capture_output=True, text=True,
-            )
-            tty = tty_res.stdout.strip()
-            if tty and tty != "??":
-                ttyd_ttys.add(f"/dev/{tty}")
-
-    # Primary: use tracked _ttyd_proc if still alive
-    if _ttyd_proc and _ttyd_proc.poll() is None:
-        _collect_ttyd_ttys(str(_ttyd_proc.pid))
-
-    # Fallback: scan for any running ttyd (handles orphaned ttyd after Mira restarts)
-    if not ttyd_ttys:
-        ttyd_scan = subprocess.run(
-            ["pgrep", "-f", "ttyd"],
-            capture_output=True, text=True,
-        )
-        for pid in ttyd_scan.stdout.strip().splitlines():
-            _collect_ttyd_ttys(pid.strip())
-
-    for tty in ttyd_ttys:
+    # 把【非子账号】的 tmux 客户端切到目标窗口。
+    # 关键:绝不能切子账号(sub-*)会话的客户端,否则两人同时在线时,owner 切项目
+    # 会把子账号的终端也拽到 owner 的窗口(子账号看到 owner 的面板)。
+    # 用 list-clients 直接拿到 (tty, 会话),按会话名过滤,比扫 ttyd 进程更准。
+    clients = subprocess.run(
+        [_TMUX_BIN, "list-clients", "-F", "#{client_tty}\t#{client_session}"],
+        env=_TMUX_ENV, capture_output=True, text=True,
+    )
+    switched = 0
+    for line in clients.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 2:
+            continue
+        tty, csess = parts[0].strip(), parts[1].strip()
+        if not tty or csess.startswith("sub-"):
+            continue   # 子账号自己的终端,不跟随 owner 焦点
         subprocess.run(
             [_TMUX_BIN, "switch-client", "-c", tty, "-t", f"{session}:{window}"],
             env=_TMUX_ENV, capture_output=True,
         )
-    return {"ok": True, "switched": len(ttyd_ttys)}
+        switched += 1
+    return {"ok": True, "switched": switched}
 
 
 @api.post("/api/terminals/{target:path}/scroll")
