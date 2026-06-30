@@ -2442,8 +2442,12 @@ function _connectTermWs(target) {
     if (_termWs !== termWs || !output || data === null || data === _lastWsData) return;
     _lastWsData = data;
     var wasAtBottom = (output.scrollHeight - output.scrollTop - output.clientHeight) < 40;
+    var _prevTop = output.scrollTop;
     output.innerHTML = _ansiToHtml(data);
+    // 在底部 → 跟随到底;已上滑看历史 → 保持位置(innerHTML 替换会把 scrollTop 重置为 0,
+    // 不还原的话每帧都把用户拽回顶部 → 表现为"不能往上滑动")
     if (wasAtBottom) output.scrollTop = output.scrollHeight;
+    else output.scrollTop = _prevTop;
     // Cache snapshot for tab switcher (last 20 lines of plain text)
     if (_currentTarget) {
       var _lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
@@ -3411,7 +3415,7 @@ async function init() {
   }
   await loadDevGroups();
   await loadPanes();
-  var _panesInterval = setInterval(loadPanes, 5000);
+  var _panesInterval = setInterval(loadPanes, 8000);
   _startBufferPoll();
   // Warm the lightweight project list while the page is idle so the first
   // click on + normally opens with a complete list and no network wait.
@@ -3427,7 +3431,7 @@ async function init() {
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
     } else {
       loadPanes();
-      _panesInterval = setInterval(loadPanes, 5000);
+      _panesInterval = setInterval(loadPanes, 8000);
       _startBufferPoll();
       if (_currentTarget) {
         var t = _paneToolMap[_currentTarget] || '';

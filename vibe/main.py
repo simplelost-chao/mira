@@ -2194,18 +2194,36 @@ def _mask_key(val: str) -> str:
     return val[:6] + "****"
 
 
+_vibe_yaml_cache: dict = {"mtime": None, "data": None}
+
+
 def _read_vibe_yaml() -> tuple[Path, dict]:
     import yaml
+    import copy
     cfg_path = Path(__file__).parent.parent / "vibe.yaml"
-    data = {}
-    if cfg_path.exists():
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    return cfg_path, data
+    if not cfg_path.exists():
+        return cfg_path, {}
+    # 按 mtime 缓存已解析结果，避免每次(含 5~8s 轮询)重读+解析 6.7KB yaml。
+    # 返回 deepcopy：调用方常做 read→mutate→write，独立副本可防止改动污染缓存。
+    mt = cfg_path.stat().st_mtime
+    if _vibe_yaml_cache["mtime"] == mt:
+        return cfg_path, copy.deepcopy(_vibe_yaml_cache["data"])
+    data = yaml.safe_load(cfg_path.read_text()) or {}
+    _vibe_yaml_cache["mtime"] = mt
+    _vibe_yaml_cache["data"] = data
+    return cfg_path, copy.deepcopy(data)
 
 
 def _write_vibe_yaml(cfg_path: Path, data: dict) -> None:
     import yaml
     cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+    # mtime 已变，下次 _read_vibe_yaml 会重新解析；这里顺手刷新缓存避免一次多余解析
+    try:
+        _vibe_yaml_cache["mtime"] = cfg_path.stat().st_mtime
+        import copy
+        _vibe_yaml_cache["data"] = copy.deepcopy(data)
+    except Exception:
+        _vibe_yaml_cache["mtime"] = None
     from .config import invalidate_config_cache
     invalidate_config_cache()
 
@@ -4456,6 +4474,9 @@ async def sub_ttyd_ws_proxy(websocket: WebSocket, port: int):
 
 # ── Terminal focus / new-window API ────────────────────────────────────────────
 
+_ttyd_focus_cache: dict = {"sig": None, "ttys": set()}
+
+
 @api.post("/api/terminal/focus")
 def terminal_focus(request: Request, body: dict):
     """Switch tmux client view to a specific pane (used by sidebar click)."""
@@ -4481,16 +4502,30 @@ def terminal_focus(request: Request, body: dict):
     # 不按"当前在哪个会话"判断——因为 admin 点开子账号面板时,自己的 ttyd 会临时
     # 连到 sub-* 会话;若按会话过滤会把 admin 自己也跳过 → 切不回来(乱了)。
     # 子账号 ttyd 监听 7700+,永远不在这里,自然不会被切。
-    owner_ttys: set[str] = set()
+    # 枚举 owner ttyd(7681)派生的 tmux 客户端子进程 pid。lsof+pgrep 较轻;真正贵的是
+    # 逐个子进程 ps 查 TTY。用【子进程集签名】缓存解析结果:集合不变→直接复用(跳过 ps);
+    # 集合一变(新开标签页多了 client、或 ttyd 重启 pid 变)→重算,从而既不漏新客户端、
+    # 也不会踩 pid 复用拿到旧 TTY。冷路径把 N 次 ps 合并成 1 次。
     lsof = subprocess.run(["lsof", f"-tiTCP:{_TTYD_PORT}", "-sTCP:LISTEN"],
                           capture_output=True, text=True)
+    child_pids: list[str] = []
     for pid in lsof.stdout.split():
         ch = subprocess.run(["pgrep", "-P", pid.strip()], capture_output=True, text=True)
-        for cpid in ch.stdout.split():
-            t = subprocess.run(["ps", "-p", cpid.strip(), "-o", "tty="],
-                               capture_output=True, text=True).stdout.strip()
-            if t and t != "??":
-                owner_ttys.add(f"/dev/{t}")
+        child_pids.extend(c.strip() for c in ch.stdout.split() if c.strip())
+    sig = tuple(sorted(child_pids))
+    if sig and sig == _ttyd_focus_cache.get("sig"):
+        owner_ttys: set[str] = _ttyd_focus_cache["ttys"]
+    else:
+        owner_ttys = set()
+        if child_pids:
+            ps = subprocess.run(["ps", "-p", ",".join(child_pids), "-o", "tty="],
+                                capture_output=True, text=True)
+            for t in ps.stdout.split():
+                t = t.strip()
+                if t and t != "??":
+                    owner_ttys.add(f"/dev/{t}")
+        _ttyd_focus_cache["sig"] = sig
+        _ttyd_focus_cache["ttys"] = owner_ttys
     switched = 0
     for tty in owner_ttys:
         subprocess.run(
