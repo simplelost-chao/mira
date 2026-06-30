@@ -3094,6 +3094,12 @@ def dev_panes_list(request: Request):
                     match = proj
         project_id = mon.get("project_id") or (Path(match["path"]).name if match else Path(cwd).name)
         project_name = (match["name"] if match else None) or project_id
+        # 子账号 badge 只在该 pane 的项目仍授权给该子账号时显示。取消授权后,进程仍在
+        # sub session 里跑着(不杀),但不再标记归属——撤销后不该再把项目和该子账号关联。
+        if is_sub and sub_acc and project_id not in (sub_acc.get("projects") or []):
+            is_sub = False
+            sub_name = None
+            sub_avatar = None
         # Detect tool type from terminal_monitor's resolved command
         mon_cmd = mon.get("command", "")
         if mon_cmd == "codex":
