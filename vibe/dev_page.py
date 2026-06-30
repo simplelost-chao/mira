@@ -2434,26 +2434,43 @@ function _connectTermWs(target) {
   var _lastWsData = '';
   var _pendingWsData = null;
   var _renderWsFrame = 0;
+  var _termFollow = true;   // true=跟随最新输出到底;false=用户上滑看历史,暂停整屏重建
+
+  function _termAtBottom() {
+    return (output.scrollHeight - output.scrollTop - output.clientHeight) < 60;
+  }
 
   function _renderTerminalFrame() {
     _renderWsFrame = 0;
     var data = _pendingWsData;
+    if (_termWs !== termWs || !output || data === null) return;
+    // 用户在看历史(_termFollow=false)时不重建 DOM:iOS Safari 上整屏 innerHTML 替换会
+    // 清除正在进行的触摸滚动,程序在跑时后端高频推全量快照 → 高频重建 → 手势每次都被打断,
+    // 表现为"完全滑不动"。故上滑期间只把最新数据留在 _pendingWsData,滑回底部再恢复跟随。
+    if (!_termFollow) return;
     _pendingWsData = null;
-    if (_termWs !== termWs || !output || data === null || data === _lastWsData) return;
+    if (data === _lastWsData) return;
     _lastWsData = data;
-    var wasAtBottom = (output.scrollHeight - output.scrollTop - output.clientHeight) < 40;
-    var _prevTop = output.scrollTop;
     output.innerHTML = _ansiToHtml(data);
-    // 在底部 → 跟随到底;已上滑看历史 → 保持位置(innerHTML 替换会把 scrollTop 重置为 0,
-    // 不还原的话每帧都把用户拽回顶部 → 表现为"不能往上滑动")
-    if (wasAtBottom) output.scrollTop = output.scrollHeight;
-    else output.scrollTop = _prevTop;
+    output.scrollTop = output.scrollHeight;
     // Cache snapshot for tab switcher (last 20 lines of plain text)
     if (_currentTarget) {
       var _lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
       _paneSnapshots[_currentTarget] = _lines.slice(-20).join('\n');
     }
   }
+
+  // 触摸/滚动驱动"跟随最新 ↔ 看历史"切换。覆盖式绑定(on*),避免每次重连累加监听器。
+  function _resumeIfPending() {
+    if (_pendingWsData !== null && !_renderWsFrame)
+      _renderWsFrame = requestAnimationFrame(_renderTerminalFrame);
+  }
+  output.ontouchstart = function() { _termFollow = false; };  // 手指一碰即暂停重建,手势才不被打断
+  output.ontouchend = function() { if (_termAtBottom()) { _termFollow = true; _resumeIfPending(); } };
+  output.onscroll = function() {
+    if (_termAtBottom()) { if (!_termFollow) { _termFollow = true; _resumeIfPending(); } }
+    else { _termFollow = false; }
+  };
 
   termWs._cancelPendingRender = function() {
     if (_renderWsFrame) cancelAnimationFrame(_renderWsFrame);
