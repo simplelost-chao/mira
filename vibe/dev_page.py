@@ -2438,7 +2438,9 @@ function _ansiToHtml(raw) {
 var _termWs = null;
 
 function _hasPaneTarget(target) {
-  return !!document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"]');
+  // 同时认分组里的 .term-pane-row 和单终端项目的 .term-single(顶层项);
+  // 只认前者会让单终端项目在 WS 一断时被误判为"已消失"→ 踢回列表。
+  return !!document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"], .term-single[data-target="' + CSS.escape(target) + '"]');
 }
 
 var _wsRetryDelay = 2000;   // WS 重连退避(成功连上后在 onopen 重置)
