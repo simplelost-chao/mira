@@ -239,10 +239,15 @@ def render_dev_page() -> str:
   }
   /* 子账号开的进程标识 */
   .term-sub-badge {
-    font-size: 9px; padding: 1px 5px; border-radius: 6px;
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; line-height: 1; text-transform: uppercase;
     background: rgba(229,166,80,.18); color: var(--orange, #e5a650);
     border: 1px solid rgba(229,166,80,.4);
-    white-space: nowrap; flex-shrink: 0; line-height: 12px; font-weight: 700;
+    flex-shrink: 0; overflow: hidden; vertical-align: middle;
+  }
+  .term-sub-badge.term-sub-av {
+    padding: 0; object-fit: cover; background: var(--panel); border-color: var(--border);
   }
   .term-host-badge.offline {
     background: rgba(255,255,255,.06); color: var(--muted);
@@ -1108,6 +1113,17 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// 子账号开的进程标识:优先头像,无头像回退到名字首字(圆形 badge)
+function subBadge(p) {
+  if (!p.sub) return '';
+  var nm = (p.sub_name || '').trim();
+  var title = escHtml('子账号开的进程' + (nm ? ': ' + nm : ''));
+  if (p.sub_avatar) {
+    return `<img class="term-sub-badge term-sub-av" src="${escHtml(p.sub_avatar)}" title="${title}" alt="">`;
+  }
+  return `<span class="term-sub-badge" title="${title}">${escHtml(nm ? nm.charAt(0) : '子')}</span>`;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────────
 let _currentTarget = null;
 let _currentIsRemote = false;
@@ -1159,7 +1175,7 @@ function _renderPaneRow(p, st) {
     <div class="term-pane-info">
       <div class="term-pane-name">
         <span class="term-pane-name-text">${escHtml((p.label || p.target).replace(/^.*\//, ''))}</span>
-        ${p.sub ? `<span class="term-sub-badge" title="子账号开的进程${p.sub_name ? ': ' + escHtml(p.sub_name) : ''}">子</span>` : ''}
+        ${subBadge(p)}
         ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
         <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation(); killPane(this);">×</span>
       </div>
@@ -1373,7 +1389,7 @@ function _renderSingleProject(pid, grp, nested) {
       ${grip}
       ${badge}
       <span class="term-group-name">${escHtml(name)}</span>
-      ${p.sub ? `<span class="term-sub-badge" title="子账号开的进程${p.sub_name ? ': ' + escHtml(p.sub_name) : ''}">子</span>` : ''}
+      ${subBadge(p)}
       ${p._host ? `<span class="term-host-badge${p._host_online === false ? ' offline' : ''}">${escHtml(p._host)}</span>` : ''}
       <span class="term-pane-kill" title="关闭终端" onclick="event.stopPropagation();_killSingle(this)">×</span>
       <span class="term-group-menu" onclick="event.stopPropagation();_openGroupMenu(event,'${escHtml(pid)}')" title="更多">⋯</span>

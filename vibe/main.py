@@ -3073,14 +3073,16 @@ def dev_panes_list(request: Request):
     for acc in (_vy.get("accounts") or []):
         oid = acc.get("feishu_open_id")
         if oid:
-            sub_sessions[_sub_session_name(oid)] = acc.get("name") or oid
+            sub_sessions[_sub_session_name(oid)] = acc
     all_panes = list_panes()
     result = []
     for p in all_panes:
         target = p["target"]
         sess = p.get("session", "")
         is_sub = sess.startswith("sub-")
-        sub_name = sub_sessions.get(sess)
+        sub_acc = sub_sessions.get(sess)
+        sub_name = (sub_acc.get("name") or sub_acc.get("feishu_open_id")) if sub_acc else None
+        sub_avatar = sub_acc.get("avatar") if sub_acc else None
         mon = monitored.get(target, {})
         label = mon.get("label") or f"{p['command']}/{Path(p['cwd']).name}"
         # Match cwd to a project by longest-path-prefix
@@ -3111,6 +3113,7 @@ def dev_panes_list(request: Request):
             "tool": tool,
             "sub": is_sub,
             "sub_name": sub_name,
+            "sub_avatar": sub_avatar,
         })
     # 合并远程 pane（加 alias 前缀）
     for host in _remote_hosts:
