@@ -1758,6 +1758,8 @@ async function selectPane(target, cmd) {
   _loadPaneTokens(target, tool);
   _updateTopbarUsage(tool);
   _startTokenRefresh(target, tool);
+  // 记住当前终端,iOS 后台回收/重载页面后可自动恢复(见 init),避免掉回列表
+  if (_isMobile) { try { localStorage.setItem('mira-dev-target', target); } catch(e) {} }
 }
 
 var _tokenRefreshTimer = null;
@@ -2135,6 +2137,7 @@ function showPlaceholder() {
   var switcher = document.getElementById('pane-switcher');
   if (switcher) switcher.classList.remove('open');
   _disconnectTermWs();
+  try { localStorage.removeItem('mira-dev-target'); } catch(e) {}  // 主动回列表 → 清掉恢复记录
   _currentIsRemote = false;
   if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
   window._topbarUsageMode = 'claude';
@@ -2438,6 +2441,7 @@ function _hasPaneTarget(target) {
   return !!document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"]');
 }
 
+var _wsRetryDelay = 2000;   // WS 重连退避(成功连上后在 onopen 重置)
 function _connectTermWs(target) {
   _disconnectTermWs();
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -2508,11 +2512,16 @@ function _connectTermWs(target) {
     termWs._cancelPendingRender();
     if (_termWs === termWs) _termWs = null;
     _setWsDot(false);
-    // Auto-reconnect if still viewing this pane in stream mode
+    // Auto-reconnect if still viewing this pane in stream mode.
+    // 后台(document.hidden)不重连:iOS 掐断连接时不该触发下面的"回列表"逻辑,
+    // 回前台由 visibilitychange 统一重连。
     if (_currentTarget !== target ||
-        !document.getElementById('dev-page').classList.contains('detail-open')) return;
+        !document.getElementById('dev-page').classList.contains('detail-open') ||
+        document.hidden) return;
+    var _retry = _wsRetryDelay;
+    _wsRetryDelay = Math.min(_wsRetryDelay * 1.5, 20000);   // 指数退避,防重连风暴
     setTimeout(async function() {
-      if (_currentTarget !== target) return;
+      if (_currentTarget !== target || document.hidden) return;
       try { await loadPanes(true); } catch(e) {}
       if (!_hasPaneTarget(target)) {
         _currentTarget = null;
@@ -2520,9 +2529,9 @@ function _connectTermWs(target) {
         return;
       }
       _connectTermWs(target);
-    }, 2000);
+    }, _retry);
   };
-  termWs.onopen = function() { _setWsDot(true); };
+  termWs.onopen = function() { _setWsDot(true); _wsRetryDelay = 2000; };
   termWs.onerror = function() {};
 }
 
@@ -2819,10 +2828,8 @@ function _openTabSwitcher() {
   requestAnimationFrame(function() { overlay.classList.add('visible'); });
   // 3D scroll
   overlay.addEventListener('scroll', _tabScrollRAF);
-  // Click backdrop to close
-  overlay.addEventListener('click', function(e) {
-    if (e.target === overlay || e.target.classList.contains('tab-grid')) _closeTabSwitcher();
-  });
+  // Click backdrop to close（命名函数:重复 open 时浏览器按引用去重,不会累加监听器）
+  overlay.addEventListener('click', _tabBackdropClick);
   // Click card to select
   overlay.querySelectorAll('.tab-card').forEach(function(card) {
     card.addEventListener('click', function() {
@@ -2836,6 +2843,10 @@ function _openTabSwitcher() {
   if (activeCard) activeCard.scrollIntoView({ block: 'center', behavior: 'instant' });
 }
 
+function _tabBackdropClick(e) {
+  var ov = document.getElementById('tab-switcher');
+  if (e.target === ov || e.target.classList.contains('tab-grid')) _closeTabSwitcher();
+}
 var _tabRAF = null;
 function _tabScrollRAF() {
   if (_tabRAF) return;
@@ -2863,6 +2874,7 @@ function _closeTabSwitcher() {
   if (!overlay) return;
   overlay.classList.remove('visible');
   overlay.removeEventListener('scroll', _tabScrollRAF);
+  overlay.removeEventListener('click', _tabBackdropClick);
   setTimeout(function() {
     overlay.classList.remove('open');
     overlay.innerHTML = '';
@@ -3299,7 +3311,22 @@ async function initSub() {
   _initMobileInput();
   _initUpload();
   await loadSubProjects();
-  setInterval(loadSubProjects, 15000);
+  var _subInterval = setInterval(loadSubProjects, 15000);
+  // 子账号视图也接 visibilitychange:后台暂停轮询/断 WS,省电、防请求风暴
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      clearInterval(_subInterval); _subInterval = null;
+      if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+      _disconnectTermWs();
+    } else {
+      loadSubProjects();
+      _subInterval = setInterval(loadSubProjects, 15000);
+      if (_currentTarget && document.getElementById('dev-page').classList.contains('detail-open')) {
+        if (_isMobile) _connectTermWs(_currentTarget);
+        _startTokenRefresh(_currentTarget, 'claude');
+      }
+    }
+  });
 }
 
 async function loadSubProjects() {
@@ -3448,6 +3475,14 @@ async function init() {
   }
   await loadDevGroups();
   await loadPanes();
+  // 移动端:iOS 可能在后台回收/重载页面 → 用上次停留的终端视图自动恢复,不再掉回项目列表。
+  // (该 target 已不存在则清掉记录。)
+  if (_isMobile) {
+    var _saved = null;
+    try { _saved = localStorage.getItem('mira-dev-target'); } catch(e) {}
+    if (_saved && _hasPaneTarget(_saved)) selectPane(_saved);
+    else if (_saved) { try { localStorage.removeItem('mira-dev-target'); } catch(e) {} }
+  }
   var _panesInterval = setInterval(loadPanes, 8000);
   _startBufferPoll();
   // Warm the lightweight project list while the page is idle so the first
@@ -3462,6 +3497,8 @@ async function init() {
       clearInterval(_panesInterval); _panesInterval = null;
       _stopBufferPoll();
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+      // 后台主动断开终端 WS:避免 iOS 掐断时触发 onclose 的重连/回列表逻辑
+      _disconnectTermWs();
     } else {
       loadPanes();
       _panesInterval = setInterval(loadPanes, 8000);
@@ -3469,6 +3506,10 @@ async function init() {
       if (_currentTarget) {
         var t = _paneToolMap[_currentTarget] || '';
         if (t) _startTokenRefresh(_currentTarget, t);
+        // 回前台:仍在流式终端视图则重连 WS 恢复输出
+        if (_isMobile && document.getElementById('dev-page').classList.contains('detail-open')) {
+          _connectTermWs(_currentTarget);
+        }
       }
     }
   });
