@@ -2792,7 +2792,9 @@ function _openTabSwitcher() {
   if (!overlay) return;
   if (overlay.classList.contains('open')) { _closeTabSwitcher(); return; }
   // Build from cached sidebar data (no API call)
-  var rows = document.querySelectorAll('.term-pane-row');
+  // 同时认分组里的 .term-pane-row 和单终端项目的 .term-single(只认前者会让全是
+  // 单终端项目的情况下切换器整个空掉)。两者的 name/projectId 取法不同,下面做兼容。
+  var rows = document.querySelectorAll('.term-pane-row[data-target], .term-single[data-target]');
   if (!rows.length) return;
   var cards = [];
   rows.forEach(function(row) {
@@ -2800,10 +2802,10 @@ function _openTabSwitcher() {
     var cmd = row.dataset.cmd || '';
     var isCurrent = (_currentTarget === target);
     var _tool = _paneToolMap[target] || row.dataset.tool || '';
-    var _pid = row.dataset.projectId || '';
+    var _pid = row.dataset.projectId || row.dataset.group || '';   // term-single 用 data-group
     var _isFoc = _focusProjects.indexOf(_pid) >= 0;
     var _dotColor = _tool === 'codex' ? '#22c55e' : _tool === 'claude' ? '#818cf8' : 'var(--border)';
-    var nameEl = row.querySelector('.term-pane-name-text');
+    var nameEl = row.querySelector('.term-pane-name-text') || row.querySelector('.term-group-name');
     var name = (nameEl ? nameEl.textContent : target).replace(/^.*\//, '');
     var snap = _paneSnapshots[target];
     var previewHtml = snap
