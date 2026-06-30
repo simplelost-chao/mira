@@ -68,6 +68,8 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_messages_role_ts ON messages(role, ts);
             CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
+            -- 多处 WHERE s.file_path LIKE '/path/%' 之前全表扫;前缀 LIKE 可用索引 range scan
+            CREATE INDEX IF NOT EXISTS idx_sessions_file_path ON sessions(file_path);
         """)
         # Migrate existing installations: add cache token columns if missing
         for col, defn in [
@@ -757,64 +759,55 @@ def get_stats(range_days: int = 30) -> dict:
 def get_top_sessions(sort_by: str = "cost", limit: int = 50) -> list[dict]:
     """Return top sessions ranked by cost or active_hours, with first user message as task summary."""
     try:
+        order = "ds.active_hours DESC" if sort_by == "hours" else "cost DESC"
         with _conn() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT ds.session_id,
                        ds.project_id,
                        COALESCE(s.project_name, ds.project_id) AS project_name,
                        ds.date,
                        ds.messages,
-                       ds.input_tokens,
-                       ds.output_tokens,
+                       COALESCE(ds.input_tokens, 0)          AS input_tokens,
+                       COALESCE(ds.output_tokens, 0)         AS output_tokens,
                        COALESCE(ds.cache_creation_tokens, 0) AS cache_creation_tokens,
                        COALESCE(ds.cache_read_tokens, 0)     AS cache_read_tokens,
                        ds.active_hours,
                        s.first_ts,
-                       s.last_ts
+                       s.last_ts,
+                       (COALESCE(ds.input_tokens,0)           * {_PRICE_INPUT * 1e6}
+                        + COALESCE(ds.output_tokens,0)         * {_PRICE_OUTPUT * 1e6}
+                        + COALESCE(ds.cache_creation_tokens,0) * {_PRICE_CACHE_WRITE * 1e6}
+                        + COALESCE(ds.cache_read_tokens,0)     * {_PRICE_CACHE_READ * 1e6}) / 1e6 AS cost
                 FROM   daily_stats ds
                 JOIN   sessions s ON s.id = ds.session_id
-                ORDER  BY ds.session_id
+                ORDER  BY {order}
+                LIMIT  ?
                 """,
+                (limit,),
             ).fetchall()
 
             if not rows:
                 return []
 
-            # Compute cost for each row and collect session ids
+            # 排序/取 top-N 已在 SQL 完成,这里只组装返回结构
             enriched = []
-            session_ids = []
             for r in rows:
-                inp = r['input_tokens'] or 0
-                out = r['output_tokens'] or 0
-                cc  = r['cache_creation_tokens'] or 0
-                cr  = r['cache_read_tokens'] or 0
-                cost = (inp * _PRICE_INPUT + out * _PRICE_OUTPUT
-                        + cc * _PRICE_CACHE_WRITE + cr * _PRICE_CACHE_READ)
                 enriched.append({
                     'session_id':             r['session_id'],
                     'project_id':             r['project_id'],
                     'project_name':           r['project_name'],
                     'date':                   r['date'],
                     'messages':               r['messages'] or 0,
-                    'input_tokens':           inp,
-                    'output_tokens':          out,
-                    'cache_creation_tokens':  cc,
-                    'cache_read_tokens':      cr,
+                    'input_tokens':           r['input_tokens'],
+                    'output_tokens':          r['output_tokens'],
+                    'cache_creation_tokens':  r['cache_creation_tokens'],
+                    'cache_read_tokens':      r['cache_read_tokens'],
                     'active_hours':           round(r['active_hours'] or 0, 2),
-                    'estimated_cost_usd':     round(cost, 4),
+                    'estimated_cost_usd':     round(r['cost'] or 0, 4),
                     'first_ts':               r['first_ts'],
                     'last_ts':                r['last_ts'],
                 })
-                session_ids.append(r['session_id'])
-
-            # Sort
-            if sort_by == "hours":
-                enriched.sort(key=lambda x: x['active_hours'], reverse=True)
-            else:
-                enriched.sort(key=lambda x: x['estimated_cost_usd'], reverse=True)
-
-            enriched = enriched[:limit]
 
             # Fetch first user message for each top session
             top_ids = [s['session_id'] for s in enriched]

@@ -2194,6 +2194,9 @@ def _mask_key(val: str) -> str:
 
 
 _vibe_yaml_cache: dict = {"mtime": None, "data": None}
+# 保护 _vibe_yaml_cache + 提供原子 read-modify-write(见 _mutate_vibe_yaml)。
+# 用 RLock:_mutate 持锁时内部还会调 _read/_write(各自再取锁),需可重入。
+_vibe_yaml_lock = threading.RLock()
 
 
 def _read_vibe_yaml() -> tuple[Path, dict]:
@@ -2205,26 +2208,39 @@ def _read_vibe_yaml() -> tuple[Path, dict]:
     # 按 mtime 缓存已解析结果，避免每次(含 5~8s 轮询)重读+解析 6.7KB yaml。
     # 返回 deepcopy：调用方常做 read→mutate→write，独立副本可防止改动污染缓存。
     mt = cfg_path.stat().st_mtime
-    if _vibe_yaml_cache["mtime"] == mt:
-        return cfg_path, copy.deepcopy(_vibe_yaml_cache["data"])
-    data = yaml.safe_load(cfg_path.read_text()) or {}
-    _vibe_yaml_cache["mtime"] = mt
-    _vibe_yaml_cache["data"] = data
-    return cfg_path, copy.deepcopy(data)
+    with _vibe_yaml_lock:
+        if _vibe_yaml_cache["mtime"] == mt:
+            return cfg_path, copy.deepcopy(_vibe_yaml_cache["data"])
+        data = yaml.safe_load(cfg_path.read_text()) or {}
+        _vibe_yaml_cache["mtime"] = mt
+        _vibe_yaml_cache["data"] = data
+        return cfg_path, copy.deepcopy(data)
 
 
 def _write_vibe_yaml(cfg_path: Path, data: dict) -> None:
     import yaml
-    cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
-    # mtime 已变，下次 _read_vibe_yaml 会重新解析；这里顺手刷新缓存避免一次多余解析
-    try:
-        _vibe_yaml_cache["mtime"] = cfg_path.stat().st_mtime
-        import copy
-        _vibe_yaml_cache["data"] = copy.deepcopy(data)
-    except Exception:
-        _vibe_yaml_cache["mtime"] = None
+    import copy
+    with _vibe_yaml_lock:
+        cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+        # mtime 已变，下次 _read_vibe_yaml 会重新解析；这里顺手刷新缓存避免一次多余解析
+        try:
+            _vibe_yaml_cache["mtime"] = cfg_path.stat().st_mtime
+            _vibe_yaml_cache["data"] = copy.deepcopy(data)
+        except Exception:
+            _vibe_yaml_cache["mtime"] = None
     from .config import invalidate_config_cache
     invalidate_config_cache()
+
+
+def _mutate_vibe_yaml(mutate):
+    """原子 read-modify-write vibe.yaml:在锁内读→改→写,防并发 lost update。
+    mutate(data) 就地修改 data,其返回值原样返回。所有需要改 vibe.yaml 的写路径
+    都应走这里(而不是各自散开的 _read_vibe_yaml + _write_vibe_yaml)。"""
+    with _vibe_yaml_lock:
+        cfg_path, data = _read_vibe_yaml()
+        result = mutate(data)
+        _write_vibe_yaml(cfg_path, data)
+        return result
 
 
 # ── Keys Vault CRUD ──────────────────────────────────────────────────────────
@@ -2739,10 +2755,7 @@ def save_settings(request: Request, body: dict):
         v = (body["notification_sound"] or "").strip()
         if v:
             data["notification_sound"] = v
-    cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
-    # invalidate config cache so next call re-reads from disk
-    from .config import invalidate_config_cache
-    invalidate_config_cache()
+    _write_vibe_yaml(cfg_path, data)   # 统一写:刷新缓存 + 持写锁 + invalidate_config_cache
     # invalidate balance cache with fresh config
     from .balance import fetch_all_balances
     from .config import load_global_config
@@ -2825,7 +2838,7 @@ def add_remote_host_endpoint(request: Request, body: dict):
     entry.pop("admin_password", None)
     remote_hosts.append(entry)
     data["remote_hosts"] = remote_hosts
-    cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+    _write_vibe_yaml(cfg_path, data)
     # 热加载到运行时
     existing = _get_remote_host(alias)
     if existing:
@@ -2853,7 +2866,7 @@ def remove_remote_host_endpoint(request: Request, alias: str):
     if len(new_hosts) == len(remote_hosts):
         raise HTTPException(status_code=404, detail="未找到该主机")
     data["remote_hosts"] = new_hosts
-    cfg_path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+    _write_vibe_yaml(cfg_path, data)
     # 从���行时移��
     for i, h in enumerate(_remote_hosts):
         if h.alias == alias:
@@ -3260,15 +3273,15 @@ def list_accounts(request: Request):
 
 
 def _update_account(open_id: str, mutate):
-    """读 vibe.yaml,对匹配 open_id 的账号执行 mutate,写回。找不到则 404。"""
-    cfg_path, data = _read_vibe_yaml()
-    accounts_list = data.get("accounts", [])
-    acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
-    if not acc:
-        raise HTTPException(status_code=404, detail="账号不存在")
-    mutate(acc)
-    data["accounts"] = accounts_list
-    _write_vibe_yaml(cfg_path, data)
+    """原子 read-modify-write:对匹配 open_id 的账号执行 mutate,写回。找不到则 404。"""
+    def _do(data):
+        accounts_list = data.get("accounts", [])
+        acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
+        if not acc:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        mutate(acc)
+        data["accounts"] = accounts_list
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -3843,7 +3856,10 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
                 last_change_at = time.monotonic()
                 await ws.send_text(text)
             active = (time.monotonic() - last_change_at) < 1.5
-            await asyncio.sleep(0.04 if active else 0.16)
+            # 8 FPS(活跃)/3 FPS(空闲)对终端阅读已足够。每帧是一次 capture-pane subprocess
+            # fork(拉 300 行带 ANSI),原来的 25 FPS 在多客户端时会把 threadpool 线程吃满、
+            # 拖慢其他同步端点(panes 轮询/focus/写操作)。
+            await asyncio.sleep(0.12 if active else 0.3)
     except WebSocketDisconnect:
         pass
     except Exception as e:
