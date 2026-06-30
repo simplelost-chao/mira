@@ -928,11 +928,10 @@ def new_project_page(request: Request):
     return HTMLResponse(render_new_project_page(), headers=_NC)
 
 
-@api.get("/accounts", response_class=HTMLResponse)
+@api.get("/accounts")
 def accounts_page_route():
-    """owner 的子账号管理页(页面壳;数据/操作走 _is_admin 守卫的 /api/accounts)。"""
-    from vibe.accounts_page import render_accounts_page
-    return HTMLResponse(render_accounts_page(), headers=_NC)
+    """子账号管理已并入「设置 → 子账户」tab;旧链接重定向到 dev 页(可从齿轮进入设置)。"""
+    return RedirectResponse(url="/dev", status_code=302)
 
 
 @api.get("/sub")

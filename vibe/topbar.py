@@ -204,11 +204,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
                       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
                       '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'
                       '</svg></a>')
-        parts.append('  <a class="topbar-btn" href="/accounts" title="子账号" style="text-decoration:none">'
-                      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-                      '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
-                      '<path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
-                      '</svg></a>')
+        # 子账号管理已并入「设置 → 子账户」tab,顶部不再单独放账号图标。
     parts += [
         '  <button class="topbar-btn" onclick="openSettings()" title="设置">',
         '    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">',
@@ -236,7 +232,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
 def settings_overlay_html() -> str:
     """Shared settings JS + login overlay."""
     return """\
-<script src="/static/settings.js?v=4"></script>
+<script src="/static/settings.js?v=5"></script>
 <script>initSettings();</script>
 
 <!-- Login overlay -->

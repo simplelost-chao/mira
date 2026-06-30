@@ -115,6 +115,41 @@
   font-family: var(--font-mono, var(--mono)); font-size: 11px;
 }
 .rhost-guide h4 { color: var(--accent); font-size: 11px; margin: 8px 0 4px; font-weight: 600; }
+
+/* 子账户 tab(owner-only) */
+.acc-hint { font-size: 10.5px; color: var(--text-muted, var(--muted)); line-height: 1.6; margin-bottom: 14px; }
+.acc-tab-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--orange, #f59e0b); margin-left: 5px; vertical-align: middle; }
+.acc-sec { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--text-muted, var(--muted)); margin: 16px 0 8px; }
+.acc-sec:first-child { margin-top: 0; }
+.acc-sec.pending { color: var(--orange, #f59e0b); }
+.acc-card { background: var(--card-deep, var(--bg)); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.acc-card.pending { border-color: color-mix(in srgb, var(--orange, #f59e0b) 55%, transparent); background: color-mix(in srgb, var(--orange, #f59e0b) 8%, transparent); }
+.acc-row { display: flex; align-items: center; gap: 9px; }
+.acc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.acc-dot.pending { background: var(--orange, #f59e0b); }
+.acc-dot.active { background: var(--green, #22c55e); }
+.acc-dot.disabled { background: var(--muted); }
+.acc-av { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }
+.acc-meta { min-width: 0; flex-shrink: 1; }
+.acc-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-spacer { flex: 1; }
+.acc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.acc-btn { font-size: 11.5px; font-family: var(--font-mono, var(--mono)); padding: 4px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: none; color: var(--text); transition: all .12s; white-space: nowrap; }
+.acc-btn:hover { border-color: var(--accent); color: var(--accent); }
+.acc-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.acc-btn.danger { color: var(--red, #ef4444); border-color: color-mix(in srgb, var(--red, #ef4444) 40%, transparent); }
+.acc-btn.danger:hover { background: color-mix(in srgb, var(--red, #ef4444) 12%, transparent); }
+.acc-btn.link { border: none; padding: 4px 4px; color: var(--text-muted, var(--muted)); }
+.acc-btn.link:hover { color: var(--accent); }
+.acc-caret { display: inline-block; transition: transform .15s; }
+.acc-caret.open { transform: rotate(180deg); }
+.acc-grant { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.acc-grant.open { display: block; }
+.acc-grant-title { font-size: 10.5px; color: var(--text-muted, var(--muted)); margin-bottom: 7px; }
+.acc-grid { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.acc-chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-sec, var(--sub)); cursor: pointer; }
+.acc-chk input { accent-color: var(--accent); cursor: pointer; }
+.acc-empty { color: var(--text-muted, var(--muted)); font-size: 11.5px; padding: 8px 0; }
 `;
   document.head.appendChild(style);
 })();
@@ -208,6 +243,7 @@ function initSettings() {
       <button class="settings-tab" onclick="switchSettingsTab('api',this)">API</button>
       <button class="settings-tab" onclick="switchSettingsTab('hosts',this)">远程主机</button>
       <button class="settings-tab" onclick="switchSettingsTab('security',this)">安全</button>
+      <button class="settings-tab" onclick="switchSettingsTab('accounts',this)">子账户<span class="acc-tab-dot" id="acc-tab-dot" style="display:none"></span></button>
     </div>
 
     <!-- 外观 tab -->
@@ -339,6 +375,12 @@ function initSettings() {
       </details>
     </div>
 
+    <!-- 子账户 tab (owner-only) -->
+    <div class="settings-tab-panel" id="settings-panel-accounts">
+      <div class="acc-hint">子账号通过飞书登录后进入"待批准";批准并勾选授权项目后,他才能登录、只看/操作被授权项目里的 Claude 会话(无裸 shell)。</div>
+      <div id="acc-root"><div class="acc-empty">加载中…</div></div>
+    </div>
+
     <!-- 安全 tab -->
     <div class="settings-tab-panel" id="settings-panel-security">
       <div class="settings-group">
@@ -367,7 +409,7 @@ async function openSettings() {
     _renderSettingsSkins();
     switchSettingsTab('appearance', document.querySelector('.settings-tab'));
     [...document.querySelectorAll('.settings-tabs .settings-tab')].forEach(function(t) {
-      if (/'(api|hosts|security)'/.test(t.getAttribute('onclick') || '')) t.style.display = 'none';
+      if (/'(api|hosts|security|accounts)'/.test(t.getAttribute('onclick') || '')) t.style.display = 'none';
     });
     [...document.querySelectorAll('#settings-panel-appearance .settings-group')].forEach(function(g, i) {
       g.style.display = i === 0 ? '' : 'none';
@@ -421,9 +463,120 @@ async function openSettings() {
   var _flatCb = document.getElementById('set-dev-flat-list');
   if (_flatCb) _flatCb.checked = !!localStorage.getItem('mira-dev-flat-list');
   _loadRemoteHosts();
+  _loadAccounts();
   // Reset to first tab
   switchSettingsTab('appearance', document.querySelector('.settings-tab'));
   document.getElementById('settings-overlay').classList.add('open');
+}
+
+/* ── 子账户(owner-only):审批 + 项目授权 ─────────────────────────────────────── */
+let _accProjects = [];
+const _ACC_SEC = { pending: '待批准', active: '已启用', disabled: '已禁用' };
+
+async function _loadAccounts() {
+  const root = document.getElementById('acc-root');
+  if (!root) return;
+  try {
+    const [accs, projs] = await Promise.all([
+      fetch('/api/accounts', { headers: _authHeaders() }).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+      fetch('/api/dev/project-options', { headers: _authHeaders() }).then(r => r.ok ? r.json() : []),
+    ]);
+    _accProjects = projs || [];
+    _renderAccounts(accs || []);
+  } catch (e) {
+    root.innerHTML = '<div class="acc-empty">' + (e === 401 ? '需要管理员权限' : '加载失败') + '</div>';
+  }
+}
+
+function _accHeadRow(a, tail) {
+  const lead = a.avatar ? `<img class="acc-av" src="${_escAttr(a.avatar)}" alt="">`
+                        : `<span class="acc-dot ${a.status}"></span>`;
+  return `<div class="acc-row">${lead}
+    <div class="acc-meta"><div class="acc-name">${_escSettings(a.name || '(未命名)')}</div></div>
+    ${tail || ''}</div>`;
+}
+
+function _accGrantCount(a) {
+  return (a.projects || []).filter(pid => _accProjects.some(p => p.id === pid)).length;
+}
+
+function _accGrantPanel(a) {
+  const oid = _escAttr(a.feishu_open_id);
+  const granted = new Set(a.projects || []);
+  const boxes = _accProjects.map(p =>
+    `<label class="acc-chk"><input type="checkbox" data-pid="${_escAttr(p.id)}" ${granted.has(p.id) ? 'checked' : ''}>${_escSettings(p.name)}</label>`
+  ).join('') || '<span class="acc-empty">暂无项目</span>';
+  return `<div class="acc-grant" data-grant="${oid}">
+    <div class="acc-grant-title">勾选授权项目后保存</div>
+    <div class="acc-grid" data-oid="${oid}">${boxes}</div>
+    <button class="acc-btn primary" style="margin-top:9px" onclick="_accSaveGrant('${oid}',this)">保存授权</button>
+  </div>`;
+}
+
+function _renderAccounts(accs) {
+  const pending  = accs.filter(a => a.status === 'pending');
+  const active   = accs.filter(a => a.status === 'active');
+  const disabled = accs.filter(a => a.status === 'disabled');
+  let h = '';
+
+  if (pending.length) {
+    h += `<div class="acc-sec pending">⚠ 待批准 · ${pending.length}</div>`;
+    h += pending.map(a => {
+      const oid = _escAttr(a.feishu_open_id);
+      return `<div class="acc-card pending">${_accHeadRow(a,
+        `<div class="acc-spacer"></div><div class="acc-actions">
+           <button class="acc-btn primary" onclick="_accAct('${oid}','approve')">✓ 批准</button>
+           <button class="acc-btn danger" onclick="_accAct('${oid}','disable')">✕ 拒绝</button>
+         </div>`)}</div>`;
+    }).join('');
+  }
+
+  h += `<div class="acc-sec">已启用 · ${active.length}</div>`;
+  h += active.length ? active.map(a => {
+    const oid = _escAttr(a.feishu_open_id);
+    return `<div class="acc-card active">${_accHeadRow(a,
+      `<div class="acc-spacer"></div><div class="acc-actions">
+         <button class="acc-btn link" onclick="_accToggleGrant('${oid}',this)">授权${_accGrantCount(a)} <span class="acc-caret">⌄</span></button>
+         <button class="acc-btn danger" onclick="_accAct('${oid}','disable')">禁用</button>
+       </div>`)}${_accGrantPanel(a)}</div>`;
+  }).join('') : '<div class="acc-empty">还没有启用的子账号</div>';
+
+  if (disabled.length) {
+    h += `<div class="acc-sec">已禁用 · ${disabled.length}</div>`;
+    h += disabled.map(a => {
+      const oid = _escAttr(a.feishu_open_id);
+      return `<div class="acc-card">${_accHeadRow(a,
+        `<div class="acc-spacer"></div><button class="acc-btn" onclick="_accAct('${oid}','approve')">重新启用</button>`)}</div>`;
+    }).join('');
+  }
+
+  document.getElementById('acc-root').innerHTML = h || '<div class="acc-empty">还没有子账号</div>';
+  const dot = document.getElementById('acc-tab-dot');
+  if (dot) dot.style.display = pending.length ? '' : 'none';
+}
+
+function _accToggleGrant(oid, btn) {
+  const panel = document.querySelector(`.acc-grant[data-grant="${CSS.escape(oid)}"]`);
+  if (!panel) return;
+  const open = panel.classList.toggle('open');
+  const caret = btn.querySelector('.acc-caret');
+  if (caret) caret.classList.toggle('open', open);
+}
+
+async function _accAct(oid, action) {
+  if (action === 'disable' && !confirm('确认禁用/拒绝该账号?')) return;
+  const res = await fetch(`/api/accounts/${encodeURIComponent(oid)}/${action}`, { method: 'POST', headers: _authHeaders() });
+  if (res.ok) _loadAccounts(); else alert('操作失败');
+}
+
+async function _accSaveGrant(oid, btn) {
+  const grid = document.querySelector(`.acc-grid[data-oid="${CSS.escape(oid)}"]`);
+  const projects = [...grid.querySelectorAll('input:checked')].map(i => i.dataset.pid);
+  const res = await fetch(`/api/accounts/${encodeURIComponent(oid)}/projects`, {
+    method: 'PUT', headers: _authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ projects })
+  });
+  if (res.ok) { const o = btn.textContent; btn.textContent = '已保存'; setTimeout(() => btn.textContent = o, 1200); }
+  else alert('保存失败');
 }
 
 function closeSettings() {
