@@ -137,6 +137,7 @@ def topbar_css() -> str:
         "  @keyframes topbar-blink { 0%,100%{opacity:.9}50%{opacity:0} }\n"
         "  .topbar-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }\n"
         "  .topbar-page-title { font-size: 12px; color: var(--sub); letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }\n"
+        "  .topbar-project-name { font-size: 12px; color: var(--accent); letter-spacing: .3px; font-weight: 600; max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n"
         "  .topbar-spacer { flex: 1; }\n"
         "  .topbar-back {\n"
         "    display: inline-flex; align-items: center; gap: 5px;\n"
@@ -195,6 +196,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
         parts += [
             '  <div class="topbar-sep"></div>',
             f'  <span class="topbar-page-title">{title}</span>',
+            '  <span class="topbar-project-name" id="topbar-project-name"></span>',
         ]
     parts.append('  <div class="topbar-spacer"></div>')
     if back_url:

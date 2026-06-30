@@ -1728,18 +1728,23 @@ async function selectPane(target, cmd) {
   }
 
   // Update title with project name (from group header, not pane label)
-  const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"]`);
+  const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"], .term-single[data-target="${CSS.escape(target)}"]`);
   const titleEl = document.getElementById('term-detail-title');
   const pageTitle = document.querySelector('.topbar-page-title');
   if (activeRow) {
-    var pid = activeRow.dataset.projectId;
+    var pid = activeRow.dataset.projectId || activeRow.dataset.group;   // term-single 用 data-group
     var groupEl = pid ? document.querySelector('.term-group-name[data-group="' + CSS.escape(pid) + '"]') ||
                         document.querySelector('[data-group="' + CSS.escape(pid) + '"] .term-group-name') : null;
-    var name = groupEl ? groupEl.textContent : (activeRow.querySelector('.term-pane-name-text')?.textContent || target);
+    var name = groupEl ? groupEl.textContent
+                       : (activeRow.querySelector('.term-pane-name-text')?.textContent
+                          || activeRow.querySelector('.term-group-name')?.textContent || target);
     // Strip path prefix: "node/argus" → "argus"
     name = name.replace(/^.*\//, '');
     if (titleEl) titleEl.textContent = name;
     if (pageTitle && _isMobile) pageTitle.textContent = name;
+    // 桌面:在 logo「DEV」后显示当前项目名(移动端 page-title 本身已替换为项目名,不重复)
+    var projName = document.getElementById('topbar-project-name');
+    if (projName) projName.textContent = _isMobile ? '' : ' · ' + name;
   }
 
   if (!_isMobile && !_currentIsRemote) {
@@ -2153,6 +2158,8 @@ function showPlaceholder() {
   document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = ''; });
   var pt = document.querySelector('.topbar-page-title');
   if (pt) pt.textContent = 'Dev';
+  var pn = document.getElementById('topbar-project-name');
+  if (pn) pn.textContent = '';   // 回列表 → 清掉 logo 后的项目名
 }
 
 // ── New window ────────────────────────────────────────────────────────────────
@@ -2160,7 +2167,7 @@ async function newWindow(cwd) {
   try {
     // Snapshot existing targets before creating
     var oldTargets = new Set(
-      Array.from(document.querySelectorAll('.term-pane-row')).map(r => r.dataset.target)
+      Array.from(document.querySelectorAll('.term-pane-row[data-target], .term-single[data-target]')).map(r => r.dataset.target)
     );
     await fetch('/api/terminal/new-window', {
       method: 'POST',
@@ -3111,7 +3118,7 @@ async function _uploadImage(file) {
   try {
     // 远程 pane → 带 host 参数转发到远程主机
     var uploadUrl = '/api/upload/image';
-    var activeRow = document.querySelector('.term-pane-row.active');
+    var activeRow = document.querySelector('.term-pane-row.active, .term-single.active');
     if (activeRow) {
       var target = activeRow.getAttribute('data-target') || '';
       var hostMatch = _paneHostMap && _paneHostMap[target];
