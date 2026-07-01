@@ -3574,17 +3574,7 @@ init();
     </div>
     <!-- Desktop toolbar (above iframe, visible when pane selected) -->
     <div class="term-toolbar" id="term-toolbar">
-      <label class="term-toolbar-btn" for="desktop-file-input" title="上传文件">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-        </svg>
-      </label>
-      <input type="file" id="desktop-file-input" style="display:none">
-      <button class="term-toolbar-btn" onclick="_pasteFromClipboard()" title="粘贴图片">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-        </svg>
-      </button>
+      <!-- 上传/粘贴已统一到输入框左侧(桌面开"输入框模式"即有);顶部工具栏只保留状态显示 -->
       <span class="toolbar-spacer"></span>
       <span class="desktop-ws-dot err" id="desktop-ws-dot" title="终端连接中"></span>
       <span class="toolbar-tokens" id="toolbar-tokens"></span>
