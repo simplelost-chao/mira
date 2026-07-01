@@ -133,6 +133,38 @@ def _sum_tokens(jsonl_path: Path) -> dict:
     return totals
 
 
+def get_latest_session_context(folder_prefix: str) -> int | None:
+    """当前 context 占用 = 最新会话文件里最后一条 assistant 消息的 input+cache 之和
+    (= 那次请求送进模型的全部 token,约等于当前上下文占用;越到后面越大)。"""
+    import glob, os, json
+    files = glob.glob(folder_prefix + '/*.jsonl')
+    if not files:
+        return None
+    try:
+        latest = max(files, key=lambda f: os.path.getmtime(f))
+    except OSError:
+        return None
+    ctx = None
+    try:
+        with open(latest, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if '"usage"' not in line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                m = e.get('message') or {}
+                if m.get('role') != 'assistant':
+                    continue
+                u = m.get('usage') or {}
+                ctx = (u.get('input_tokens', 0) + u.get('cache_read_input_tokens', 0)
+                       + u.get('cache_creation_input_tokens', 0))   # 覆盖到最后一条
+    except OSError:
+        return None
+    return ctx
+
+
 def collect_claude_activity(project_path: str, aliases: list[str] | None = None) -> dict:
     """Return Claude session activity for a project, queried from history_db.
 

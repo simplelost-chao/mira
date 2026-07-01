@@ -609,6 +609,9 @@ def render_dev_page() -> str:
   .tok-badge.claude { background: rgba(129,140,248,.15); color: #818cf8; }
   .tok-badge.codex { background: rgba(34,197,94,.15); color: #22c55e; }
   .tok-warn { color: #f59e0b; font-size: 14px; cursor: help; animation: tok-pulse 2s ease-in-out infinite; margin-left: 2px; }
+  .tok-ctx { font-weight: 700; color: var(--sub); cursor: help; }
+  .tok-ctx.ctx-mid { color: var(--orange, #f59e0b); }
+  .tok-ctx.ctx-hi { color: var(--red, #ef4444); }
   @keyframes tok-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
   .tok-dropdown { position: absolute; top: calc(100% + 8px); right: 0; z-index: 300;
@@ -1833,6 +1836,14 @@ async function _loadPaneTokens(target, tool) {
     var avgCtx = msgs > 0 ? totalCtx / msgs : 0;
 
     var html = badge;
+    // 当前 context 占用(最后一次请求送入的总 token) / context window
+    var ctxTok = d.context_tokens || 0;
+    if (ctxTok > 0) {
+      var ctxWin = parseInt(localStorage.getItem('mira-ctx-window') || '1000000', 10);
+      var ctxPct = Math.min(100, Math.round(ctxTok / ctxWin * 100));
+      var ctxCls = ctxPct >= 80 ? 'ctx-hi' : ctxPct >= 60 ? 'ctx-mid' : '';
+      html += '<span class="tok-item tok-ctx ' + ctxCls + '" title="当前上下文 ' + fT(ctxTok) + ' / ' + fT(ctxWin) + ' · ' + ctxPct + '%（越满越该开新会话；context window 默认按 1M 算，可在 localStorage mira-ctx-window 改）">ctx ' + ctxPct + '%</span>';
+    }
     html += '<span class="tok-item" title="上行 tokens"><span class="tok-icon tok-up">▲</span><span class="tok-val">' + fT(totalCtx) + '</span></span>';
     html += '<span class="tok-item" title="下行 tokens"><span class="tok-icon tok-down">▼</span><span class="tok-val">' + fT(d.output_tokens) + '</span></span>';
     html += '<span class="tok-item" title="上行流量 ' + fB(uploadBytes) + ' / 下行流量 ' + fB(downloadBytes) + '"><span style="color:var(--muted);font-size:10px">' + fB(uploadBytes) + '/' + fB(downloadBytes) + '</span></span>';

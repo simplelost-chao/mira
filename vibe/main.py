@@ -3535,11 +3535,47 @@ def sub_pane_send(request: Request, target: str, body: dict):
     return {"ok": True}
 
 
+def _sync_sub_activity_from_tmux() -> None:
+    """把当前 tmux 里 sub-<openid> session 回填进 sub_activity(时间推断归属用):
+    每个 (子账号,项目) 用 session 创建时刻作为 first_ts、now 作为 last_ts,这样审计能把
+    这些 session 期间该项目的会话算给子账号(近似,可能把 owner 在同项目的活动也算进去)。"""
+    try:
+        from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+        from vibe.history_db import record_sub_activity
+        _, d = _read_vibe_yaml()
+        name2oid = {}
+        for a in (d.get("accounts") or []):
+            oid = a.get("feishu_open_id")
+            if oid:
+                name2oid[_sub_session_name(oid)] = oid
+        r = subprocess.run([_TMUX_BIN, "list-windows", "-a", "-F",
+                            "#{session_name}\t#{window_name}\t#{session_created}"],
+                           capture_output=True, text=True, env=_TMUX_ENV)
+        now = int(time.time() * 1000)
+        for line in r.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            sess, win, created = parts
+            oid = name2oid.get(sess)
+            if not oid or not win:
+                continue
+            try:
+                created_ms = int(created) * 1000
+            except ValueError:
+                created_ms = now
+            record_sub_activity(oid, win, created_ms)
+            record_sub_activity(oid, win, now)
+    except Exception:
+        pass
+
+
 @api.get("/api/sub-audit")
 def sub_audit_data(request: Request):
     """owner:每个子账号的 prompts + token/开销(时间推断归属,见 history_db)。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
+    _sync_sub_activity_from_tmux()   # 先按当前子账号 session 回填,确保有数据
     from vibe.history_db import get_sub_account_audit
     _, data = _read_vibe_yaml()
     result = []
@@ -3785,6 +3821,13 @@ def dev_pane_tokens(request: Request, target: str = "", tool: str = ""):
     stats = get_latest_session_stats(folder_prefix)
     if stats:
         stats["tool"] = "claude"
+        try:
+            from vibe.collectors.claude_sessions import get_latest_session_context
+            ctx = get_latest_session_context(folder_prefix)
+            if ctx:
+                stats["context_tokens"] = ctx   # 当前 context 占用(最后一次请求送入的总量)
+        except Exception:
+            pass
     return stats or {}
 
 
