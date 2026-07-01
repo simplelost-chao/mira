@@ -621,6 +621,96 @@ def get_sub_account_audit(open_id: str, prompt_limit: int = 300) -> dict:
         return empty
 
 
+def get_project_daily(project_id: str, folder_prefix: str, extra_ids: list[str] | None = None) -> dict:
+    """项目**全历史**按天统计(供详情页可往前翻的趋势图):
+    返回 {days:[{date, sessions, messages, input/output/cache tokens, total_tokens, cost}], totals:{...}}。"""
+    all_ids = [project_id] + list(extra_ids or [])
+    ph = ','.join('?' * len(all_ids))
+    folder_like = folder_prefix + '/%'
+    empty = {"days": [], "totals": {"sessions": 0, "messages": 0, "input_tokens": 0,
+             "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0,
+             "total_tokens": 0, "estimated_cost_usd": 0.0}}
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT ds.date AS date,
+                       COUNT(DISTINCT ds.session_id)             AS sessions,
+                       SUM(COALESCE(ds.messages,0))              AS messages,
+                       SUM(COALESCE(ds.input_tokens,0))          AS input_tokens,
+                       SUM(COALESCE(ds.output_tokens,0))         AS output_tokens,
+                       SUM(COALESCE(ds.cache_creation_tokens,0)) AS cache_creation_tokens,
+                       SUM(COALESCE(ds.cache_read_tokens,0))     AS cache_read_tokens
+                FROM   daily_stats ds
+                JOIN   sessions s ON s.id = ds.session_id
+                WHERE  ds.project_id IN ({ph}) OR s.file_path LIKE ?
+                GROUP  BY ds.date
+                ORDER  BY ds.date ASC
+                """,
+                all_ids + [folder_like],
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return empty
+    days, tot = [], dict(empty["totals"])
+    for r in rows:
+        inp, out = r["input_tokens"] or 0, r["output_tokens"] or 0
+        cc, cr = r["cache_creation_tokens"] or 0, r["cache_read_tokens"] or 0
+        total_tok = inp + out + cc + cr
+        cost = (inp*_PRICE_INPUT + out*_PRICE_OUTPUT + cc*_PRICE_CACHE_WRITE + cr*_PRICE_CACHE_READ)
+        days.append({
+            "date": r["date"], "sessions": r["sessions"] or 0, "messages": r["messages"] or 0,
+            "input_tokens": inp, "output_tokens": out,
+            "cache_creation_tokens": cc, "cache_read_tokens": cr,
+            "total_tokens": total_tok, "estimated_cost_usd": round(cost, 4),
+        })
+        tot["sessions"] += r["sessions"] or 0
+        tot["messages"] += r["messages"] or 0
+        tot["input_tokens"] += inp; tot["output_tokens"] += out
+        tot["cache_creation_tokens"] += cc; tot["cache_read_tokens"] += cr
+        tot["total_tokens"] += total_tok; tot["estimated_cost_usd"] += cost
+    tot["estimated_cost_usd"] = round(tot["estimated_cost_usd"], 4)
+    return {"days": days, "totals": tot}
+
+
+def get_project_sub_collab(project_id: str) -> list[dict]:
+    """该项目里有过 sub_activity 记录的子账号 + 归属会话的统计(时间推断,同 get_sub_account_audit)。
+    返回 [{open_id, sessions, messages, total_tokens, estimated_cost_usd}];name/avatar 由调用方补。"""
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT a.open_id AS open_id,
+                       COUNT(DISTINCT s.id)                      AS sessions,
+                       SUM(COALESCE(ds.messages,0))              AS messages,
+                       SUM(COALESCE(ds.input_tokens,0))          AS input_tokens,
+                       SUM(COALESCE(ds.output_tokens,0))         AS output_tokens,
+                       SUM(COALESCE(ds.cache_creation_tokens,0)) AS cache_creation_tokens,
+                       SUM(COALESCE(ds.cache_read_tokens,0))     AS cache_read_tokens
+                FROM   sub_activity a
+                JOIN   sessions s ON s.project_id = a.project_id
+                       AND s.first_ts BETWEEN a.first_ts - ? AND a.last_ts + ?
+                LEFT JOIN daily_stats ds ON ds.session_id = s.id
+                WHERE  a.project_id = ?
+                GROUP  BY a.open_id
+                """,
+                (_SUB_GRACE_MS, _SUB_GRACE_MS, project_id),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    out_list = []
+    for r in rows:
+        inp, o = r["input_tokens"] or 0, r["output_tokens"] or 0
+        cc, cr = r["cache_creation_tokens"] or 0, r["cache_read_tokens"] or 0
+        cost = (inp*_PRICE_INPUT + o*_PRICE_OUTPUT + cc*_PRICE_CACHE_WRITE + cr*_PRICE_CACHE_READ)
+        out_list.append({
+            "open_id": r["open_id"], "sessions": r["sessions"] or 0,
+            "messages": r["messages"] or 0, "total_tokens": inp + o + cc + cr,
+            "estimated_cost_usd": round(cost, 4),
+        })
+    out_list.sort(key=lambda x: x["estimated_cost_usd"], reverse=True)
+    return out_list
+
+
 def get_prompts(project_id: str, limit: int = 200) -> list[dict]:
     """Return user prompts for a project, most recent first."""
     try:

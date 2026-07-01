@@ -1202,6 +1202,33 @@ def get_project_sessions(request: Request, project_id: str):
     return get_session_details(project_id, folder_prefix, aliases)
 
 
+@api.get("/api/projects/{project_id}/insights")
+def get_project_insights(request: Request, project_id: str):
+    """详情页:全历史按天(会话/token/开销,可往前翻) + 该项目的子账号协同统计。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    projects = get_all_projects_with_remote()
+    proj = next((p for p in projects if p["id"] == project_id), None)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    from pathlib import Path as _P
+    project_path = proj.get("path", "")
+    encoded = '-' + project_path.replace('/', '-').lstrip('-')
+    folder_prefix = str(_P.home() / '.claude' / 'projects' / encoded)
+    aliases = (proj.get("_vibe_config") or {}).get("aliases", [])
+    from vibe.history_db import get_project_daily, get_project_sub_collab
+    daily = get_project_daily(project_id, folder_prefix, aliases)
+    collab = get_project_sub_collab(project_id)
+    if collab:
+        _, vy = _read_vibe_yaml()
+        by_oid = {a.get("feishu_open_id"): a for a in (vy.get("accounts") or [])}
+        for c in collab:
+            acc = by_oid.get(c["open_id"]) or {}
+            c["name"] = acc.get("name") or c["open_id"]
+            c["avatar"] = acc.get("avatar") or ""
+    return {"days": daily["days"], "totals": daily["totals"], "sub_collab": collab}
+
+
 @api.get("/api/prompts")
 def get_all_prompts(request: Request):
     """Return user prompts grouped by project from the session index DB."""

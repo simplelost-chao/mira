@@ -188,6 +188,31 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   }}
   .stats-val {{ font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 2px; font-variant-numeric: tabular-nums; }}
   .stats-lbl {{ font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }}
+  /* 30天会话趋势图(全宽、可翻页) */
+  .trend-block {{ margin: 6px 0 18px; }}
+  .trend-head {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }}
+  .trend-title {{ font-size: 12px; font-weight: 700; color: var(--text); letter-spacing: .5px; }}
+  .trend-nav {{ display: flex; align-items: center; gap: 8px; }}
+  .trend-navbtn {{ font-size: 11px; font-family: var(--mono); background: none; border: 1px solid var(--border); color: var(--sub); border-radius: 6px; padding: 3px 9px; cursor: pointer; }}
+  .trend-navbtn:hover:not(:disabled) {{ border-color: var(--accent); color: var(--accent); }}
+  .trend-navbtn:disabled {{ opacity: .35; cursor: default; }}
+  .trend-range {{ font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }}
+  .trend-bars {{ display: flex; align-items: flex-end; gap: 2px; height: 130px; padding: 10px 6px 0; background: var(--card-deep, rgba(255,255,255,.02)); border: 1px solid var(--border); border-radius: 10px; }}
+  .trend-col {{ flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }}
+  .trend-bar-wrap {{ flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; }}
+  .trend-bar {{ width: 72%; max-width: 16px; background: var(--purple, var(--accent)); border-radius: 2px 2px 0 0; min-height: 2px; }}
+  .trend-col:hover .trend-bar {{ opacity: .65; }}
+  .trend-xlabel {{ font-size: 8px; color: var(--muted); margin-top: 4px; height: 10px; white-space: nowrap; }}
+  /* 子账号协同 */
+  .sc-block {{ border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; background: rgba(255,255,255,.02); }}
+  .sc-title {{ font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 8px; letter-spacing: .5px; }}
+  .sc-row {{ display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--border); }}
+  .sc-row:last-of-type {{ border-bottom: none; }}
+  .sc-av {{ width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }}
+  .sc-dot {{ width: 24px; height: 24px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); flex-shrink: 0; }}
+  .sc-name {{ font-size: 13px; font-weight: 600; color: var(--text); }}
+  .sc-stat {{ flex: 1; text-align: right; font-size: 11px; color: var(--sub); white-space: nowrap; }}
+  .sc-more {{ display: inline-block; margin-top: 8px; font-size: 11px; color: var(--accent); text-decoration: none; }}
   .summary-grid {{
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 12px; margin-bottom: 12px;
@@ -709,10 +734,15 @@ function simpleMarkdown(md) {{
     html += `<div class="stats-bar">
       <div class="stats-cell"><div class="stats-val gold">${{git.monthly_commits ?? 0}}</div><div class="stats-lbl">本月提交</div></div>
       <div class="stats-cell"><div class="stats-val purple">${{ca ? (ca._masked ? '***' : '$' + (ca.estimated_cost_usd||0).toFixed(1)) : '—'}}</div><div class="stats-lbl">Claude 花费</div></div>
+      <div class="stats-cell"><div class="stats-val purple" id="stat-total-tok">…</div><div class="stats-lbl">总 Token</div></div>
       <div class="stats-cell"><div class="stats-val purple">${{(ca ? (ca.session_count_30d||0) : 0) + (cx ? (cx.session_count_30d||0) : 0) || '—'}}</div><div class="stats-lbl">30天会话</div></div>
       <div class="stats-cell"><div class="stats-val">${{codeLinesStr}}</div><div class="stats-lbl">代码行</div></div>
       <div class="stats-cell"><div class="stats-val green">${{featPct !== null ? featPct+'%' : '—'}}</div><div class="stats-lbl">功能完成</div></div>
     </div>`;
+
+    // 30天会话趋势图(全宽、可往前翻) + 子账号协同 — 由 loadInsights 异步填充
+    html += `<div id="trend-block" class="trend-block"></div>`;
+    html += `<div id="sub-collab-block"></div>`;
 
     // ── 2-col grid: Claude | Git ──
     html += `<div class="summary-grid">`;
@@ -1438,6 +1468,83 @@ async function reload() {{
 
 {_tb_js}
 
+// ─── Insights: 全历史按天趋势(可翻页) + 子账号协同 ───────────────────────────
+var _insights = null;
+var _trendOffset = 0;      // 往前翻的偏移(0=最近一个窗口)
+var _trendWindow = 30;
+
+function fmtTokG(t) {{
+  if (!t) return '—';
+  if (t >= 1e9) return (t/1e9).toFixed(1)+'B';
+  if (t >= 1e6) return (t/1e6).toFixed(0)+'M';
+  if (t >= 1e3) return (t/1e3).toFixed(0)+'k';
+  return String(t);
+}}
+
+async function loadInsights() {{
+  try {{
+    const res = await fetch('/api/projects/' + encodeURIComponent(PROJECT_ID) + '/insights', {{headers: _authHeaders()}});
+    if (!res.ok) return;
+    _insights = await res.json();
+  }} catch(e) {{ return; }}
+  var tt = document.getElementById('stat-total-tok');
+  if (tt && _insights.totals) tt.textContent = fmtTokG(_insights.totals.total_tokens);
+  renderTrendChart();
+  renderSubCollab();
+}}
+
+function renderTrendChart() {{
+  var block = document.getElementById('trend-block');
+  if (!block || !_insights) return;
+  var days = _insights.days || [];
+  if (!days.length) {{ block.innerHTML = ''; return; }}
+  var end = days.length - _trendOffset;
+  var start = Math.max(0, end - _trendWindow);
+  var win = days.slice(start, end);
+  var maxSess = Math.max.apply(null, win.map(function(d) {{ return d.sessions; }}).concat([1]));
+  var canPrev = start > 0;
+  var canNext = _trendOffset > 0;
+  var rangeLabel = win.length ? (win[0].date + ' ~ ' + win[win.length-1].date) : '';
+  var bars = win.map(function(d, i) {{
+    var h = Math.max(4, Math.round(d.sessions / maxSess * 100));
+    var _step = Math.max(1, Math.round(win.length / 5));
+    var showDate = (i % _step === 0) || (i === win.length - 1 && (win.length - 1) % _step > 1);
+    var dlabel = showDate ? d.date.slice(5) : '';
+    return '<div class="trend-col" title="' + d.date + ': ' + d.sessions + ' 会话 · ' + fmtTokG(d.total_tokens) + ' token · $' + (d.estimated_cost_usd||0).toFixed(2) + '">'
+      + '<div class="trend-bar-wrap"><div class="trend-bar" style="height:' + h + '%"></div></div>'
+      + '<div class="trend-xlabel">' + dlabel + '</div></div>';
+  }}).join('');
+  block.innerHTML =
+    '<div class="trend-head"><div class="trend-title">会话趋势 · ' + win.length + '天</div>'
+    + '<div class="trend-nav">'
+    + '<button class="trend-navbtn"' + (canPrev?'':' disabled') + ' onclick="trendPage(1)">‹ 更早</button>'
+    + '<span class="trend-range">' + rangeLabel + '</span>'
+    + '<button class="trend-navbtn"' + (canNext?'':' disabled') + ' onclick="trendPage(-1)">更近 ›</button>'
+    + '</div></div>'
+    + '<div class="trend-bars">' + bars + '</div>';
+}}
+
+function trendPage(dir) {{
+  var days = (_insights && _insights.days) || [];
+  var maxOff = Math.max(0, days.length - _trendWindow);
+  _trendOffset = Math.max(0, Math.min(_trendOffset + dir * _trendWindow, maxOff));
+  renderTrendChart();
+}}
+
+function renderSubCollab() {{
+  var block = document.getElementById('sub-collab-block');
+  if (!block || !_insights) return;
+  var subs = _insights.sub_collab || [];
+  if (!subs.length) {{ block.innerHTML = ''; return; }}
+  var rows = subs.map(function(s) {{
+    var av = s.avatar ? '<img class="sc-av" src="' + escHtml(s.avatar) + '" alt="">' : '<span class="sc-dot"></span>';
+    return '<div class="sc-row">' + av + '<span class="sc-name">' + escHtml(s.name) + '</span>'
+      + '<span class="sc-stat">' + s.sessions + ' 会话 · ' + fmtTokG(s.total_tokens) + ' tok · $' + (s.estimated_cost_usd||0).toFixed(2) + '</span></div>';
+  }}).join('');
+  block.innerHTML = '<div class="sc-block"><div class="sc-title">🤝 子账号协同</div>' + rows
+    + '<a class="sc-more" href="/sub-audit">查看子账号完整审计 →</a></div>';
+}}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {{
   try {{
@@ -1455,6 +1562,7 @@ async function init() {{
 
   renderSummary();
   showTab(activeTab);
+  if (_isAdmin) loadInsights();
 }}
 
 _initAuth().then(() => init());
