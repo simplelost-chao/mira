@@ -2629,12 +2629,15 @@ async function _scrollTerminal(direction, lines) {
   } catch(e) { console.warn('scroll error:', e); }
 }
 
+var _mobileInputInited = false;
 function _initMobileInput() {
   // 桌面也要绑定:owner 的"输入框模式"和子账号在桌面都用这套输入框,回车发送/发送按钮/
   // 特殊键都在下面绑,之前 `if(!_isMobile)return` 把桌面挡在门外 → 桌面回车发不出去。
+  if (_mobileInputInited) return;   // 幂等:init/initSub 都会调,累加 addEventListener 会导致回车重复发送
   var input = document.getElementById('mobile-cmd-input');
   var sendBtn = document.getElementById('mobile-send-btn');
   if (!input || !sendBtn) return;
+  _mobileInputInited = true;
 
   // ── Touch-to-scroll on terminal overlay ──
   var overlay = document.getElementById('term-touch-overlay');
@@ -2695,7 +2698,8 @@ function _initMobileInput() {
 
   // Send on Enter (without Shift); Shift+Enter = newline
   input.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // !e.isComposing:中文输入法组词时按回车是"确认候选词",不能当发送(否则会误发/发重复)
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       _sendMobileCmd();
     }
