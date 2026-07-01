@@ -3598,10 +3598,10 @@ def sub_audit_data(request: Request):
 
 
 @api.get("/sub-audit", response_class=HTMLResponse)
-def sub_audit_page_route():
-    """owner:子账号审计页壳(数据走 _is_admin 守卫的 /api/sub-audit)。"""
+def sub_audit_page_route(embed: int = 0):
+    """owner:子账号审计页壳(数据走 _is_admin 守卫的 /api/sub-audit)。embed=1 用于嵌进统计页 iframe。"""
     from vibe.sub_audit_page import render_sub_audit_page
-    return HTMLResponse(render_sub_audit_page(), headers=_NC)
+    return HTMLResponse(render_sub_audit_page(embed=bool(embed)), headers=_NC)
 
 
 # ── 飞书 OAuth 登录(复用 feishu-coo 应用)────────────────────────────────────

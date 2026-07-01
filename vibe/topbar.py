@@ -200,7 +200,10 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
         ]
     parts.append('  <div class="topbar-spacer"></div>')
     if back_url:
-        parts.append(f'  <a class="topbar-back" href="{back_url}">← 返回</a>')
+        parts.append(f'  <a class="topbar-btn" href="{back_url}" title="返回" style="text-decoration:none">'
+                      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+                      '<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>'
+                      '</svg></a>')
     if not hide_dev:
         parts.append('  <a class="topbar-btn" href="/dev" title="终端" style="text-decoration:none">'
                       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
@@ -208,6 +211,10 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
                       '</svg></a>')
         # 子账号管理已并入「设置 → 子账户」tab,顶部不再单独放账号图标。
     parts += [
+        '  <a class="topbar-btn" href="/stats" title="统计" style="text-decoration:none">'
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>'
+        '</svg></a>',
         '  <button class="topbar-btn" onclick="openSettings()" title="设置">',
         '    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">',
         '      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1.08 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1.08H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/>',

@@ -4,13 +4,15 @@
 """
 
 
-def render_sub_audit_page() -> str:
+def render_sub_audit_page(embed: bool = False) -> str:
     from vibe.topbar import theme_vars_css, topbar_css, topbar_html, settings_overlay_html, topbar_js
     _theme_css = theme_vars_css()
     _tb_css = topbar_css()
-    _tb_html = topbar_html(title="子账号审计")
-    _overlays = settings_overlay_html()
+    _tb_html = "" if embed else topbar_html(title="子账号审计")   # embed(嵌进统计页 iframe)时不要 topbar
+    _overlays = "" if embed else settings_overlay_html()
     _tb_js = topbar_js()
+    _pad_top = "0" if embed else "52px"
+    _content_h = "100vh" if embed else "calc(100vh - 52px)"
     return f'''<!DOCTYPE html>
 <html lang="zh"><head>
 <meta charset="utf-8">
@@ -23,8 +25,8 @@ def render_sub_audit_page() -> str:
   *,*::before,*::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 {_theme_css}
   html, body {{ height: 100vh; overflow: hidden; }}
-  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); padding-top: 52px; }}
-  .content {{ overflow-y: auto; height: calc(100vh - 52px); padding: 20px 16px 80px; max-width: 900px; margin: 0 auto; }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--mono); padding-top: {_pad_top}; }}
+  .content {{ overflow-y: auto; height: {_content_h}; padding: 20px 16px 80px; max-width: 900px; margin: 0 auto; }}
 {_tb_css}
   .hint {{ font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }}
   .empty {{ color: var(--muted); font-size: 12px; padding: 10px 0; }}

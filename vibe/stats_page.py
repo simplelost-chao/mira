@@ -265,6 +265,7 @@ document.getElementById('btn-12w').addEventListener('click', function() { setRan
 document.getElementById('btn-tool-claude').addEventListener('click',      function() { setTool('claude'); });
 document.getElementById('btn-tool-codex').addEventListener('click',       function() { setTool('codex'); });
 document.getElementById('btn-tool-github').addEventListener('click',      function() { setTool('github'); });
+document.getElementById('btn-tool-sub').addEventListener('click',         function() { setTool('sub'); });
 document.getElementById('btn-view-overview').addEventListener('click',    function() { setClaudeView('overview'); });
 document.getElementById('btn-view-sessions').addEventListener('click',    function() { setClaudeView('sessions'); });
 document.getElementById('btn-cx-view-overview').addEventListener('click', function() { setCodexView('overview'); });
@@ -298,20 +299,24 @@ function setSessSort(s) {
 
 function setTool(t) {
   _currentTool = t;
-  ['claude','codex','github'].forEach(function(x) {
+  ['claude','codex','github','sub'].forEach(function(x) {
     document.getElementById('btn-tool-' + x).classList.toggle('active', t === x);
   });
   document.getElementById('claude-subbar').style.display  = t === 'claude' ? 'flex' : 'none';
   document.getElementById('codex-subbar').style.display   = t === 'codex'  ? 'flex' : 'none';
-  document.getElementById('agg-section').style.display    = t === 'github' ? 'none' : '';
+  document.getElementById('agg-section').style.display    = (t === 'github' || t === 'sub') ? 'none' : '';
   document.getElementById('sess-section').style.display   = 'none';
   document.getElementById('github-section').style.display = t === 'github' ? '' : 'none';
+  document.getElementById('sub-section').style.display    = t === 'sub' ? '' : 'none';
   if (t === 'claude') {
     setClaudeView(_claudeView);
   } else if (t === 'codex') {
     setCodexView(_codexView);
   } else if (t === 'github') {
     if (!_ghLoaded) loadGHTrending('weekly');
+  } else if (t === 'sub') {
+    var f = document.getElementById('sub-audit-frame');
+    if (f && !f.src) f.src = '/sub-audit?embed=1';
   }
 }
 
@@ -1382,6 +1387,7 @@ _initAuth().then(function() {
     <button class="stats-btn active" id="btn-tool-claude">Claude</button>
     <button class="stats-btn"        id="btn-tool-codex">Codex</button>
     <button class="stats-btn"        id="btn-tool-github">GitHub</button>
+    <button class="stats-btn"        id="btn-tool-sub">子账号</button>
   </div>
 </div>
 <div class="ctrl-subbar" id="claude-subbar">
@@ -1521,6 +1527,14 @@ _initAuth().then(function() {
 </div>
 
 <!-- GitHub Trending section -->
+<div id="sub-section" style="display:none">
+  <div class="stats-main">
+    <div style="font-size:11.5px;color:var(--muted);line-height:1.6;margin-bottom:12px">
+      时间推断归属:子账号 session 期间该项目的会话算给他(近似,可能含 owner 在同项目的活动)。
+    </div>
+    <iframe id="sub-audit-frame" style="width:100%;height:calc(100vh - 220px);min-height:420px;border:none;background:transparent"></iframe>
+  </div>
+</div>
 <div id="github-section" style="display:none">
   <div class="stats-main">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
