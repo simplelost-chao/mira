@@ -308,7 +308,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   .feat-item.done {{ color: var(--green); }}
   .feat-item.planned {{ color: var(--sub); }}
   /* hero */
-  .summary-wrap {{ padding: 20px; max-width: 960px; }}
+  .summary-wrap {{ padding: 24px 32px; max-width: none; }}
   .hero-row {{ display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }}
   .hero-left {{ flex: 1; min-width: 0; }}
   .hero-right {{ display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding-top: 4px; }}
