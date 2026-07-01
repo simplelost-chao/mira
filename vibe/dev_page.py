@@ -2097,6 +2097,7 @@ function showTerminal() {
     document.getElementById('mobile-input-bar').style.display = 'flex';
     _startBufferPoll();
     if (_currentTarget) _connectTermWs(_currentTarget);
+    _focusInputBox();   // 桌面:切进来直接能敲字,不用先点输入框
     return;
   }
 
@@ -3413,6 +3414,16 @@ function showSubTerminal() {
   document.getElementById('mobile-token-bar').classList.add('visible');
   document.getElementById('mobile-input-bar').style.display = 'flex';
   if (_currentTarget) _connectTermWs(_currentTarget);
+  _focusInputBox();   // 桌面:切进来直接能敲字
+}
+
+function _focusInputBox() {
+  if (_isMobile) return;   // 移动端不自动弹软键盘,用户点了才聚焦
+  setTimeout(function() {
+    var i = document.getElementById('mobile-cmd-input');
+    var dp = document.getElementById('dev-page');
+    if (i && dp && dp.classList.contains('stream-mode')) i.focus();
+  }, 80);
 }
 
 function _focusTerm() {
@@ -3608,13 +3619,14 @@ init();
           <option value="4">4</option><option value="5">5</option><option value="6">6</option>
           <option value="7">7</option><option value="8">8</option><option value="9">9</option>
         </select>
-      </div>
-      <div class="mobile-input-row">
-        <label class="mobile-attach-btn" for="mobile-file-input" title="上传文件">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <span class="keys-sep"></span>
+        <label class="mobile-key-btn" for="mobile-file-input" title="上传文件" style="display:inline-flex;align-items:center;justify-content:center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
           </svg>
         </label>
+      </div>
+      <div class="mobile-input-row">
         <input type="file" id="mobile-file-input" style="display:none">
         <textarea class="mobile-cmd-input" id="mobile-cmd-input" rows="1"
           placeholder="输入命令…" autocomplete="off" autocorrect="off"
