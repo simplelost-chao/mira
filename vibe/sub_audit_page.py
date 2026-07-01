@@ -35,13 +35,17 @@ def render_sub_audit_page(embed: bool = False) -> str:
   .badge.active {{ color: var(--green, #22c55e); border-color: color-mix(in srgb, var(--green, #22c55e) 40%, transparent); }}
   .badge.disabled {{ color: var(--muted); border-color: var(--border); }}
 
+  .sa-tabs {{ display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none; }}
+  .sa-tabs::-webkit-scrollbar {{ display: none; }}
+  .sa-tab {{ display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border);
+    border-radius: 16px; background: none; color: var(--sub); font-size: 12px; font-family: inherit;
+    cursor: pointer; white-space: nowrap; flex-shrink: 0; }}
+  .sa-tab.active {{ color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }}
+  .sa-tab img {{ width: 18px; height: 18px; border-radius: 50%; object-fit: cover; }}
+
   .sa-card {{ background: rgba(255,255,255,.025); border: 1px solid var(--border); border-radius: 12px;
     padding: 16px; margin-bottom: 16px; box-shadow: var(--card-shadow); }}
-  .sa-head {{ display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }}
-  .sa-av {{ width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }}
-  .sa-dot {{ width: 32px; height: 32px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); flex-shrink: 0; }}
-  .sa-name {{ font-size: 15px; font-weight: 700; color: var(--text); }}
-  .sa-spacer {{ flex: 1; }}
 
   .sa-totals {{ display: flex; gap: 10px; margin-bottom: 16px; }}
   .sa-metric {{ flex: 1; background: var(--card-deep, var(--bg)); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }}
@@ -59,7 +63,12 @@ def render_sub_audit_page(embed: bool = False) -> str:
   .sa-prompt-meta .sa-proj-tag {{ color: var(--accent); font-weight: 600; }}
   .sa-prompt-text {{ font-size: 12.5px; color: var(--sub); line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
     max-height: 130px; overflow-y: auto; }}
-  .sa-more {{ font-size: 11px; color: var(--accent); cursor: pointer; padding: 6px 0; text-align: center; }}
+
+  .sa-pager {{ display: flex; align-items: center; justify-content: center; gap: 14px; padding: 12px 0 4px; }}
+  .sa-pager button {{ background: none; border: 1px solid var(--border); color: var(--sub); border-radius: 6px;
+    padding: 4px 12px; font-size: 12px; font-family: inherit; cursor: pointer; }}
+  .sa-pager button:disabled {{ opacity: .35; cursor: default; }}
+  .sa-pager .sa-page-ind {{ font-size: 11px; color: var(--muted); }}
 </style>
 </head>
 <body>
@@ -76,7 +85,10 @@ function fmtNum(n) {{ n = n || 0; if (n >= 1e6) return (n/1e6).toFixed(1)+'M'; i
 function fmtTs(sec) {{ var d = new Date(parseInt(sec,10)*1000); var p = function(x){{return String(x).padStart(2,'0');}};
   return (d.getMonth()+1)+'/'+d.getDate()+' '+p(d.getHours())+':'+p(d.getMinutes()); }}
 
-var _promptCap = 30;   // 每个账号初始展示的 prompts 条数
+var PAGE_SIZE = 20;    // prompts 每页条数
+var _accounts = [];
+var _sel = 0;          // 当前选中的子账号下标
+var _page = 1;
 
 async function load() {{
   try {{
@@ -90,51 +102,70 @@ async function load() {{
 }}
 
 function render(accounts) {{
+  _accounts = accounts || [];
   var root = document.getElementById('root');
-  if (!accounts || !accounts.length) {{ root.innerHTML = '<div class="empty">还没有子账号</div>'; return; }}
-  root.innerHTML = accounts.map(function(a) {{
-    var t = a.totals || {{}};
-    var totalTok = (t.input_tokens||0)+(t.output_tokens||0)+(t.cache_creation_tokens||0)+(t.cache_read_tokens||0);
-    var av = a.avatar ? '<img class="sa-av" src="'+esc(a.avatar)+'" alt="">' : '<span class="sa-dot"></span>';
-    var projs = (a.projects && a.projects.length) ? a.projects.map(function(p) {{
-      return '<div class="sa-proj"><span class="sa-proj-name">'+esc(p.project_name)+'</span>'
-        + '<span class="sa-proj-stat">'+(p.messages||0)+' 条 · '+fmtNum((p.input_tokens||0)+(p.output_tokens||0))+' tok · $'+(p.estimated_cost_usd||0).toFixed(2)+'</span></div>';
-    }}).join('') : '<div class="empty">该时段暂无归属会话</div>';
-    var shown = (a.prompts||[]).slice(0, _promptCap);
-    var prompts = shown.length ? shown.map(function(pr) {{
-      return '<div class="sa-prompt"><div class="sa-prompt-meta"><span class="sa-proj-tag">'+esc(pr.project_name)+'</span> · '+fmtTs(pr.date)+'</div>'
-        + '<div class="sa-prompt-text">'+esc(pr.text)+'</div></div>';
-    }}).join('') : '<div class="empty">暂无 prompts</div>';
-    var more = (a.prompts && a.prompts.length > shown.length)
-      ? '<div class="sa-more" onclick="_expand(this)">展开剩余 '+(a.prompts.length - shown.length)+' 条</div>' : '';
-    return '<div class="sa-card" data-oid="'+esc(a.open_id)+'">'
-      + '<div class="sa-head">'+av+'<div class="sa-name">'+esc(a.name)+'</div>'
-      + '<div class="sa-spacer"></div><span class="badge '+esc(a.status)+'">'+esc(a.status)+'</span></div>'
-      + '<div class="sa-totals">'
-      +   '<div class="sa-metric"><div class="sa-metric-v">$'+(t.estimated_cost_usd||0).toFixed(2)+'</div><div class="sa-metric-l">总开销</div></div>'
-      +   '<div class="sa-metric"><div class="sa-metric-v">'+fmtNum(totalTok)+'</div><div class="sa-metric-l">总 token</div></div>'
-      +   '<div class="sa-metric"><div class="sa-metric-v">'+(t.messages||0)+'</div><div class="sa-metric-l">消息数</div></div>'
-      + '</div>'
-      + '<div class="sa-section-title">按项目</div>'+projs
-      + '<div class="sa-section-title">最近 prompts ('+((a.prompts||[]).length)+')</div>'
-      + '<div class="sa-prompts">'+prompts+'</div>'+more
-      + '</div>';
-  }}).join('');
-  // 缓存完整数据供展开用
-  window._auditData = {{}};
-  accounts.forEach(function(a) {{ window._auditData[a.open_id] = a; }});
+  if (!_accounts.length) {{ root.innerHTML = '<div class="empty">还没有子账号</div>'; return; }}
+  if (_sel >= _accounts.length) _sel = 0;
+  root.innerHTML = '<div class="sa-tabs" id="sa-tabs"></div><div id="sa-panel"></div>';
+  renderTabs();
+  renderPanel();
 }}
 
-function _expand(el) {{
-  var card = el.closest('.sa-card');
-  var a = window._auditData[card.getAttribute('data-oid')];
-  if (!a) return;
-  var box = card.querySelector('.sa-prompts');
-  box.innerHTML = (a.prompts||[]).map(function(pr) {{
+function renderTabs() {{
+  var el = document.getElementById('sa-tabs');
+  el.innerHTML = _accounts.map(function(a, i) {{
+    var av = a.avatar ? '<img src="'+esc(a.avatar)+'" alt="">' : '';
+    return '<button class="sa-tab'+(i===_sel?' active':'')+'" data-i="'+i+'">'+av+esc(a.name)
+      + '<span class="badge '+esc(a.status)+'">'+esc(a.status)+'</span></button>';
+  }}).join('');
+  el.querySelectorAll('.sa-tab').forEach(function(b) {{
+    b.addEventListener('click', function() {{
+      var i = parseInt(b.getAttribute('data-i'), 10);
+      if (i === _sel) return;
+      _sel = i; _page = 1;
+      renderTabs(); renderPanel();
+    }});
+  }});
+}}
+
+function renderPanel(scrollToPrompts) {{
+  var a = _accounts[_sel];
+  var t = a.totals || {{}};
+  var totalTok = (t.input_tokens||0)+(t.output_tokens||0)+(t.cache_creation_tokens||0)+(t.cache_read_tokens||0);
+  var projs = (a.projects && a.projects.length) ? a.projects.map(function(p) {{
+    return '<div class="sa-proj"><span class="sa-proj-name">'+esc(p.project_name)+'</span>'
+      + '<span class="sa-proj-stat">'+(p.messages||0)+' 条 · '+fmtNum((p.input_tokens||0)+(p.output_tokens||0))+' tok · $'+(p.estimated_cost_usd||0).toFixed(2)+'</span></div>';
+  }}).join('') : '<div class="empty">该时段暂无归属会话</div>';
+
+  var all = a.prompts || [];
+  var pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  if (_page > pages) _page = pages;
+  var shown = all.slice((_page-1)*PAGE_SIZE, _page*PAGE_SIZE);
+  var prompts = shown.length ? shown.map(function(pr) {{
     return '<div class="sa-prompt"><div class="sa-prompt-meta"><span class="sa-proj-tag">'+esc(pr.project_name)+'</span> · '+fmtTs(pr.date)+'</div>'
       + '<div class="sa-prompt-text">'+esc(pr.text)+'</div></div>';
-  }}).join('');
-  el.remove();
+  }}).join('') : '<div class="empty">暂无 prompts</div>';
+  var pager = pages > 1
+    ? '<div class="sa-pager"><button id="sa-prev"'+(_page<=1?' disabled':'')+'>上一页</button>'
+      + '<span class="sa-page-ind">'+_page+' / '+pages+'</span>'
+      + '<button id="sa-next"'+(_page>=pages?' disabled':'')+'>下一页</button></div>'
+    : '';
+
+  document.getElementById('sa-panel').innerHTML = '<div class="sa-card">'
+    + '<div class="sa-totals">'
+    +   '<div class="sa-metric"><div class="sa-metric-v">$'+(t.estimated_cost_usd||0).toFixed(2)+'</div><div class="sa-metric-l">总开销</div></div>'
+    +   '<div class="sa-metric"><div class="sa-metric-v">'+fmtNum(totalTok)+'</div><div class="sa-metric-l">总 token</div></div>'
+    +   '<div class="sa-metric"><div class="sa-metric-v">'+(t.messages||0)+'</div><div class="sa-metric-l">消息数</div></div>'
+    + '</div>'
+    + '<div class="sa-section-title">按项目</div>'+projs
+    + '<div class="sa-section-title" id="sa-prompts-title">Prompts ('+all.length+')</div>'
+    + '<div class="sa-prompts">'+prompts+'</div>'+pager
+    + '</div>';
+
+  var prev = document.getElementById('sa-prev'), next = document.getElementById('sa-next');
+  if (prev) prev.addEventListener('click', function() {{ _page--; renderPanel(true); }});
+  if (next) next.addEventListener('click', function() {{ _page++; renderPanel(true); }});
+  if (scrollToPrompts) document.getElementById('sa-prompts-title').scrollIntoView({{ block: 'start' }});
 }}
 
 load();

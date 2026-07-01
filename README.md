@@ -10,7 +10,8 @@ A self-hosted project management dashboard that aggregates git status, running s
 - **System architecture** — LLM-generated architecture diagrams and module maps
 - **Interactive terminal** — full PTY terminal via ttyd + tmux; panes grouped by project, kill-pane button, new-terminal dialog with project picker
 - **Claude / Codex detection** — auto-identifies Claude Code and OpenAI Codex terminals via tmux title icons and terminal output inspection; sidebar shows tool badge (purple **C** / green **X**)
-- **Per-session token tracking** — toolbar displays current session's input/output/cache tokens and estimated cost; adapts fields for Claude (cache_read) vs Codex (cached_input)
+- **Per-session token tracking** — toolbar displays current session's input/output/cache tokens and estimated cost, refreshed in place without flicker; adapts fields for Claude (cache_read) vs Codex (cached_input)
+- **Sub-account audit** — stats tab with per-account sub-tabs: cost/token/message totals, per-project breakdown, and a paginated prompts list (sessions attributed by time inference)
 - **Usage rate limits** — session % and weekly % with countdown timer shown in toolbar; Claude data from Anthropic API headers, Codex data from `~/.codex/logs_2.sqlite`
 - **Mobile terminal** — WebSocket streaming with client-side ANSI rendering, dedicated input bar that bypasses iOS keyboard issues; Claude Code pet/status bar auto-filtered for clean display
 - **Clipboard bridge** — Cmd+C via tmux buffer for HTTP environments

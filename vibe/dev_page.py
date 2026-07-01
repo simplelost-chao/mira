@@ -1719,8 +1719,7 @@ async function selectPane(target, cmd) {
   // Lock body scroll on mobile to prevent iOS rubber-banding
   if (_isMobile) {
     document.body.classList.add('detail-locked');
-    // Hide non-essential topbar buttons, show detail buttons
-    document.querySelectorAll('.topbar .topbar-btn').forEach(function(b) { b.style.display = 'none'; });
+    // 详情态:额外显示「返回列表/切换终端」;统计、设置保持可见(手机上也要能进这两个功能)
     document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = 'inline-flex'; });
   }
 
@@ -1801,23 +1800,34 @@ function _resizeTtydFrame() {
   try { frame.contentWindow.dispatchEvent(new Event('resize')); } catch(_) {}
 }
 
+var _tokensRenderedFor = null;  // 上次渲染 token 的 target
+var _tokensLastHtml = '';       // 上次写入的桌面 html,内容没变就不重写 DOM
 async function _loadPaneTokens(target, tool) {
   var desktop = document.getElementById('toolbar-tokens');
-  if (desktop) desktop.innerHTML = '';
-  _setMobileTokens('');
+  // 只在切换 pane 时清空;同 pane 的周期刷新等数据回来原地替换,避免数字先消失再出现
+  if (_tokensRenderedFor !== target) {
+    _tokensRenderedFor = target;
+    _tokensLastHtml = '';
+    if (desktop) desktop.innerHTML = '';
+    _setMobileTokens('');
+  }
   if (!tool) return;
   try {
     var res = await fetch('/api/dev/pane-tokens?target=' + encodeURIComponent(target) + '&tool=' + encodeURIComponent(tool), { headers: _authHeaders() });
     if (!res.ok) return;
     var d = await res.json();
+    if (_tokensRenderedFor !== target) return;  // 等待期间切了 pane,别覆盖新 pane 的显示
     var hasTool = d && d.tool;
     if (!hasTool && (!d || !d.estimated_cost_usd)) {
       // No token data — just show tool badge
       var badge = tool === 'codex'
         ? '<span class="tok-badge codex">Codex</span>'
         : '<span class="tok-badge claude">Claude</span>';
-      if (desktop) desktop.innerHTML = badge;
-      _setMobileTokens(badge);
+      if (badge !== _tokensLastHtml) {
+        _tokensLastHtml = badge;
+        if (desktop) desktop.innerHTML = badge;
+        _setMobileTokens(badge);
+      }
       return;
     }
     if (!hasTool) d.tool = tool;
@@ -1832,8 +1842,6 @@ async function _loadPaneTokens(target, tool) {
     var totalCtx = (d.input_tokens || 0) + (d.cache_read_tokens || d.cached_input_tokens || 0) + (d.cache_creation_tokens || 0);
     var uploadBytes = totalCtx * BPT;
     var downloadBytes = (d.output_tokens || 0) * BPT;
-    var msgs = d.messages || 0;
-    var avgCtx = msgs > 0 ? totalCtx / msgs : 0;
 
     var html = badge;
     // 当前 context 占用(最后一次请求送入的总 token) / context window
@@ -1844,16 +1852,18 @@ async function _loadPaneTokens(target, tool) {
       var ctxCls = ctxPct >= 80 ? 'ctx-hi' : ctxPct >= 60 ? 'ctx-mid' : '';
       html += '<span class="tok-item tok-ctx ' + ctxCls + '" title="当前上下文 ' + fT(ctxTok) + ' / ' + fT(ctxWin) + ' · ' + ctxPct + '%（越满越该开新会话；context window 默认按 1M 算，可在 localStorage mira-ctx-window 改）">ctx ' + ctxPct + '%</span>';
     }
-    html += '<span class="tok-item" title="上行 tokens"><span class="tok-icon tok-up">▲</span><span class="tok-val">' + fT(totalCtx) + '</span></span>';
-    html += '<span class="tok-item" title="下行 tokens"><span class="tok-icon tok-down">▼</span><span class="tok-val">' + fT(d.output_tokens) + '</span></span>';
-    html += '<span class="tok-item" title="上行流量 ' + fB(uploadBytes) + ' / 下行流量 ' + fB(downloadBytes) + '"><span style="color:var(--muted);font-size:10px">' + fB(uploadBytes) + '/' + fB(downloadBytes) + '</span></span>';
+    // 上行/下行 tokens + 流量 只在桌面 topbar 内联显示;手机端太窄放不下,点开展开(dropdown)里看
+    var deskExtra = '';
+    deskExtra += '<span class="tok-item" title="上行 tokens"><span class="tok-icon tok-up">▲</span><span class="tok-val">' + fT(totalCtx) + '</span></span>';
+    deskExtra += '<span class="tok-item" title="下行 tokens"><span class="tok-icon tok-down">▼</span><span class="tok-val">' + fT(d.output_tokens) + '</span></span>';
+    deskExtra += '<span class="tok-item" title="上行流量 ' + fB(uploadBytes) + ' / 下行流量 ' + fB(downloadBytes) + '"><span style="color:var(--muted);font-size:10px">' + fB(uploadBytes) + '/' + fB(downloadBytes) + '</span></span>';
 
-    // Warn if per-request context is large
-    if (msgs > 5 && avgCtx > 150000) {
-      html += '<span class="tok-warn" title="每请求上下文 ' + fT(avgCtx) + ' tokens ≈ ' + fB(avgCtx * BPT) + '，建议开新会话">⚠</span>';
+    var full = html + deskExtra;
+    if (full !== _tokensLastHtml) {
+      _tokensLastHtml = full;
+      if (desktop) desktop.innerHTML = full;
+      _setMobileTokens(html);
     }
-    if (desktop) desktop.innerHTML = html;
-    _setMobileTokens(html);
   } catch(e) { /* non-fatal */ }
 }
 
