@@ -307,7 +307,7 @@ def render_dev_page() -> str:
   }
   .dev-page.stream-mode .mobile-cmd-input {
     display: block; width: 100%; flex: 1;
-    min-height: 40px; max-height: 140px;
+    min-height: 64px; max-height: 220px;
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
     color: var(--text); font-family: var(--mono); font-size: 16px;
     padding: 9px 12px; outline: none; resize: none; line-height: 1.45;
@@ -517,7 +517,7 @@ def render_dev_page() -> str:
       padding: 8px 10px; padding-bottom: max(8px, env(safe-area-inset-bottom));
     }
     .mobile-cmd-input {
-      flex: 1; min-height: 36px; max-height: 120px;
+      flex: 1; min-height: 56px; max-height: 180px;
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
       color: var(--text); font-family: var(--mono); font-size: 16px;
       padding: 8px 12px; outline: none; resize: none;
@@ -2630,7 +2630,8 @@ async function _scrollTerminal(direction, lines) {
 }
 
 function _initMobileInput() {
-  if (!_isMobile) return;
+  // 桌面也要绑定:owner 的"输入框模式"和子账号在桌面都用这套输入框,回车发送/发送按钮/
+  // 特殊键都在下面绑,之前 `if(!_isMobile)return` 把桌面挡在门外 → 桌面回车发不出去。
   var input = document.getElementById('mobile-cmd-input');
   var sendBtn = document.getElementById('mobile-send-btn');
   if (!input || !sendBtn) return;
