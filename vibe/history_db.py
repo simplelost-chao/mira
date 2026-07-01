@@ -115,6 +115,22 @@ def init_db() -> None:
                 """)
         except Exception:
             pass  # Column already exists
+        # 并发索引曾把同一条消息(session_id+ts+role+content 相同)插入多次 → prompts 重复显示。
+        # 清理历史重复后加唯一索引,配合 insert_message 的 INSERT OR IGNORE 根治。
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup "
+                "ON messages(session_id, ts, role, content)"
+            )
+        except sqlite3.IntegrityError:
+            conn.execute(
+                "DELETE FROM messages WHERE id NOT IN "
+                "(SELECT MIN(id) FROM messages GROUP BY session_id, ts, role, content)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup "
+                "ON messages(session_id, ts, role, content)"
+            )
 
 
 def upsert_session(session_id: str, project_id: str, project_name: str, file_path: str) -> None:
@@ -150,9 +166,11 @@ def set_last_line(session_id: str, n: int) -> None:
 def insert_message(session_id: str, role: str, content: str, ts: int) -> None:
     with _conn() as conn:
         cur = conn.execute(
-            "INSERT INTO messages (session_id, role, content, ts) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO messages (session_id, role, content, ts) VALUES (?, ?, ?, ?)",
             (session_id, role, content, ts),
         )
+        if cur.rowcount == 0:
+            return   # 唯一约束命中 = 重复消息(并发索引),跳过,避免 FTS/ts 也重复
         msg_id = cur.lastrowid
         conn.execute(
             "INSERT INTO messages_fts (content, session_id, message_id) VALUES (?, ?, ?)",

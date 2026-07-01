@@ -158,7 +158,7 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
   .task-text.todo {{ color: var(--text); }}
 
   /* ── prompts ── */
-  .prompts-wrap {{ padding: 24px 32px; max-width: 860px; }}
+  .prompts-wrap {{ padding: 24px 32px; max-width: none; }}
   .prompts-search {{
     width: 100%; padding: 9px 14px; background: var(--panel); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-family: var(--mono); font-size: 13px;
