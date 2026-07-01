@@ -1418,7 +1418,7 @@ async function renderPrompts() {{
       const raw = escHtml(p.text);
       const text = q2 ? raw.replace(new RegExp(escHtml(q2).replace(/[.*+?^${{}}()|[\\]\\\\]/g,'\\\\$&'), 'gi'), m=>`<mark>${{m}}</mark>`) : raw;
       return `<div class="prompt-card">
-        <div class="prompt-date">${{p.date || ''}}</div>
+        <div class="prompt-date">${{fmtDate(p.date)}}</div>
         <div class="prompt-text">${{text}}</div>
       </div>`;
     }}).join('');
@@ -1479,6 +1479,14 @@ function fmtTokG(t) {{
   if (t >= 1e6) return (t/1e6).toFixed(0)+'M';
   if (t >= 1e3) return (t/1e3).toFixed(0)+'k';
   return String(t);
+}}
+
+function fmtDate(sec) {{
+  if (!sec) return '';
+  var d = new Date(parseInt(sec, 10) * 1000);
+  if (isNaN(d.getTime())) return '';
+  var p = function(x) {{ return String(x).padStart(2, '0'); }};
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }}
 
 async function loadInsights() {{
