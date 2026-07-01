@@ -150,6 +150,8 @@
 .acc-chk { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-sec, var(--sub)); cursor: pointer; }
 .acc-chk input { accent-color: var(--accent); cursor: pointer; }
 .acc-empty { color: var(--text-muted, var(--muted)); font-size: 11.5px; padding: 8px 0; }
+.acc-audit-link { display: block; text-align: center; text-decoration: none; font-size: 12px; font-weight: 600; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 8px; padding: 9px; margin-bottom: 14px; transition: all .12s; }
+.acc-audit-link:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 `;
   document.head.appendChild(style);
 })();
@@ -378,6 +380,7 @@ function initSettings() {
     <!-- 子账户 tab (owner-only) -->
     <div class="settings-tab-panel" id="settings-panel-accounts">
       <div class="acc-hint">子账号通过飞书登录后进入"待批准";批准并勾选授权项目后,他才能登录、只看/操作被授权项目里的 Claude 会话(无裸 shell)。</div>
+      <a href="/sub-audit" class="acc-audit-link">📊 子账号审计 — 干了什么 · token/开销</a>
       <div id="acc-root"><div class="acc-empty">加载中…</div></div>
     </div>
 

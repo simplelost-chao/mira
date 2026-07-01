@@ -70,6 +70,15 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
             -- 多处 WHERE s.file_path LIKE '/path/%' 之前全表扫;前缀 LIKE 可用索引 range scan
             CREATE INDEX IF NOT EXISTS idx_sessions_file_path ON sessions(file_path);
+            -- 子账号活动区间:时间推断归属(哪个子账号何时在哪个项目开了 claude)。
+            -- 会话按其开始时刻落在哪个子账号的 [first_ts, last_ts] 区间来归属。
+            CREATE TABLE IF NOT EXISTS sub_activity (
+                open_id     TEXT NOT NULL,
+                project_id  TEXT NOT NULL,
+                first_ts    INTEGER NOT NULL,
+                last_ts     INTEGER NOT NULL,
+                PRIMARY KEY (open_id, project_id)
+            );
         """)
         # Migrate existing installations: add cache token columns if missing
         for col, defn in [
@@ -510,6 +519,106 @@ def reclassify_by_folder(folder_prefix: str, new_project_id: str) -> int:
             [new_project_id] + session_ids,
         )
         return cur.rowcount
+
+
+_SUB_GRACE_MS = 5 * 60 * 1000   # 会话开始时刻相对子账号活跃区间的宽限
+
+
+def record_sub_activity(open_id: str, project_id: str, ts_ms: int | None = None) -> None:
+    """记录子账号在某项目的活跃时刻(时间推断归属用):first_ts 取最早、last_ts 取最新。"""
+    if not open_id or not project_id:
+        return
+    ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
+    try:
+        with _conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO sub_activity (open_id, project_id, first_ts, last_ts)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(open_id, project_id) DO UPDATE SET
+                    first_ts = MIN(first_ts, excluded.first_ts),
+                    last_ts  = MAX(last_ts,  excluded.last_ts)
+                """,
+                (open_id, project_id, ts, ts),
+            )
+    except sqlite3.OperationalError:
+        pass
+
+
+def get_sub_account_audit(open_id: str, prompt_limit: int = 300) -> dict:
+    """时间推断归属:该子账号活跃区间(sub_activity)内、同项目、会话开始时刻落入的会话
+    归属给它。返回按项目的 token/开销汇总 + 最近 prompts。owner 会话不落在任何区间→不计入。"""
+    empty = {"projects": [], "prompts": [], "totals": {
+        "messages": 0, "input_tokens": 0, "output_tokens": 0,
+        "cache_creation_tokens": 0, "cache_read_tokens": 0, "estimated_cost_usd": 0.0}}
+    if not open_id:
+        return empty
+    try:
+        with _conn() as conn:
+            proj_rows = conn.execute(
+                """
+                SELECT s.project_id AS project_id,
+                       COALESCE(s.project_name, s.project_id) AS project_name,
+                       COUNT(DISTINCT s.id) AS sessions,
+                       SUM(COALESCE(ds.input_tokens,0))          AS input_tokens,
+                       SUM(COALESCE(ds.output_tokens,0))         AS output_tokens,
+                       SUM(COALESCE(ds.cache_creation_tokens,0)) AS cache_creation_tokens,
+                       SUM(COALESCE(ds.cache_read_tokens,0))     AS cache_read_tokens,
+                       SUM(COALESCE(ds.messages,0))              AS messages
+                FROM   sessions s
+                JOIN   sub_activity a
+                       ON a.open_id = ? AND a.project_id = s.project_id
+                       AND s.first_ts BETWEEN a.first_ts - ? AND a.last_ts + ?
+                LEFT JOIN daily_stats ds ON ds.session_id = s.id
+                GROUP BY s.project_id
+                """,
+                (open_id, _SUB_GRACE_MS, _SUB_GRACE_MS),
+            ).fetchall()
+            projects, tot = [], dict(empty["totals"])
+            for r in proj_rows:
+                inp, out = r["input_tokens"] or 0, r["output_tokens"] or 0
+                cc, cr = r["cache_creation_tokens"] or 0, r["cache_read_tokens"] or 0
+                cost = (inp*_PRICE_INPUT + out*_PRICE_OUTPUT
+                        + cc*_PRICE_CACHE_WRITE + cr*_PRICE_CACHE_READ)
+                projects.append({
+                    "project_id": r["project_id"], "project_name": r["project_name"],
+                    "sessions": r["sessions"] or 0, "messages": r["messages"] or 0,
+                    "input_tokens": inp, "output_tokens": out,
+                    "cache_creation_tokens": cc, "cache_read_tokens": cr,
+                    "estimated_cost_usd": round(cost, 4),
+                })
+                tot["messages"] += r["messages"] or 0
+                tot["input_tokens"] += inp; tot["output_tokens"] += out
+                tot["cache_creation_tokens"] += cc; tot["cache_read_tokens"] += cr
+                tot["estimated_cost_usd"] += cost
+            projects.sort(key=lambda p: p["estimated_cost_usd"], reverse=True)
+            tot["estimated_cost_usd"] = round(tot["estimated_cost_usd"], 4)
+
+            prompt_rows = conn.execute(
+                """
+                SELECT m.content AS text, m.ts AS ts, s.project_id AS project_id,
+                       COALESCE(s.project_name, s.project_id) AS project_name
+                FROM   messages m
+                JOIN   sessions s ON m.session_id = s.id
+                JOIN   sub_activity a
+                       ON a.open_id = ? AND a.project_id = s.project_id
+                       AND s.first_ts BETWEEN a.first_ts - ? AND a.last_ts + ?
+                WHERE  m.role = 'user'
+                ORDER  BY m.ts DESC
+                LIMIT  ?
+                """,
+                (open_id, _SUB_GRACE_MS, _SUB_GRACE_MS, prompt_limit),
+            ).fetchall()
+            prompts = []
+            for r in prompt_rows:
+                t = r["text"] or ""
+                if len(t) > 2000:
+                    t = t[:2000] + "\n\n…… [已截断,完整 {:,} 字符]".format(len(t))
+                prompts.append({"text": t, "date": str(r["ts"] // 1000),
+                                "project_id": r["project_id"], "project_name": r["project_name"]})
+            return {"projects": projects, "totals": tot, "prompts": prompts}
+    except sqlite3.OperationalError:
+        return empty
 
 
 def get_prompts(project_id: str, limit: int = 200) -> list[dict]:

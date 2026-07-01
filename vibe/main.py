@@ -3365,6 +3365,12 @@ def _ensure_sub_session(open_id: str, project_id: str):
     path = _project_path(project_id)
     if not path or not Path(path).is_dir():
         return None
+    # 时间推断归属:记录该子账号此刻在此项目活跃(见 history_db.get_sub_account_audit)
+    try:
+        from vibe.history_db import record_sub_activity
+        record_sub_activity(open_id, project_id)
+    except Exception:
+        pass
     sess = _sub_session_name(open_id)
     win = re.sub(r"[^A-Za-z0-9_-]", "", project_id)[:24] or "proj"
     lw = _tmux_run("list-windows", "-t", sess, "-F", "#{window_name}\t#{window_index}")
@@ -3478,7 +3484,45 @@ def sub_pane_send(request: Request, target: str, body: dict):
         send_keys(target, text + "\n")
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    try:
+        from vibe.history_db import record_sub_activity
+        record_sub_activity(principal[1]["feishu_open_id"], pid)   # 更新活跃区间 last_ts
+    except Exception:
+        pass
     return {"ok": True}
+
+
+@api.get("/api/sub-audit")
+def sub_audit_data(request: Request):
+    """owner:每个子账号的 prompts + token/开销(时间推断归属,见 history_db)。"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=401, detail="需要管理员权限")
+    from vibe.history_db import get_sub_account_audit
+    _, data = _read_vibe_yaml()
+    result = []
+    for acc in (data.get("accounts") or []):
+        oid = acc.get("feishu_open_id")
+        if not oid:
+            continue
+        audit = get_sub_account_audit(oid)
+        result.append({
+            "open_id": oid,
+            "name": acc.get("name") or oid,
+            "avatar": acc.get("avatar") or "",
+            "status": acc.get("status") or "",
+            "granted_projects": acc.get("projects") or [],
+            "projects": audit["projects"],
+            "totals": audit["totals"],
+            "prompts": audit["prompts"],
+        })
+    return result
+
+
+@api.get("/sub-audit", response_class=HTMLResponse)
+def sub_audit_page_route():
+    """owner:子账号审计页壳(数据走 _is_admin 守卫的 /api/sub-audit)。"""
+    from vibe.sub_audit_page import render_sub_audit_page
+    return HTMLResponse(render_sub_audit_page(), headers=_NC)
 
 
 # ── 飞书 OAuth 登录(复用 feishu-coo 应用)────────────────────────────────────

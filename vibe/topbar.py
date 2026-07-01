@@ -234,7 +234,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
 def settings_overlay_html() -> str:
     """Shared settings JS + login overlay."""
     return """\
-<script src="/static/settings.js?v=5"></script>
+<script src="/static/settings.js?v=6"></script>
 <script>initSettings();</script>
 
 <!-- Login overlay -->
