@@ -1177,11 +1177,25 @@ def public_shared_doc(token: str):
 
 @api.get("/api/projects/{project_id}/prompts")
 def get_project_prompts(request: Request, project_id: str):
-    """Return user prompts for a project from the session index DB."""
+    """项目的用户 prompts + 每条的账号归属(时间推断:落在某子账号活跃区间→该子账号,否则 owner)。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     from vibe.history_db import get_prompts
-    return get_prompts(project_id)
+    prompts = get_prompts(project_id)
+    by_oid = {}
+    if any(p.get("sub_open_id") for p in prompts):
+        _, vy = _read_vibe_yaml()
+        by_oid = {a.get("feishu_open_id"): a for a in (vy.get("accounts") or [])}
+    for p in prompts:
+        oid = p.pop("sub_open_id", None)
+        exact = p.pop("attr_exact", False)
+        if oid:
+            acc = by_oid.get(oid) or {}
+            p["account"] = {"name": acc.get("name") or oid, "avatar": acc.get("avatar") or "",
+                            "sub": True, "exact": exact}
+        else:
+            p["account"] = None   # owner / 终端直接敲(未落入任何子账号)
+    return prompts
 
 
 @api.get("/api/projects/{project_id}/sessions")
@@ -3512,8 +3526,10 @@ def sub_pane_send(request: Request, target: str, body: dict):
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
-        from vibe.history_db import record_sub_activity
-        record_sub_activity(principal[1]["feishu_open_id"], pid)   # 更新活跃区间 last_ts
+        from vibe.history_db import record_sub_activity, record_sub_prompt
+        oid = principal[1]["feishu_open_id"]
+        record_sub_activity(oid, pid)         # 活跃区间(终端直接敲的走时间兜底)
+        record_sub_prompt(oid, pid, text)     # 精确:这条 prompt 就是该子账号发的
     except Exception:
         pass
     return {"ok": True}

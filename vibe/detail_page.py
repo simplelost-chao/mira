@@ -171,7 +171,12 @@ def render_detail_page(project_id: str, project_name: str, inline_data: str = "n
     transition: border-color .15s; cursor: default;
   }}
   .prompt-card:hover {{ border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.03); }}
-  .prompt-date {{ font-size: 10px; color: var(--muted); margin-bottom: 6px; font-family: var(--mono); }}
+  .prompt-head {{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }}
+  .prompt-date {{ font-size: 10px; color: var(--muted); font-family: var(--mono); }}
+  .prompt-acc {{ display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }}
+  .prompt-acc.sub {{ color: var(--accent); background: rgba(var(--accent-rgb),.12); }}
+  .prompt-acc.owner {{ color: var(--muted); background: rgba(255,255,255,.05); }}
+  .prompt-acc-av {{ width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }}
   .prompt-text {{ font-size: 13px; color: var(--sub); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }}
   .prompt-text mark {{ background: rgba(79,70,229,.35); color: var(--text); border-radius: 2px; padding: 0 1px; }}
   .prompts-empty {{ padding: 60px 0; text-align: center; color: var(--muted); font-size: 13px; }}
@@ -1417,8 +1422,12 @@ async function renderPrompts() {{
     const cards = slice.map(p => {{
       const raw = escHtml(p.text);
       const text = q2 ? raw.replace(new RegExp(escHtml(q2).replace(/[.*+?^${{}}()|[\\]\\\\]/g,'\\\\$&'), 'gi'), m=>`<mark>${{m}}</mark>`) : raw;
+      const acc = p.account;
+      const accTag = acc
+        ? `<span class="prompt-acc sub" title="${{acc.exact ? '子账号网页发送(精确)' : '按活跃时间推断'}}">${{acc.avatar ? `<img class="prompt-acc-av" src="${{escHtml(acc.avatar)}}" alt="">` : ''}}${{escHtml(acc.name)}}${{acc.exact ? '' : ' ~'}}</span>`
+        : `<span class="prompt-acc owner">管理员</span>`;
       return `<div class="prompt-card">
-        <div class="prompt-date">${{fmtDate(p.date)}}</div>
+        <div class="prompt-head">${{accTag}}<span class="prompt-date">${{fmtDate(p.date)}}</span></div>
         <div class="prompt-text">${{text}}</div>
       </div>`;
     }}).join('');

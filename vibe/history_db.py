@@ -79,6 +79,14 @@ def init_db() -> None:
                 last_ts     INTEGER NOT NULL,
                 PRIMARY KEY (open_id, project_id)
             );
+            -- 子账号通过 mira 网页(sub_pane_send)发的 prompt:精确账号归属(不靠时间推断)
+            CREATE TABLE IF NOT EXISTS sub_prompts (
+                open_id     TEXT NOT NULL,
+                project_id  TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                ts          INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sub_prompts_proj ON sub_prompts(project_id);
         """)
         # Migrate existing installations: add cache token columns if missing
         for col, defn in [
@@ -563,6 +571,21 @@ def record_sub_activity(open_id: str, project_id: str, ts_ms: int | None = None)
         pass
 
 
+def record_sub_prompt(open_id: str, project_id: str, content: str, ts_ms: int | None = None) -> None:
+    """精确记录子账号通过 mira 网页发的一条 prompt(展示时按内容精确归属账号,不靠时间推断)。"""
+    if not open_id or not project_id or not content:
+        return
+    ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
+    try:
+        with _conn() as conn:
+            conn.execute(
+                "INSERT INTO sub_prompts (open_id, project_id, content, ts) VALUES (?, ?, ?, ?)",
+                (open_id, project_id, content, ts),
+            )
+    except sqlite3.OperationalError:
+        pass
+
+
 def get_sub_account_audit(open_id: str, prompt_limit: int = 300) -> dict:
     """时间推断归属:该子账号活跃区间(sub_activity)内、同项目、会话开始时刻落入的会话
     归属给它。返回按项目的 token/开销汇总 + 最近 prompts。owner 会话不落在任何区间→不计入。"""
@@ -735,22 +758,36 @@ def get_prompts(project_id: str, limit: int = 200) -> list[dict]:
         with _conn() as conn:
             rows = conn.execute(
                 """
-                SELECT m.content AS text, m.ts
+                SELECT m.content AS text, m.ts AS ts,
+                       (SELECT a.open_id FROM sub_activity a
+                        WHERE a.project_id = s.project_id
+                          AND s.first_ts BETWEEN a.first_ts - ? AND a.last_ts + ?
+                        ORDER BY a.last_ts DESC LIMIT 1) AS time_oid
                 FROM   messages m
                 JOIN   sessions s ON m.session_id = s.id
                 WHERE  s.project_id = ? AND m.role = 'user'
                 ORDER  BY m.ts DESC
                 LIMIT  ?
                 """,
-                (project_id, limit),
+                (_SUB_GRACE_MS, _SUB_GRACE_MS, project_id, limit),
             ).fetchall()
+            # 精确归属:子账号通过 mira 网页发的记录,按内容匹配(不靠时间)
+            sub_rows = conn.execute(
+                "SELECT content, open_id FROM sub_prompts WHERE project_id = ?", (project_id,)
+            ).fetchall()
+        exact_map = {}
+        for sr in sub_rows:
+            exact_map.setdefault(sr["content"], sr["open_id"])
         # 截断超长 prompt(有人会把大文件贴进 prompt,单条几百 KB 会把前端渲染卡死)
         out = []
         for r in rows:
             t = r["text"] or ""
+            exact_oid = exact_map.get(t)            # 精确匹配(截断前的完整内容)
+            oid = exact_oid or r["time_oid"]        # 精确优先,时间兜底
             if len(t) > 4000:
                 t = t[:4000] + "\n\n…… [已截断,完整 {:,} 字符]".format(len(t))
-            out.append({"text": t, "date": str(r["ts"] // 1000)})
+            out.append({"text": t, "date": str(r["ts"] // 1000),
+                        "sub_open_id": oid, "attr_exact": exact_oid is not None})
         return out
     except sqlite3.OperationalError:
         return []
