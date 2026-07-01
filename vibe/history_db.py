@@ -758,20 +758,16 @@ def get_prompts(project_id: str, limit: int = 200) -> list[dict]:
         with _conn() as conn:
             rows = conn.execute(
                 """
-                SELECT m.content AS text, m.ts AS ts,
-                       (SELECT a.open_id FROM sub_activity a
-                        WHERE a.project_id = s.project_id
-                          AND s.first_ts BETWEEN a.first_ts - ? AND a.last_ts + ?
-                        ORDER BY a.last_ts DESC LIMIT 1) AS time_oid
+                SELECT m.content AS text, m.ts AS ts
                 FROM   messages m
                 JOIN   sessions s ON m.session_id = s.id
                 WHERE  s.project_id = ? AND m.role = 'user'
                 ORDER  BY m.ts DESC
                 LIMIT  ?
                 """,
-                (_SUB_GRACE_MS, _SUB_GRACE_MS, project_id, limit),
+                (project_id, limit),
             ).fetchall()
-            # 精确归属:子账号通过 mira 网页发的记录,按内容匹配(不靠时间)
+            # 账号归属:子账号全走输入框,每条都精确记在 sub_prompts,按内容匹配(不靠时间)
             sub_rows = conn.execute(
                 "SELECT content, open_id FROM sub_prompts WHERE project_id = ?", (project_id,)
             ).fetchall()
@@ -782,12 +778,11 @@ def get_prompts(project_id: str, limit: int = 200) -> list[dict]:
         out = []
         for r in rows:
             t = r["text"] or ""
-            exact_oid = exact_map.get(t)            # 精确匹配(截断前的完整内容)
-            oid = exact_oid or r["time_oid"]        # 精确优先,时间兜底
+            oid = exact_map.get(t)                  # 完整内容精确匹配(截断前)
             if len(t) > 4000:
                 t = t[:4000] + "\n\n…… [已截断,完整 {:,} 字符]".format(len(t))
             out.append({"text": t, "date": str(r["ts"] // 1000),
-                        "sub_open_id": oid, "attr_exact": exact_oid is not None})
+                        "sub_open_id": oid, "attr_exact": oid is not None})
         return out
     except sqlite3.OperationalError:
         return []

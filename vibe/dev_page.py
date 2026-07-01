@@ -2088,7 +2088,8 @@ function showTerminal() {
   if (toolbar) toolbar.classList.add('visible');
   var devPage = document.getElementById('dev-page');
 
-  if (_isMobile || _currentIsRemote) {
+  // owner 桌面若开了"输入框模式"配置,也走 stream(流式输出 + 本地输入框,一次输入很多不卡)
+  if (_isMobile || _currentIsRemote || localStorage.getItem('mira-input-box-mode')) {
     if (devPage) devPage.classList.add('stream-mode');
     document.getElementById('ttyd-frame').classList.remove('visible');
     document.getElementById('mobile-term-output').classList.add('visible');
@@ -2589,13 +2590,15 @@ function _onWsDotClick() {
   }
 }
 
-async function _sendToTerminal(keys) {
+async function _sendToTerminal(keys, promptText) {
   if (!_currentTarget) return;
   try {
+    var _body = { keys: keys };
+    if (promptText) _body.prompt = promptText;   // 子账号:供后端精确归属这条 prompt(不靠时间)
     await fetch('/api/terminals/' + encodeURIComponent(_currentTarget) + '/send', {
       method: 'POST',
       headers: _authHeaders({'Content-Type': 'application/json'}),
-      body: JSON.stringify({ keys: keys })
+      body: JSON.stringify(_body)
     });
   } catch(e) { console.warn('send error:', e); }
 }
@@ -2759,7 +2762,7 @@ async function _sendMobileCmd() {
     _historyIdx = -1;
   }
   // Send text + Enter (empty text = bare Enter for confirmations/selections)
-  await _sendToTerminal(text + '\n');
+  await _sendToTerminal(text + '\n', text || null);   // 非空文本作为 prompt 原文精确归属
   input.value = '';
   input.style.height = 'auto';
   input.focus();
@@ -3397,28 +3400,14 @@ function showSubTerminal() {
   document.getElementById('term-placeholder').style.display = 'none';
   var toolbar = document.getElementById('term-toolbar'); if (toolbar) toolbar.classList.add('visible');
   var devPage = document.getElementById('dev-page');
-  if (_isMobile) {
-    // 手机:跟 owner 完全一样用 stream 模式 —— 只读输出流 + 输入栏/按键行,
-    // 经 /api/terminals/send(已按 sub 作用域)。iframe 在手机上输入有问题,不用。
-    devPage.classList.add('stream-mode');
-    document.getElementById('ttyd-frame').classList.remove('visible');
-    document.getElementById('mobile-term-output').classList.add('visible');
-    document.getElementById('mobile-token-bar').classList.add('visible');
-    document.getElementById('mobile-input-bar').style.display = 'flex';
-    if (_currentTarget) _connectTermWs(_currentTarget);
-    return;
-  }
-  // 桌面:子账号自己的可写 ttyd(直接在终端里打字)
-  if (!_subTermBase) { _subTermError('终端暂不可用,请重试'); return; }
-  devPage.classList.remove('stream-mode');
-  var frame = document.getElementById('ttyd-frame');
-  if (!frame.src || !frame.src.endsWith(_subTermBase)) {
-    frame.src = _subTermBase;
-    frame.addEventListener('load', function() { _applyTtydTheme(); _focusTerm(); });
-  }
-  frame.classList.add('visible');
-  document.getElementById('mobile-term-output').classList.remove('visible');
-  requestAnimationFrame(function() { _resizeTtydFrame(); setTimeout(_resizeTtydFrame, 250); _focusTerm(); });
+  // 子账号统一用 stream 模式(流式输出 + 输入框),桌面也一样。输入全走后端(按 sub 作用域、
+  // 100% 带账号),不给可写 ttyd —— 子账号没有"在终端直接敲"的入口,prompt 归属彻底精确。
+  devPage.classList.add('stream-mode');
+  document.getElementById('ttyd-frame').classList.remove('visible');
+  document.getElementById('mobile-term-output').classList.add('visible');
+  document.getElementById('mobile-token-bar').classList.add('visible');
+  document.getElementById('mobile-input-bar').style.display = 'flex';
+  if (_currentTarget) _connectTermWs(_currentTarget);
 }
 
 function _focusTerm() {

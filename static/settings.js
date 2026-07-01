@@ -189,6 +189,17 @@ function toggleDevFlatList(on) {
   localStorage.setItem('mira-dev-flat-list', on ? '1' : '');
 }
 
+function toggleInputBoxMode(on) {
+  if (on) localStorage.setItem('mira-input-box-mode', '1');
+  else localStorage.removeItem('mira-input-box-mode');
+  // 若正在 dev 页看着某个终端,立即切换渲染方式(iframe ↔ 流式+输入框)
+  try {
+    if (typeof _currentTarget !== 'undefined' && _currentTarget && typeof selectPane === 'function') {
+      selectPane(_currentTarget);
+    }
+  } catch (e) {}
+}
+
 /* ── Notification sound ────────────────────────────────────────────────────── */
 let _notificationSound = localStorage.getItem('mira-notification-sound') || 'Pop';
 
@@ -259,6 +270,13 @@ function initSettings() {
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--sub)">
           <input type="checkbox" id="set-dev-flat-list" onchange="toggleDevFlatList(this.checked)" style="accent-color:var(--accent)">
           平铺模式（不按项目分组）
+        </label>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label" style="text-transform:uppercase;letter-spacing:1px">终端输入</div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--sub)">
+          <input type="checkbox" id="set-input-box-mode" onchange="toggleInputBoxMode(this.checked)" style="accent-color:var(--accent)">
+          输入框模式（本地输入框发送，一次输入很多、不卡；桌面生效）
         </label>
       </div>
       <div class="settings-group">
@@ -465,6 +483,8 @@ async function openSettings() {
   // Init dev flat list checkbox
   var _flatCb = document.getElementById('set-dev-flat-list');
   if (_flatCb) _flatCb.checked = !!localStorage.getItem('mira-dev-flat-list');
+  var _ibCb = document.getElementById('set-input-box-mode');
+  if (_ibCb) _ibCb.checked = !!localStorage.getItem('mira-input-box-mode');
   _loadRemoteHosts();
   _loadAccounts();
   // Reset to first tab

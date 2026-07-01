@@ -4104,6 +4104,15 @@ async def terminals_send(request: Request, target: str, body: dict):
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
     await asyncio.to_thread(_do_send)
+    # 子账号通过输入框发的一句话(body.prompt=原文) → 精确记录归属,不靠时间
+    if principal[0] == "sub" and body.get("prompt"):
+        try:
+            from vibe.history_db import record_sub_prompt
+            pid = _sub_target_project(principal[1]["feishu_open_id"], target)
+            if pid:
+                record_sub_prompt(principal[1]["feishu_open_id"], pid, body["prompt"])
+        except Exception:
+            pass
     return {"ok": True}
 
 
