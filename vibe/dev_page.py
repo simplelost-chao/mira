@@ -333,16 +333,10 @@ def render_dev_page() -> str:
   .dev-page.stream-mode .keys-sep {
     width: 1px; height: 16px; background: var(--border); flex-shrink: 0;
   }
-  .dev-page.stream-mode .mobile-attach-btn,
   .dev-page.stream-mode .mobile-send-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
-  }
-  .dev-page.stream-mode .mobile-attach-btn {
-    background: none; border: 1px solid var(--border); color: var(--sub);
-  }
-  .dev-page.stream-mode .mobile-send-btn {
-    background: var(--accent); border: none; color: #fff; font-size: 18px;
+    width: 52px; align-self: stretch; border-radius: 8px; cursor: pointer;
+    background: var(--accent); border: none; color: #fff; font-size: 20px;
   }
 
   /* ── Empty-state new terminal button ── */
@@ -3426,6 +3420,19 @@ function _focusInputBox() {
   }, 80);
 }
 
+// 输入框模式下,预加载/隐藏的 ttyd iframe(加载完 xterm 会自动 focus)会偷走焦点 →
+// 敲字进了终端 iframe。焦点一旦落到 iframe 就抢回输入框。绑定一次。
+document.addEventListener('focusin', function(e) {
+  if (_isMobile) return;
+  var dp = document.getElementById('dev-page');
+  if (!dp || !dp.classList.contains('stream-mode')) return;
+  var t = e.target;
+  if (t && (t.id === 'ttyd-frame' || t.tagName === 'IFRAME')) {
+    var i = document.getElementById('mobile-cmd-input');
+    if (i) i.focus();
+  }
+});
+
 function _focusTerm() {
   // 把键盘焦点交给终端 iframe,进去就能直接打字(不用先点一下)
   var frame = document.getElementById('ttyd-frame');
@@ -3485,7 +3492,8 @@ async function init() {
   _initMobileInput();
   _initUpload();
   // Preload ttyd iframe on desktop so it's ready when user clicks a pane
-  if (!_isMobile) {
+  if (!_isMobile && !localStorage.getItem('mira-input-box-mode')) {
+    // 输入框模式不预加载 ttyd(否则它加载完会抢焦点、把敲的字吃进隐藏的终端)
     var _preFrame = document.getElementById('ttyd-frame');
     if (_preFrame && !_preFrame.src) _preFrame.src = '/terminal/';
   }
