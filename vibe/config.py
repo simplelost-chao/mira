@@ -74,6 +74,7 @@ def load_global_config(config_path: Optional[Path] = None) -> dict:
         "notification_sound": data.get("notification_sound", "Pop"),
         "remote_hosts": data.get("remote_hosts", []),
         "keys": data.get("keys", []),
+        "feishu_oauth": data.get("feishu_oauth"),
     }
     _config_cache = result
     _config_cache_mtimes = current_mtimes

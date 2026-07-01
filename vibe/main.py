@@ -3527,7 +3527,7 @@ def sub_audit_page_route():
 
 # ── 飞书 OAuth 登录(复用 feishu-coo 应用)────────────────────────────────────
 
-_feishu_states: dict[str, float] = {}   # state -> 过期时间(CSRF 校验)
+_feishu_states: dict[str, tuple] = {}   # state -> (过期时间, 组织 key)(CSRF 校验 + 多组织路由)
 
 
 def _feishu_coo_env() -> dict:
@@ -3561,29 +3561,103 @@ def _feishu_oauth_cfg() -> dict:
     }
 
 
+def _feishu_oauth_apps() -> list[dict]:
+    """所有可登录的飞书应用(多组织/多租户)。第一个是默认(feishu_oauth 或回落 feishu-coo),
+    其余来自 config 的 feishu_oauth.orgs 列表。callback 用 state 里记的 key 选回对应应用。"""
+    from .config import load_global_config
+    fo = load_global_config().get("feishu_oauth") or {}
+    pub = (fo.get("public_base_url") or "https://mira.zhuchao.life").rstrip("/")
+    redirect = pub + "/auth/feishu/callback"
+    apps: list[dict] = []
+    coo = _feishu_coo_env() if not fo.get("app_id") else {}
+    aid = fo.get("app_id") or coo.get("FEISHU_COO_APP_ID", "")
+    if aid:
+        apps.append({
+            "key": "default",
+            "label": fo.get("label") or "默认组织",
+            "app_id": aid,
+            "app_secret": fo.get("app_secret") or coo.get("FEISHU_COO_APP_SECRET", ""),
+            "open_base_url": (fo.get("open_base_url") or coo.get("FEISHU_COO_OPEN_BASE_URL")
+                              or "https://open.feishu.cn/open-apis"),
+            "scopes": fo.get("scopes") or coo.get("FEISHU_COO_USER_OAUTH_SCOPES", ""),
+            "redirect_uri": redirect,
+        })
+    for org in (fo.get("orgs") or []):
+        if not org.get("app_id"):
+            continue
+        apps.append({
+            "key": org.get("key") or org["app_id"][-8:],
+            "label": org.get("label") or "组织",
+            "app_id": org["app_id"],
+            "app_secret": org.get("app_secret", ""),
+            "open_base_url": org.get("open_base_url") or "https://open.feishu.cn/open-apis",
+            "scopes": org.get("scopes", ""),
+            "redirect_uri": redirect,
+        })
+    return apps
+
+
+def _feishu_app_by_key(key: str):
+    apps = _feishu_oauth_apps()
+    for a in apps:
+        if a["key"] == key:
+            return a
+    return apps[0] if apps else None
+
+
+def _feishu_org_picker_html(apps: list[dict]) -> str:
+    import html as _h
+    from vibe.topbar import theme_vars_css
+    btns = "".join(
+        '<a href="/auth/feishu/login?org=' + _h.escape(a["key"], quote=True) + '" '
+        'style="display:block;font-size:15px;font-weight:600;background:var(--accent);color:#fff;'
+        'border-radius:10px;padding:14px 26px;text-decoration:none;margin:10px 0;min-width:240px">'
+        + _h.escape(a["label"]) + ' 飞书登录</a>'
+        for a in apps
+    )
+    return (
+        '<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>选择组织 · Mira</title>'
+        "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>"
+        '<style>*{box-sizing:border-box;margin:0;padding:0}' + theme_vars_css() + '</style></head>'
+        '<body style="display:flex;flex-direction:column;align-items:center;justify-content:center;'
+        'min-height:100vh;gap:2px;text-align:center;padding:24px;font-family:var(--mono);background:var(--bg);color:var(--text)">'
+        '<div style="font-size:20px;font-weight:700;margin-bottom:14px">'
+        '<span style="color:var(--accent)">M</span>ira 协作 · 选择你的组织</div>'
+        + btns +
+        '</body></html>'
+    )
+
+
 @api.get("/auth/feishu/login")
-def feishu_login():
-    """跳转飞书授权页。"""
+def feishu_login(org: str = ""):
+    """跳转飞书授权页;配置了多个组织且未指定 org 时,先返回组织选择页。"""
     from vibe.feishu_oauth import build_authorize_url
-    cfg = _feishu_oauth_cfg()
-    if not cfg["app_id"]:
+    apps = _feishu_oauth_apps()
+    if not apps:
         raise HTTPException(status_code=503, detail="未配置飞书应用(feishu_oauth)")
+    if not org and len(apps) > 1:
+        return HTMLResponse(_feishu_org_picker_html(apps), headers=_NC)
+    app = _feishu_app_by_key(org) if org else apps[0]
     state = secrets.token_urlsafe(16)
-    _feishu_states[state] = time.time() + 600
-    return RedirectResponse(build_authorize_url(cfg, state))
+    _feishu_states[state] = (time.time() + 600, app["key"])
+    return RedirectResponse(build_authorize_url(app, state))
 
 
 @api.get("/auth/feishu/callback")
 def feishu_callback(code: str = "", state: str = ""):
     """飞书授权回调:换码拿用户 → 找/建账号 → active 发会话,否则进待批准。"""
-    exp = _feishu_states.pop(state, None)
-    if not exp or exp < time.time():
+    st = _feishu_states.pop(state, None)
+    if not st or st[0] < time.time():
         return RedirectResponse("/dev?sub_error=state")
     from vibe.feishu_oauth import exchange_code
     from vibe.accounts import new_session
-    cfg = _feishu_oauth_cfg()
+    app = _feishu_app_by_key(st[1])   # 用发起登录时记下的组织 key 选回对应应用
+    if not app:
+        return RedirectResponse("/dev?sub_error=noapp")
     try:
-        user = exchange_code(cfg, code)
+        user = exchange_code(app, code)
     except Exception:
         return RedirectResponse("/dev?sub_error=exchange")
     open_id = user.get("open_id")
