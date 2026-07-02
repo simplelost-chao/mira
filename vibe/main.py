@@ -3545,21 +3545,23 @@ def _inline_upload(text: str, cap: int) -> str:
         return text
 
 
-def _parse_claude_turns(path: Path) -> list[dict]:
-    """把会话 jsonl 解析成轮次列表:user prompt 一轮,其后的 assistant 文本+工具调用合并一轮。
-    跳过 sidechain(子代理)、meta、tool_result 载体行。单轮文本截断以控制载荷:
-    user prompt(可能内联整份上传文档)给 60k,assistant 单个文字段落 8k 足够。"""
+def _parse_claude_turns(path: Path, agent: str | None = None) -> list[dict]:
+    """把会话 jsonl 解析成轮次列表:user prompt 一轮,assistant 每个文字段落一轮。
+    跳过 meta、tool_result 载体行。agent=None 时解析主时间线(跳过 sidechain 行);
+    传 agent 标签时解析子代理文件(行都是 sidechain),轮次带 agent 字段。
+    截断:user prompt(可能内联整份上传文档)60k;子代理的派发任务书 1500(模板化长文);
+    assistant 单个文字段落 8k。"""
     import json
     turns: list[dict] = []
     cap = 8000
-    user_cap = 60000
+    user_cap = 60000 if not agent else 1500
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
                 d = json.loads(line)
             except Exception:
                 continue
-            if d.get("isSidechain"):
+            if d.get("isSidechain") and not agent:
                 continue
             t = d.get("type")
             if t == "user":
@@ -3580,7 +3582,10 @@ def _parse_claude_turns(path: Path) -> list[dict]:
                 if not text or text.startswith("<"):
                     continue
                 text = _inline_upload(text, user_cap)
-                turns.append({"role": "user", "text": text[:user_cap], "ts": d.get("timestamp", "")})
+                turn = {"role": "user", "text": text[:user_cap], "ts": d.get("timestamp", "")}
+                if agent:
+                    turn["agent"] = agent
+                turns.append(turn)
             elif t == "assistant":
                 blocks = ((d.get("message") or {}).get("content")) or []
                 cur = turns[-1] if turns and turns[-1]["role"] == "assistant" else None
@@ -3592,14 +3597,51 @@ def _parse_claude_turns(path: Path) -> list[dict]:
                         # 几百条 assistant 输出(长时间自主干活),全并成一轮会截断成一团。
                         if cur is None or cur["text"]:
                             cur = {"role": "assistant", "text": "", "tools": {}, "ts": d.get("timestamp", "")}
+                            if agent:
+                                cur["agent"] = agent
                             turns.append(cur)
                         cur["text"] = blk["text"].strip()[:cap]
                     elif blk.get("type") == "tool_use":
                         if cur is None:
                             cur = {"role": "assistant", "text": "", "tools": {}, "ts": d.get("timestamp", "")}
+                            if agent:
+                                cur["agent"] = agent
                             turns.append(cur)
                         name = blk.get("name") or "?"
                         cur["tools"][name] = cur["tools"].get(name, 0) + 1
+    return turns
+
+
+_turns_cache: dict[str, tuple[float, list]] = {}   # sess_file -> (时间戳, 合并轮次)
+
+
+def _session_turns(sess_file: Path) -> list[dict]:
+    """主时间线 + 子代理过程按时间戳合并成一条时间线。
+    自主开发型会话的内容大头在子代理里(实测主文件 2MB vs subagents 5MB),
+    只看主链会"只有一屏"。(mtime 和缓存避免每次翻页重复解析几 MB。"""
+    import json
+    sub_dir = sess_file.parent / sess_file.stem / "subagents"
+    stamp = sess_file.stat().st_mtime
+    if sub_dir.is_dir():
+        stamp += sum(f.stat().st_mtime for f in sub_dir.glob("agent-*.jsonl"))
+    key = str(sess_file)
+    cached = _turns_cache.get(key)
+    if cached and cached[0] == stamp:
+        return cached[1]
+    turns = _parse_claude_turns(sess_file)
+    if sub_dir.is_dir():
+        for f in sorted(sub_dir.glob("agent-*.jsonl")):
+            label = f.stem.removeprefix("agent-")[:8]
+            try:
+                meta = json.loads(f.with_name(f.stem + ".meta.json").read_text())
+                label = meta.get("description") or meta.get("agentType") or label
+            except Exception:
+                pass
+            turns.extend(_parse_claude_turns(f, agent=label))
+        turns.sort(key=lambda t: t.get("ts") or "")
+    if len(_turns_cache) > 8:                      # 只留最近几个会话的解析结果
+        _turns_cache.pop(next(iter(_turns_cache)))
+    _turns_cache[key] = (stamp, turns)
     return turns
 
 
@@ -3622,18 +3664,18 @@ def dev_pane_history(request: Request, target: str, before: int = 0, limit: int 
     sess_file = _claude_session_file(r.stdout.strip())
     if not sess_file:
         raise HTTPException(status_code=404, detail="没有找到该项目的 claude 会话记录")
-    turns = _parse_claude_turns(sess_file)
+    turns = _session_turns(sess_file)
     total = len(turns)
     end = max(0, total - max(0, before))
-    # 按"用户回合"分页:一页 = 最近 limit 条 user prompt 及其间的全部 assistant 轮。
-    # 若按轮数分页,assistant 拆细后一页 20 轮只剩几分钟的内容,观感像被截断。
+    # 按"用户回合"分页:一页 = 最近 limit 条【主链】user prompt 及其间的全部内容
+    # (含子代理过程)。若按轮数分页,一页 20 个小段落只剩几分钟的内容,观感像被截断。
     # 客户端游标(before)仍是"已消费的轮数",与本切片方式天然兼容。
     rounds = max(1, min(limit, 100))
-    max_turns = 600   # 极端会话(自主长跑几乎没有 user 轮)的硬上限
+    max_turns = 800   # 极端会话(自主长跑几乎没有 user 轮)的硬上限
     start, seen = end, 0
     while start > 0 and (end - start) < max_turns:
         start -= 1
-        if turns[start]["role"] == "user":
+        if turns[start]["role"] == "user" and not turns[start].get("agent"):
             seen += 1
             if seen >= rounds:
                 break

@@ -305,6 +305,11 @@ def render_dev_page() -> str:
   .hist-asst { padding: 6px 2px 0; font-size: 12.5px; color: var(--sub); line-height: 1.55;
     white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
   .hist-tools { font-size: 10px; color: var(--muted); margin-top: 5px; }
+  .hist-turn.hist-agent { margin: 0 0 10px 14px; padding-left: 10px;
+    border-left: 2px solid rgba(255,255,255,.08); }
+  .hist-agent-tag { display: inline-block; font-size: 10px; color: var(--muted);
+    background: rgba(255,255,255,.05); border-radius: 4px; padding: 1px 7px; margin-bottom: 3px; }
+  .hist-turn.hist-agent .hist-asst { color: var(--muted); font-size: 12px; padding-top: 2px; }
 
   .dev-page.stream-mode .term-iframe-wrap {
     display: none;
@@ -3514,16 +3519,25 @@ function _histTs(iso) {
 }
 
 function _histRenderTurn(t) {
+  var tools = '';
+  if (t.tools) {
+    var parts = Object.keys(t.tools).map(function(k) {
+      var nm = k.replace(/^mcp__.*__/, '');   // MCP 全限定名太长,只留末段
+      return nm + (t.tools[k] > 1 ? '×' + t.tools[k] : '');
+    });
+    if (parts.length) tools = '<div class="hist-tools">⚙ ' + escHtml(parts.join(' · ')) + '</div>';
+  }
+  var body = (t.text || '').trim();
+  if (t.agent) {
+    // 子代理轮次:缩进降级显示,带任务标签;派发任务书(user)与过程文本同样式
+    var tag = '<span class="hist-agent-tag">↳ ' + escHtml(t.agent) + '</span>';
+    return '<div class="hist-turn hist-agent">' + tag
+      + (body ? '<div class="hist-asst">' + escHtml(body) + '</div>' : '') + tools + '</div>';
+  }
   if (t.role === 'user') {
     var ts = t.ts ? '<div class="hist-ts">' + _histTs(t.ts) + '</div>' : '';
     return '<div class="hist-turn">' + ts + '<div class="hist-user">' + escHtml(t.text) + '</div></div>';
   }
-  var tools = '';
-  if (t.tools) {
-    var parts = Object.keys(t.tools).map(function(k) { return k + (t.tools[k] > 1 ? '×' + t.tools[k] : ''); });
-    if (parts.length) tools = '<div class="hist-tools">⚙ ' + escHtml(parts.join(' · ')) + '</div>';
-  }
-  var body = (t.text || '').trim();
   return '<div class="hist-turn">' + (body ? '<div class="hist-asst">' + escHtml(body) + '</div>' : '') + tools + '</div>';
 }
 
