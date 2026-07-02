@@ -518,7 +518,7 @@ def render_dev_page() -> str:
       padding: 8px 10px; padding-bottom: max(8px, env(safe-area-inset-bottom));
     }
     .mobile-cmd-input {
-      flex: 1; min-height: 56px; max-height: 180px;
+      flex: 1; min-height: 40px; max-height: 180px;
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
       color: var(--text); font-family: var(--mono); font-size: 16px;
       padding: 8px 12px; outline: none; resize: none;
@@ -526,6 +526,8 @@ def render_dev_page() -> str:
     }
     .mobile-cmd-input:focus { border-color: var(--accent); }
     .mobile-cmd-input::placeholder { color: var(--muted); }
+    /* 手机上输入框压到单行高;全局 stream-mode 规则的 64px 只留给桌面 */
+    .dev-page.stream-mode .mobile-cmd-input { min-height: 40px; }
     .mobile-send-btn {
       width: 36px; height: 36px; flex-shrink: 0;
       background: var(--accent); border: none; border-radius: 8px;
