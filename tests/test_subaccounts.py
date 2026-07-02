@@ -1,12 +1,25 @@
 """子账号端点:owner 账号管理 + 子账号作用域受限访问。"""
+import threading
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from vibe.main import api
 from vibe import accounts
 
 client = TestClient(api)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_session_db(tmp_path, monkeypatch):
+    """会话现在落 history.db:测试重定向到临时库,不污染真实数据。"""
+    from vibe import history_db
+    monkeypatch.setattr(history_db, "DB_PATH", tmp_path / "history.db")
+    monkeypatch.setattr(history_db, "_local", threading.local())
+    accounts._sessions.clear()
+    yield
+    accounts._sessions.clear()
 
 
 def _yaml(tmp_path, accs):
