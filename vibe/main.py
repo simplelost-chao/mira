@@ -3565,11 +3565,12 @@ def _parse_claude_turns(path: Path) -> list[dict]:
                     if not isinstance(blk, dict):
                         continue
                     if blk.get("type") == "text" and (blk.get("text") or "").strip():
-                        if cur is None:
+                        # 每个文字段落独立成轮(不与之前的合并)——两条 prompt 之间可能有
+                        # 几百条 assistant 输出(长时间自主干活),全并成一轮会截断成一团。
+                        if cur is None or cur["text"]:
                             cur = {"role": "assistant", "text": "", "tools": {}, "ts": d.get("timestamp", "")}
                             turns.append(cur)
-                        if len(cur["text"]) < cap:
-                            cur["text"] = (cur["text"] + "\n\n" + blk["text"].strip()).strip()[:cap]
+                        cur["text"] = blk["text"].strip()[:cap]
                     elif blk.get("type") == "tool_use":
                         if cur is None:
                             cur = {"role": "assistant", "text": "", "tools": {}, "ts": d.get("timestamp", "")}
