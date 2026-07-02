@@ -14,6 +14,7 @@ A self-hosted project management dashboard that aggregates git status, running s
 - **Sub-account audit** — stats tab with per-account sub-tabs: cost/token/message totals, per-project breakdown, and a paginated prompts list (sessions attributed by time inference)
 - **Usage rate limits** — session % and weekly % with countdown timer shown in toolbar; Claude data from Anthropic API headers, Codex data from `~/.codex/logs_2.sqlite`
 - **Mobile terminal** — WebSocket streaming with client-side ANSI rendering, dedicated input bar that bypasses iOS keyboard issues; Claude Code pet/status bar auto-filtered for clean display
+- **Full session history** — "历史" button on any Claude pane renders the complete conversation from `~/.claude` session files (user prompts, replies, tool-call summaries) with pagination; immune to terminal screen erasure
 - **Clipboard bridge** — Cmd+C via tmux buffer for HTTP environments
 - **Design docs** — plans, specs, and AI-generated summaries per project
 - **Claude Code usage monitor** — real-time session + weekly usage with percentage and reset countdown in toolbar

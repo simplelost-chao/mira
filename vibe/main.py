@@ -3505,6 +3505,107 @@ def sub_pane_output(request: Request, target: str, lines: int = 200):
     return {"target": target, "output": text}
 
 
+# ── claude 完整会话历史(读 ~/.claude 的 jsonl,终端画面之外的治本方案)──────────
+
+def _claude_session_file(cwd: str):
+    """pane cwd → ~/.claude/projects/<编码路径>/ 下最新修改的会话 jsonl;找不到返回 None。
+    claude 的目录名编码 = 路径中非 [A-Za-z0-9-] 字符全部替换成 '-'。
+    cwd 可能是项目子目录(用户 cd 过),逐级向上找存在的会话目录。"""
+    base = Path.home() / ".claude" / "projects"
+    p = Path(cwd)
+    for cand in [p, *p.parents]:
+        enc = re.sub(r"[^A-Za-z0-9-]", "-", str(cand))
+        d = base / enc
+        if d.is_dir():
+            files = sorted(d.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+            if files:
+                return files[0]
+        if str(cand) == str(Path.home()):
+            break
+    return None
+
+
+def _parse_claude_turns(path: Path) -> list[dict]:
+    """把会话 jsonl 解析成轮次列表:user prompt 一轮,其后的 assistant 文本+工具调用合并一轮。
+    跳过 sidechain(子代理)、meta、tool_result 载体行。单轮文本截断以控制载荷。"""
+    import json
+    turns: list[dict] = []
+    cap = 8000
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            if d.get("isSidechain"):
+                continue
+            t = d.get("type")
+            if t == "user":
+                if d.get("isMeta"):
+                    continue
+                mc = (d.get("message") or {}).get("content")
+                if isinstance(mc, str):
+                    text = mc
+                elif isinstance(mc, list):
+                    if any(isinstance(x, dict) and x.get("type") == "tool_result" for x in mc):
+                        continue
+                    text = "\n".join(x.get("text", "") for x in mc
+                                     if isinstance(x, dict) and x.get("type") == "text")
+                else:
+                    continue
+                text = (text or "").strip()
+                # 斜杠命令/本地命令的 XML 包装行不算真实 prompt
+                if not text or text.startswith("<"):
+                    continue
+                turns.append({"role": "user", "text": text[:cap], "ts": d.get("timestamp", "")})
+            elif t == "assistant":
+                blocks = ((d.get("message") or {}).get("content")) or []
+                cur = turns[-1] if turns and turns[-1]["role"] == "assistant" else None
+                for blk in blocks:
+                    if not isinstance(blk, dict):
+                        continue
+                    if blk.get("type") == "text" and (blk.get("text") or "").strip():
+                        if cur is None:
+                            cur = {"role": "assistant", "text": "", "tools": {}, "ts": d.get("timestamp", "")}
+                            turns.append(cur)
+                        if len(cur["text"]) < cap:
+                            cur["text"] = (cur["text"] + "\n\n" + blk["text"].strip()).strip()[:cap]
+                    elif blk.get("type") == "tool_use":
+                        if cur is None:
+                            cur = {"role": "assistant", "text": "", "tools": {}, "ts": d.get("timestamp", "")}
+                            turns.append(cur)
+                        name = blk.get("name") or "?"
+                        cur["tools"][name] = cur["tools"].get(name, 0) + 1
+    return turns
+
+
+@api.get("/api/dev/pane-history")
+def dev_pane_history(request: Request, target: str, before: int = 0, limit: int = 20):
+    """claude pane 的完整会话历史(来自 ~/.claude jsonl,不受终端擦屏影响)。
+    admin 看任意 pane;子账号只能看自己 session 里且被授权项目的 pane。
+    分页:before=已取轮数(从最新往前翻),limit=本次轮数。"""
+    principal = _get_principal(request)
+    if not principal:
+        raise HTTPException(status_code=401, detail="需要登录")
+    if principal[0] == "sub":
+        from vibe.accounts import account_can_access_project
+        pid = _sub_target_project(principal[1]["feishu_open_id"], target)
+        if not pid or not account_can_access_project(principal[1], pid):
+            raise HTTPException(status_code=403, detail="无权访问该终端")
+    r = _tmux_run("display-message", "-t", target, "-p", "#{pane_current_path}")
+    if r.returncode != 0:
+        raise HTTPException(status_code=404, detail="终端不存在")
+    sess_file = _claude_session_file(r.stdout.strip())
+    if not sess_file:
+        raise HTTPException(status_code=404, detail="没有找到该项目的 claude 会话记录")
+    turns = _parse_claude_turns(sess_file)
+    total = len(turns)
+    end = max(0, total - max(0, before))
+    start = max(0, end - max(1, min(limit, 100)))
+    return {"turns": turns[start:end], "total": total, "has_more": start > 0,
+            "session": sess_file.stem[:8]}
+
+
 @api.post("/api/sub/pane/{target:path}/send")
 def sub_pane_send(request: Request, target: str, body: dict):
     """子账号:向自己会话里的 claude 发一句话(消毒后补回车提交)。无裸 shell。"""

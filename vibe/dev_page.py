@@ -280,6 +280,32 @@ def render_dev_page() -> str:
   /* head/scrollback/live 三区:display:contents 让 div 的文本按父级 pre-wrap 连续排版 */
   .mobile-term-output .term-head, .mobile-term-output .term-sb, .mobile-term-output .term-live { display: contents; }
   .mobile-input-bar { display: none; }
+
+  /* ── claude 完整会话历史(读 ~/.claude jsonl)── */
+  .hist-overlay { position: fixed; inset: 0; z-index: 400; background: var(--bg); display: none; flex-direction: column; }
+  .hist-overlay.open { display: flex; }
+  .hist-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--panel); }
+  .hist-title { font-size: 13px; font-weight: 700; color: var(--text); flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-meta { font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .hist-close { background: none; border: 1px solid var(--border); color: var(--sub); border-radius: 6px;
+    padding: 4px 14px; font-family: inherit; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+  .hist-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 14px 14px calc(30px + env(safe-area-inset-bottom)); }
+  .hist-inner { max-width: 860px; margin: 0 auto; }
+  .hist-more { display: block; margin: 0 auto 16px; background: none; border: 1px solid var(--border);
+    color: var(--accent); border-radius: 14px; padding: 5px 18px; font-family: inherit; font-size: 12px; cursor: pointer; }
+  .hist-more:disabled { opacity: .4; }
+  .hist-empty { text-align: center; color: var(--muted); font-size: 12px; padding: 40px 0; }
+  .hist-turn { margin-bottom: 14px; }
+  .hist-ts { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .hist-user { background: rgba(var(--accent-rgb), .08); border-left: 3px solid var(--accent); border-radius: 6px;
+    padding: 8px 11px; font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+  .hist-asst { padding: 6px 2px 0; font-size: 12.5px; color: var(--sub); line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+  .hist-tools { font-size: 10px; color: var(--muted); margin-top: 5px; }
+
   .dev-page.stream-mode .term-iframe-wrap {
     display: none;
   }
@@ -3462,6 +3488,81 @@ window.addEventListener('message', function(e) {
   }
 });
 
+// ── claude 完整会话历史(读 ~/.claude jsonl,不受终端擦屏影响)──────────────────
+var _histBefore = 0, _histTarget = null, _histLoading = false;
+
+function openPaneHistory() {
+  if (!_currentTarget) { _showToast('先选择一个终端', 1500); return; }
+  _histTarget = _currentTarget; _histBefore = 0;
+  var title = document.getElementById('term-detail-title');
+  document.getElementById('hist-title').textContent = '会话历史 · ' + ((title && title.textContent.trim()) || _histTarget);
+  document.getElementById('hist-meta').textContent = '';
+  document.getElementById('hist-inner').innerHTML = '<div class="hist-empty">加载中…</div>';
+  document.getElementById('hist-overlay').classList.add('open');
+  _loadPaneHistory(true);
+}
+
+function closePaneHistory() {
+  document.getElementById('hist-overlay').classList.remove('open');
+}
+
+function _histTs(iso) {
+  var d = new Date(iso);
+  if (isNaN(d)) return '';
+  var p = function(x) { return String(x).padStart(2, '0'); };
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function _histRenderTurn(t) {
+  if (t.role === 'user') {
+    var ts = t.ts ? '<div class="hist-ts">' + _histTs(t.ts) + '</div>' : '';
+    return '<div class="hist-turn">' + ts + '<div class="hist-user">' + escHtml(t.text) + '</div></div>';
+  }
+  var tools = '';
+  if (t.tools) {
+    var parts = Object.keys(t.tools).map(function(k) { return k + (t.tools[k] > 1 ? '×' + t.tools[k] : ''); });
+    if (parts.length) tools = '<div class="hist-tools">⚙ ' + escHtml(parts.join(' · ')) + '</div>';
+  }
+  var body = (t.text || '').trim();
+  return '<div class="hist-turn">' + (body ? '<div class="hist-asst">' + escHtml(body) + '</div>' : '') + tools + '</div>';
+}
+
+async function _loadPaneHistory(initial) {
+  if (_histLoading) return;
+  _histLoading = true;
+  var body = document.getElementById('hist-body');
+  var inner = document.getElementById('hist-inner');
+  try {
+    var res = await fetch('/api/dev/pane-history?target=' + encodeURIComponent(_histTarget)
+      + '&before=' + _histBefore + '&limit=20', { headers: _authHeaders() });
+    if (!res.ok) {
+      if (initial) inner.innerHTML = '<div class="hist-empty">'
+        + (res.status === 404 ? '没有找到该项目的 claude 会话记录' : '加载失败(' + res.status + ')') + '</div>';
+      return;
+    }
+    var d = await res.json();
+    var html = (d.turns || []).map(_histRenderTurn).join('');
+    var more = d.has_more
+      ? '<button class="hist-more" id="hist-more" onclick="_loadPaneHistory(false)">加载更早的对话</button>' : '';
+    if (initial) {
+      inner.innerHTML = more + (html || '<div class="hist-empty">这个会话还没有对话</div>');
+      body.scrollTop = body.scrollHeight;   // 打开时定位到最新
+      document.getElementById('hist-meta').textContent = '共 ' + d.total + ' 轮 · ' + d.session;
+    } else {
+      var old = document.getElementById('hist-more');
+      if (old) old.remove();
+      var prevH = body.scrollHeight;
+      inner.insertAdjacentHTML('afterbegin', more + html);
+      body.scrollTop = body.scrollTop + (body.scrollHeight - prevH);   // 保持阅读位置
+    }
+    _histBefore += (d.turns || []).length;
+  } catch (e) {
+    if (initial) inner.innerHTML = '<div class="hist-empty">加载失败</div>';
+  } finally {
+    _histLoading = false;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 // ── 子账号视图:复用 dev 页全套(皮肤/终端/快捷键/上传/topbar 用量),只换数据源与权限 ──
 // 终端用子账号自己的【可写】ttyd(/subterm/<port>/),会话已加固到拿不到裸 shell。
@@ -3765,6 +3866,7 @@ init();
     <!-- Desktop toolbar (above iframe, visible when pane selected) -->
     <div class="term-toolbar" id="term-toolbar">
       <!-- 上传/粘贴已统一到输入框左侧(桌面开"输入框模式"即有);顶部工具栏只保留状态显示 -->
+      <button class="stats-btn" onclick="openPaneHistory()" title="完整会话历史(不受终端擦屏影响)" style="background:none;border:1px solid var(--border);color:var(--sub);border-radius:6px;padding:3px 12px;font-family:inherit;font-size:11px;cursor:pointer">历史</button>
       <span class="toolbar-spacer"></span>
       <span class="desktop-ws-dot err" id="desktop-ws-dot" title="终端连接中"></span>
       <span class="toolbar-tokens" id="toolbar-tokens"></span>
@@ -3791,6 +3893,8 @@ init();
         <span class="keys-sep"></span>
         <button class="mobile-key-btn" data-key="Up">↑</button>
         <button class="mobile-key-btn" data-key="Down">↓</button>
+        <span class="keys-sep"></span>
+        <button class="mobile-key-btn" onclick="openPaneHistory()" title="完整会话历史">历史</button>
         <span class="keys-sep"></span>
         <select class="mobile-num-sel" id="mobile-num-sel" onchange="_sendNum(this)">
           <option value="">1-9</option>
@@ -3825,6 +3929,16 @@ init();
     </div>
     <div class="new-term-dialog-list" id="new-term-list"></div>
   </div>
+</div>
+
+<!-- claude 完整会话历史(读 ~/.claude jsonl) -->
+<div class="hist-overlay" id="hist-overlay">
+  <div class="hist-head">
+    <span class="hist-title" id="hist-title">会话历史</span>
+    <span class="hist-meta" id="hist-meta"></span>
+    <button class="hist-close" onclick="closePaneHistory()">关闭</button>
+  </div>
+  <div class="hist-body" id="hist-body"><div class="hist-inner" id="hist-inner"></div></div>
 </div>
 
 <!-- Toast notification -->
