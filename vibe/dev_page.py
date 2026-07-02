@@ -3912,7 +3912,14 @@ init();
     <!-- Mobile input bar: bypasses iframe input issues via tmux send-keys -->
     <div class="mobile-input-bar" id="mobile-input-bar">
       <div class="mobile-keys-row" id="mobile-keys-row">
+        <label class="mobile-key-btn" for="mobile-file-input" title="上传文件" style="display:inline-flex;align-items:center;justify-content:center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </label>
+        <span class="keys-sep"></span>
         <button class="mobile-key-btn ok-btn" onclick="_sendOk()" title="确认">OK</button>
+        <button class="mobile-key-btn" data-key="Enter" title="发送回车(选中 claude 的菜单/建议)">↵</button>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn" data-key="Ctrl+C">⌃C</button>
         <button class="mobile-key-btn" data-key="Ctrl+O" title="展开/收起后台代理与详细输出">⌃O</button>
@@ -3931,12 +3938,6 @@ init();
           <option value="4">4</option><option value="5">5</option><option value="6">6</option>
           <option value="7">7</option><option value="8">8</option><option value="9">9</option>
         </select>
-        <span class="keys-sep"></span>
-        <label class="mobile-key-btn" for="mobile-file-input" title="上传文件" style="display:inline-flex;align-items:center;justify-content:center">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-          </svg>
-        </label>
       </div>
       <div class="mobile-input-row">
         <input type="file" id="mobile-file-input" style="display:none">
