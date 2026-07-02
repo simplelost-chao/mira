@@ -283,6 +283,11 @@ def render_dev_page() -> str:
   .dev-page.stream-mode .term-iframe-wrap {
     display: none;
   }
+  /* 子账号桌面 hybrid:真终端(iframe)做显示(claude 自己管历史,滚动原生),
+     底部输入框沿用 stream 模式全套样式(输入走后端、prompt 带账号) */
+  .dev-page.stream-mode.sub-hybrid .term-iframe-wrap { display: block; }
+  .dev-page.stream-mode.sub-hybrid .mobile-term-output,
+  .dev-page.stream-mode.sub-hybrid .mobile-term-output.visible { display: none !important; }
   .dev-page.stream-mode .mobile-term-output.visible {
     display: block; flex: 1; min-height: 0;
     background: var(--bg); color: var(--text);
@@ -2118,7 +2123,7 @@ function showTerminal() {
     return;
   }
 
-  if (devPage) devPage.classList.remove('stream-mode');
+  if (devPage) { devPage.classList.remove('stream-mode'); devPage.classList.remove('sub-hybrid'); }
   _disconnectTermWs();
   document.getElementById('mobile-term-output').classList.remove('visible');
   document.getElementById('mobile-token-bar').classList.remove('visible');
@@ -2152,6 +2157,7 @@ function showTerminal() {
 function showPlaceholder() {
   _stopBufferPoll();
   document.getElementById('dev-page').classList.remove('stream-mode');
+  document.getElementById('dev-page').classList.remove('sub-hybrid');
   document.getElementById('ttyd-frame').classList.remove('visible');
   document.getElementById('mobile-term-output').classList.remove('visible');
   document.getElementById('mobile-token-bar').classList.remove('visible');
@@ -3546,15 +3552,32 @@ function showSubTerminal() {
   document.getElementById('term-placeholder').style.display = 'none';
   var toolbar = document.getElementById('term-toolbar'); if (toolbar) toolbar.classList.add('visible');
   var devPage = document.getElementById('dev-page');
-  // 子账号统一用 stream 模式(流式输出 + 输入框),桌面也一样。输入全走后端(按 sub 作用域、
-  // 100% 带账号),不给可写 ttyd —— 子账号没有"在终端直接敲"的入口,prompt 归属彻底精确。
   devPage.classList.add('stream-mode');
-  document.getElementById('ttyd-frame').classList.remove('visible');
-  document.getElementById('mobile-term-output').classList.add('visible');
-  document.getElementById('mobile-token-bar').classList.add('visible');
+  if (_isMobile) {
+    // 手机:stream 模式(iframe 在手机上输入有问题)—— 输出流+输入栏,输入走后端带账号
+    devPage.classList.remove('sub-hybrid');
+    document.getElementById('ttyd-frame').classList.remove('visible');
+    document.getElementById('mobile-term-output').classList.add('visible');
+    document.getElementById('mobile-token-bar').classList.add('visible');
+    document.getElementById('mobile-input-bar').style.display = 'flex';
+    if (_currentTarget) _connectTermWs(_currentTarget);
+    return;
+  }
+  // 桌面:真终端 + 输入框并存 —— 显示用可写 ttyd(claude 自己管完整历史,滚动/字号原生);
+  // 输入推荐走底部输入框(经后端、prompt 100% 带账号),直接在终端敲的归属走时间推断。
+  if (!_subTermBase) { _subTermError('终端暂不可用,请重试'); return; }
+  devPage.classList.add('sub-hybrid');
+  var frame = document.getElementById('ttyd-frame');
+  if (!frame.src || !frame.src.endsWith(_subTermBase)) {
+    frame.src = _subTermBase;
+    frame.addEventListener('load', function() { _applyTtydTheme(); });
+  }
+  frame.classList.add('visible');
+  document.getElementById('mobile-term-output').classList.remove('visible');
   document.getElementById('mobile-input-bar').style.display = 'flex';
-  if (_currentTarget) _connectTermWs(_currentTarget);
-  _focusInputBox();   // 桌面:切进来直接能敲字
+  _disconnectTermWs();   // 桌面 hybrid 由 iframe 渲染,不需要快照流
+  requestAnimationFrame(function() { _resizeTtydFrame(); setTimeout(_resizeTtydFrame, 250); });
+  _focusInputBox();   // 切进来直接能在输入框敲字
 }
 
 function _focusInputBox() {
