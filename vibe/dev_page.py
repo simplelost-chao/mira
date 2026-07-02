@@ -277,6 +277,8 @@ def render_dev_page() -> str:
   .term-scroll-badge { display: none; }
   /* Mobile-only elements hidden on desktop */
   .mobile-term-output { display: none; }
+  /* scrollback/live 双区:display:contents 让两个 div 的文本按父级 pre-wrap 连续排版 */
+  .mobile-term-output .term-sb, .mobile-term-output .term-live { display: contents; }
   .mobile-input-bar { display: none; }
   .dev-page.stream-mode .term-iframe-wrap {
     display: none;
@@ -2331,7 +2333,9 @@ function _ansi256(n, hasBg) {
   return _adaptRgb(Math.floor(n/36)*51, Math.floor((n%36)/6)*51, (n%6)*51, hasBg);
 }
 function _stripAnsi(text) { return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); }
-function _ansiToHtml(raw) {
+function _ansiToHtml(raw, noChrome) {
+  // noChrome=true:用于 scrollback 片段 —— 只是滚出屏幕的 transcript,没有底部
+  // 输入框/状态栏,跳过 2.8 的 chrome 剥离(否则片段里出现 ❯ 行会被误剥周边内容)。
   // 1. Strip non-SGR escape sequences FIRST (so they don't interfere with blank-line detection)
   var text = raw.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ''); // OSC
   text = text.replace(/\x1b\[[\?]?[0-9;]*[A-LN-Za-ln-z]/g, '');    // CSI non-SGR
@@ -2374,6 +2378,7 @@ function _ansiToHtml(raw) {
   // 2.8. Strip Claude Code status bar and ASCII pet.
   //      Layout from bottom: empty, ⏵⏵ status, ───border, ❯ prompt, ───border, pet art, n____n
   //      Strategy: find ❯ prompt, remove junk below AND above it, keep ❯.
+  if (!noChrome) {
   var _lines = text.split('\n');
   function _isJunk(line) {
     var r = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -2406,6 +2411,7 @@ function _ansiToHtml(raw) {
     _lines = _lines.slice(0, _above + 1).concat(['\x00HR\x00', _promptLine]).concat(_lines.slice(_below));
   }
   text = _lines.join('\n');
+  }
   // 3. Collapse consecutive blank lines and trim trailing blanks
   text = text.replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n');
   // Split on SGR sequences
@@ -2461,6 +2467,85 @@ function _ansiToHtml(raw) {
 // ── Mobile WebSocket terminal stream ────────────────────────────────────────
 var _termWs = null;
 
+// ── Stream 模式 scrollback 积累(快照拼接)────────────────────────────────────
+// claude 的 TUI 自己管理视口:旧内容被原地擦除,不经过 tmux 滚动,pane 历史是 0
+// (子账号 pane 尤其如此,从出生就是 claude)。WS 快照因此只有可见一屏,没法往上翻。
+// 解法:每帧快照和上一帧做行对齐,识别「滚出屏幕顶部的行」,在客户端积累成 scrollback。
+var _sbTarget = null;     // scrollback 归属的 pane target
+var _sbChunks = [];       // [{html, lines}] 已积累的片段(整段追加/整段丢弃,不切内部)
+var _sbLines = 0;         // 总行数(封顶用)
+var _sbFlushedIdx = 0;    // 已写入 DOM 的 chunk 数(增量 append)
+var _sbRebuild = false;   // 封顶裁剪后需要全量重建 DOM
+var _sbPrevPlain = null;  // 上一帧纯文本行(对齐比较用)
+var _sbPrevRaw = null;    // 上一帧原始行(含 ANSI,取滚出内容用)
+var _sbLastData = null;   // 上一帧原文(去重)
+var _SB_MAX_LINES = 2000;
+
+function _sbReset(target) {
+  _sbTarget = target;
+  _sbChunks = []; _sbLines = 0; _sbFlushedIdx = 0; _sbRebuild = false;
+  _sbPrevPlain = null; _sbPrevRaw = null; _sbLastData = null;
+}
+
+function _sbStripLine(l) {
+  return l.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+          .replace(/\x1b\[[?]?[0-9;]*[a-zA-Z]/g, '')
+          .replace(/\s+$/, '');
+}
+
+// 每条 WS 消息都要经过这里(而不是只在渲染帧),否则用户上滑暂停渲染期间的滚动会丢。
+function _sbIngest(data) {
+  if (data === _sbLastData) return;
+  _sbLastData = data;
+  var raw = data.split('\n');
+  var plain = raw.map(_sbStripLine);
+  var prevP = _sbPrevPlain, prevR = _sbPrevRaw;
+  _sbPrevPlain = plain; _sbPrevRaw = raw;
+  if (!prevP) return;
+  // 找 cur 的第一个非空行,在 prev 里定位它 → 滚出行数 s
+  var f = 0;
+  while (f < plain.length && !plain[f]) f++;
+  if (f >= plain.length) return;
+  var s = -1;
+  for (var i = f; i < prevP.length; i++) {   // i>=f:只认"向上滚"(s>0)
+    if (prevP[i] !== plain[f]) continue;
+    // 校验后续行匹配度(避开底部 6 行 chrome 区,那里每帧都在变)
+    var checked = 0, hit = 0;
+    for (var k = 1; k <= 12 && f + k < plain.length - 6 && i + k < prevP.length; k++) {
+      checked++;
+      if (prevP[i + k] === plain[f + k]) hit++;
+    }
+    if (!checked || hit / checked >= 0.7) { s = i - f; break; }
+  }
+  if (s <= 0) return;   // s=0 没滚;s<0/对不上(清屏、跳变)→ 保守不追加
+  var chunkRaw = prevR.slice(0, s);
+  var hasContent = false;
+  for (var c = 0; c < s; c++) if (prevP[c]) { hasContent = true; break; }
+  if (!hasContent) return;   // 滚出的全是空行,不值得积累
+  var html = _ansiToHtml(chunkRaw.join('\n') + '\n', true);
+  if (!html) return;
+  _sbChunks.push({ html: html, lines: s });
+  _sbLines += s;
+  while (_sbLines > _SB_MAX_LINES && _sbChunks.length > 1) {
+    _sbLines -= _sbChunks.shift().lines;
+    if (_sbFlushedIdx > 0) _sbFlushedIdx--;
+    _sbRebuild = true;
+  }
+}
+
+// 渲染帧里调用:把积累的 scrollback 增量刷进 DOM(只在跟随模式下被调,不打断上滑手势)
+function _sbFlush(sbEl) {
+  if (_sbRebuild) {
+    sbEl.innerHTML = _sbChunks.map(function(c) { return c.html; }).join('');
+    _sbFlushedIdx = _sbChunks.length;
+    _sbRebuild = false;
+    return;
+  }
+  while (_sbFlushedIdx < _sbChunks.length) {
+    sbEl.insertAdjacentHTML('beforeend', _sbChunks[_sbFlushedIdx++].html);
+  }
+}
+
 function _hasPaneTarget(target) {
   // 同时认分组里的 .term-pane-row 和单终端项目的 .term-single(顶层项);
   // 只认前者会让单终端项目在 WS 一断时被误判为"已消失"→ 踢回列表。
@@ -2470,6 +2555,8 @@ function _hasPaneTarget(target) {
 var _wsRetryDelay = 2000;   // WS 重连退避(成功连上后在 onopen 重置)
 function _connectTermWs(target) {
   _disconnectTermWs();
+  // 换 pane 才清 scrollback;同 pane 重连(后台回前台/断线)保留已积累的历史
+  if (_sbTarget !== target) _sbReset(target);
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var url = proto + '//' + location.host + '/ws/terminal/' + encodeURIComponent(target)
             + '/stream?token=' + encodeURIComponent(_adminToken || _subToken);
@@ -2497,7 +2584,17 @@ function _connectTermWs(target) {
     _pendingWsData = null;
     if (data === _lastWsData) return;
     _lastWsData = data;
-    output.innerHTML = _ansiToHtml(data);
+    // 双区结构:scrollback(只增量追加)+ live(每帧重建为最新快照)。
+    // 分开的目的:live 高频重建时不重建几千行的 scrollback,保持每帧开销和从前一样。
+    var sbEl = output.firstElementChild;
+    if (!sbEl || !sbEl.classList.contains('term-sb')) {
+      output.innerHTML = '<div class="term-sb"></div><div class="term-live"></div>';
+      sbEl = output.firstElementChild;
+      _sbFlushedIdx = 0;   // DOM 是新的,已积累的 scrollback 需要重新灌入
+      _sbRebuild = _sbChunks.length > 0;
+    }
+    _sbFlush(sbEl);
+    sbEl.nextElementSibling.innerHTML = _ansiToHtml(data);
     output.scrollTop = output.scrollHeight;
     // Cache snapshot for tab switcher (last 20 lines of plain text)
     if (_currentTarget) {
@@ -2527,6 +2624,8 @@ function _connectTermWs(target) {
   termWs.onmessage = function(e) {
     if (_termWs !== termWs) return;
     if (!output) return;
+    // scrollback 拼接必须每条消息都做(渲染可以丢帧,滚出的历史行不能丢)
+    if (_sbTarget === target) _sbIngest(e.data);
     // Keep only the newest terminal snapshot and render at most once per
     // animation frame. This prevents ANSI conversion and full DOM replacement
     // from queueing up while output is arriving quickly.
