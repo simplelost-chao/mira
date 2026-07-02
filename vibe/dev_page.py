@@ -2688,6 +2688,18 @@ function _connectTermWs(target) {
   termWs.onmessage = function(e) {
     if (_termWs !== termWs) return;
     if (!output) return;
+    // 服务端的历史回放垫底帧:塞进 scrollback 区(只在还没积累时,防重连重复)
+    if (e.data.lastIndexOf('\x00BL\x00', 0) === 0) {
+      if (_sbTarget === target && _sbChunks.length === 0) {
+        var blHtml = _ansiToHtml(e.data.slice(4) + '\n', true);
+        if (blHtml) {
+          var blLines = (e.data.match(/\n/g) || []).length + 1;
+          _sbChunks.push({ html: blHtml, lines: blLines });
+          _sbLines += blLines;
+        }
+      }
+      return;
+    }
     // scrollback 拼接必须每条消息都做(渲染可以丢帧,滚出的历史行不能丢)
     if (_sbTarget === target) _sbIngest(e.data);
     // Keep only the newest terminal snapshot and render at most once per

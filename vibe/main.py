@@ -3683,6 +3683,46 @@ def dev_pane_history(request: Request, target: str, before: int = 0, limit: int 
             "session": sess_file.stem[:8]}
 
 
+def _stream_backlog(target: str) -> str | None:
+    """终端流的历史回放垫底:从会话 jsonl 组装终端风格文本(prompt 高亮/子代理
+    缩进降级/工具摘要)。去掉最后一个回合——那部分正在实时屏上,避免和实时区重复。"""
+    r = _tmux_run("display-message", "-t", target, "-p", "#{pane_current_path}")
+    if r.returncode != 0:
+        return None
+    sess_file = _claude_session_file(r.stdout.strip())
+    if not sess_file:
+        return None
+    turns = _session_turns(sess_file)
+    last_user = None
+    for i in range(len(turns) - 1, -1, -1):
+        if turns[i]["role"] == "user" and not turns[i].get("agent"):
+            last_user = i
+            break
+    if last_user is not None:
+        turns = turns[:last_user]
+    turns = turns[-150:]
+    if not turns:
+        return None
+    out = []
+    for t in turns:
+        txt = (t.get("text") or "").strip()
+        if t.get("agent"):
+            if txt:
+                out.append("\x1b[2m  ↳ [" + t["agent"][:40] + "] " + txt[:600] + "\x1b[0m")
+        elif t["role"] == "user":
+            out.append("")
+            out.append("\x1b[1;36m❯ " + txt[:3000] + "\x1b[0m")
+        elif txt:
+            out.append(txt)
+        tools = t.get("tools") or {}
+        if tools:
+            summ = " · ".join(k.split("__")[-1] + (f"×{v}" if v > 1 else "") for k, v in tools.items())
+            out.append("\x1b[2m  ⚙ " + summ[:200] + "\x1b[0m")
+    return ("\x1b[2m════ 历史回放(来自会话记录)════\x1b[0m\n"
+            + "\n".join(out)
+            + "\n\x1b[2m════ 以上历史 · 以下实时 ════\x1b[0m\n")
+
+
 @api.post("/api/sub/pane/{target:path}/send")
 def sub_pane_send(request: Request, target: str, body: dict):
     """子账号:向自己会话里的 claude 发一句话(消毒后补回车提交)。无裸 shell。"""
@@ -4225,6 +4265,14 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
         return
 
     from vibe.tmux_bridge import capture_pane
+    # 历史回放垫底:终端本身(tmux/claude 备用屏)只有一屏可滚,打开即推一帧从会话
+    # 记录组装的回放,客户端塞进 scrollback 区 —— 打开终端就能往上滚完整历史。
+    try:
+        _bl = await asyncio.to_thread(_stream_backlog, target)
+        if _bl:
+            await ws.send_text("\x00BL\x00" + _bl)
+    except Exception:
+        pass
     prev_hash = ""
     last_change_at = time.monotonic()
     import logging
