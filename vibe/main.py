@@ -3525,6 +3525,26 @@ def _claude_session_file(cwd: str):
     return None
 
 
+_UPLOAD_PATH_RE = re.compile(r"^/tmp/mira-uploads/[\w.\-]+$")
+_UPLOAD_TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".csv", ".log", ".py", ".js", ".ts", ".html", ".css"}
+
+
+def _inline_upload(text: str, cap: int) -> str:
+    """prompt 是 mira 上传文件的纯路径时,把文件内容内联进历史(真正的 prompt 在文件里)。
+    只认 /tmp/mira-uploads/ 前缀,文本类内联,其余(图片等)只标注文件名。"""
+    if not _UPLOAD_PATH_RE.match(text):
+        return text
+    p = Path(text)
+    try:
+        if not p.is_file():
+            return text + "(上传文件已清理)"
+        if p.suffix.lower() in _UPLOAD_TEXT_EXT and p.stat().st_size < 200_000:
+            return "📎 " + p.name + "\n" + p.read_text(errors="replace")[: cap - 100]
+        return "📎 上传文件: " + p.name
+    except Exception:
+        return text
+
+
 def _parse_claude_turns(path: Path) -> list[dict]:
     """把会话 jsonl 解析成轮次列表:user prompt 一轮,其后的 assistant 文本+工具调用合并一轮。
     跳过 sidechain(子代理)、meta、tool_result 载体行。单轮文本截断以控制载荷。"""
@@ -3557,6 +3577,7 @@ def _parse_claude_turns(path: Path) -> list[dict]:
                 # 斜杠命令/本地命令的 XML 包装行不算真实 prompt
                 if not text or text.startswith("<"):
                     continue
+                text = _inline_upload(text, cap)
                 turns.append({"role": "user", "text": text[:cap], "ts": d.get("timestamp", "")})
             elif t == "assistant":
                 blocks = ((d.get("message") or {}).get("content")) or []
