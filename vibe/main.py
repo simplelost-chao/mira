@@ -3547,10 +3547,12 @@ def _inline_upload(text: str, cap: int) -> str:
 
 def _parse_claude_turns(path: Path) -> list[dict]:
     """把会话 jsonl 解析成轮次列表:user prompt 一轮,其后的 assistant 文本+工具调用合并一轮。
-    跳过 sidechain(子代理)、meta、tool_result 载体行。单轮文本截断以控制载荷。"""
+    跳过 sidechain(子代理)、meta、tool_result 载体行。单轮文本截断以控制载荷:
+    user prompt(可能内联整份上传文档)给 60k,assistant 单个文字段落 8k 足够。"""
     import json
     turns: list[dict] = []
     cap = 8000
+    user_cap = 60000
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
@@ -3577,8 +3579,8 @@ def _parse_claude_turns(path: Path) -> list[dict]:
                 # 斜杠命令/本地命令的 XML 包装行不算真实 prompt
                 if not text or text.startswith("<"):
                     continue
-                text = _inline_upload(text, cap)
-                turns.append({"role": "user", "text": text[:cap], "ts": d.get("timestamp", "")})
+                text = _inline_upload(text, user_cap)
+                turns.append({"role": "user", "text": text[:user_cap], "ts": d.get("timestamp", "")})
             elif t == "assistant":
                 blocks = ((d.get("message") or {}).get("content")) or []
                 cur = turns[-1] if turns and turns[-1]["role"] == "assistant" else None
@@ -3623,7 +3625,18 @@ def dev_pane_history(request: Request, target: str, before: int = 0, limit: int 
     turns = _parse_claude_turns(sess_file)
     total = len(turns)
     end = max(0, total - max(0, before))
-    start = max(0, end - max(1, min(limit, 100)))
+    # 按"用户回合"分页:一页 = 最近 limit 条 user prompt 及其间的全部 assistant 轮。
+    # 若按轮数分页,assistant 拆细后一页 20 轮只剩几分钟的内容,观感像被截断。
+    # 客户端游标(before)仍是"已消费的轮数",与本切片方式天然兼容。
+    rounds = max(1, min(limit, 100))
+    max_turns = 600   # 极端会话(自主长跑几乎没有 user 轮)的硬上限
+    start, seen = end, 0
+    while start > 0 and (end - start) < max_turns:
+        start -= 1
+        if turns[start]["role"] == "user":
+            seen += 1
+            if seen >= rounds:
+                break
     return {"turns": turns[start:end], "total": total, "has_more": start > 0,
             "session": sess_file.stem[:8]}
 

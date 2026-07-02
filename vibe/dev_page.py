@@ -3533,8 +3533,9 @@ async function _loadPaneHistory(initial) {
   var body = document.getElementById('hist-body');
   var inner = document.getElementById('hist-inner');
   try {
+    // limit 按「用户回合」计:一页 = 最近 10 次对话回合及其间全部过程
     var res = await fetch('/api/dev/pane-history?target=' + encodeURIComponent(_histTarget)
-      + '&before=' + _histBefore + '&limit=20', { headers: _authHeaders() });
+      + '&before=' + _histBefore + '&limit=10', { headers: _authHeaders() });
     if (!res.ok) {
       if (initial) inner.innerHTML = '<div class="hist-empty">'
         + (res.status === 404 ? '没有找到该项目的 claude 会话记录' : '加载失败(' + res.status + ')') + '</div>';
