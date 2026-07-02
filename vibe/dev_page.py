@@ -2600,8 +2600,11 @@ function _connectTermWs(target) {
     // live(anchor 之后的实时屏,每帧重建)。scrollback 必须插在冻结区和实时屏之间,
     // 时间顺序才对;head 内容不变时跳过重写,live 高频重建也不碰几千行的 scrollback。
     var headEl = output.firstElementChild;
-    if (!headEl || !headEl.classList.contains('term-head')) {
+    // DOM 归属校验:三区 DOM 是跨帧复用的,切 pane 后旧 pane 的 scrollback DOM 还留着,
+    // 必须整体重建,否则别的项目的历史会串到当前 pane 上面(咬过:argus 里看到其他项目)。
+    if (!headEl || !headEl.classList.contains('term-head') || output.dataset.sbTarget !== target) {
       output.innerHTML = '<div class="term-head"></div><div class="term-sb"></div><div class="term-live"></div>';
+      output.dataset.sbTarget = target;
       headEl = output.firstElementChild;
       _sbFlushedIdx = 0;   // DOM 是新的,已积累的 scrollback 需要重新灌入
       _sbRebuild = _sbChunks.length > 0;
@@ -2686,6 +2689,7 @@ function _disconnectTermWs() {
   if (_termWs) {
     if (_termWs._cancelPendingRender) _termWs._cancelPendingRender();
     _termWs.onclose = null;  // prevent auto-reconnect
+    _termWs.onmessage = null;  // 断开后残留消息不得再进拼接/渲染(防串台)
     try { _termWs.close(); } catch(e) {}
     _termWs = null;
   }
