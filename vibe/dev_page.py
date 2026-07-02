@@ -2523,13 +2523,14 @@ var _sbAnchor = 0;        // 冻结区边界:快照前 _sbAnchor 行是不再变
                           // 进 claude 前的 tmux 历史);丢行发生在这条边界上,渲染时
                           // scrollback 要插在冻结区和实时屏之间才能保持时间顺序
 var _sbHeadRaw = null;    // 冻结区上次渲染的原文(不变就不重写 DOM)
+var _sbSeeded = false;    // 是否已收过服务端历史回放帧(重连去重)
 var _SB_MAX_LINES = 2000;
 
 function _sbReset(target) {
   _sbTarget = target;
   _sbChunks = []; _sbLines = 0; _sbFlushedIdx = 0; _sbRebuild = false;
   _sbPrevPlain = null; _sbPrevRaw = null; _sbLastData = null; _sbAnchor = 0;
-  _sbHeadRaw = null;
+  _sbHeadRaw = null; _sbSeeded = false;
 }
 
 function _sbStripLine(l) {
@@ -2689,14 +2690,22 @@ function _connectTermWs(target) {
   termWs.onmessage = function(e) {
     if (_termWs !== termWs) return;
     if (!output) return;
-    // 服务端的历史回放垫底帧:塞进 scrollback 区(只在还没积累时,防重连重复)
+    // 服务端的历史回放帧:插到 scrollback 最前(它在首帧之后才到,期间可能已积累)
     if (e.data.lastIndexOf('\x00BL\x00', 0) === 0) {
-      if (_sbTarget === target && _sbChunks.length === 0) {
+      if (_sbTarget === target && !_sbSeeded) {
+        _sbSeeded = true;   // 重连不重复
         var blHtml = _ansiToHtml(e.data.slice(4) + '\n', true);
         if (blHtml) {
           var blLines = (e.data.match(/\n/g) || []).length + 1;
-          _sbChunks.push({ html: blHtml, lines: blLines });
+          _sbChunks.unshift({ html: blHtml, lines: blLines });
           _sbLines += blLines;
+          _sbRebuild = true;   // 顺序变了,整体重建
+          // 空闲 pane 可能很久不来下一帧,主动刷一次(仅跟随模式,不打断上滑阅读)
+          var headEl = output.firstElementChild;
+          if (_termFollow && headEl && headEl.classList.contains('term-head')) {
+            _sbFlush(headEl.nextElementSibling);
+            output.scrollTop = output.scrollHeight;
+          }
         }
       }
       return;

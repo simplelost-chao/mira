@@ -144,25 +144,34 @@ def get_latest_session_context(folder_prefix: str) -> int | None:
         latest = max(files, key=lambda f: os.path.getmtime(f))
     except OSError:
         return None
-    ctx = None
+    # 只需要"最后一条" assistant 的 usage:从文件尾部倒着找,不全量扫。
+    # 活跃会话的 jsonl 好几 MB,从头 json.loads 每一行要 2-3 秒 —— 这个函数在
+    # 每次切换 pane 时都被调用,曾是面板切换卡顿的主因。尾块找不到再逐步向前扩。
     try:
-        with open(latest, 'r', encoding='utf-8', errors='replace') as f:
-            for line in f:
-                if '"usage"' not in line:
-                    continue
-                try:
-                    e = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                m = e.get('message') or {}
-                if m.get('role') != 'assistant':
-                    continue
-                u = m.get('usage') or {}
-                ctx = (u.get('input_tokens', 0) + u.get('cache_read_input_tokens', 0)
-                       + u.get('cache_creation_input_tokens', 0))   # 覆盖到最后一条
+        size = os.path.getsize(latest)
+        with open(latest, 'rb') as f:
+            back = 262144   # 256KB 起步
+            while True:
+                f.seek(max(0, size - back))
+                chunk = f.read().decode('utf-8', errors='replace')
+                for line in reversed(chunk.splitlines()):
+                    if '"usage"' not in line:
+                        continue
+                    try:
+                        e = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    m = e.get('message') or {}
+                    if m.get('role') != 'assistant':
+                        continue
+                    u = m.get('usage') or {}
+                    return (u.get('input_tokens', 0) + u.get('cache_read_input_tokens', 0)
+                            + u.get('cache_creation_input_tokens', 0))
+                if back >= size:
+                    return None   # 全文件都没有 → 与旧行为一致
+                back = min(size, back * 4)
     except OSError:
         return None
-    return ctx
 
 
 def collect_claude_activity(project_path: str, aliases: list[str] | None = None) -> dict:

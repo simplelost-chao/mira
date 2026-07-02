@@ -3612,13 +3612,14 @@ def _parse_claude_turns(path: Path, agent: str | None = None) -> list[dict]:
     return turns
 
 
-_turns_cache: dict[str, tuple[float, list]] = {}   # sess_file -> (时间戳, 合并轮次)
+_turns_cache: dict[str, tuple[float, float, list]] = {}   # sess_file -> (mtime戳, 缓存时刻, 轮次)
 
 
 def _session_turns(sess_file: Path) -> list[dict]:
     """主时间线 + 子代理过程按时间戳合并成一条时间线。
     自主开发型会话的内容大头在子代理里(实测主文件 2MB vs subagents 5MB),
-    只看主链会"只有一屏"。(mtime 和缓存避免每次翻页重复解析几 MB。"""
+    只看主链会"只有一屏"。缓存避免重复解析几 MB:mtime 没变直接命中;
+    活跃会话 mtime 一直在变,再给 30s 新鲜度窗口(历史晚 30s 无感,切换不卡)。"""
     import json
     sub_dir = sess_file.parent / sess_file.stem / "subagents"
     stamp = sess_file.stat().st_mtime
@@ -3626,8 +3627,8 @@ def _session_turns(sess_file: Path) -> list[dict]:
         stamp += sum(f.stat().st_mtime for f in sub_dir.glob("agent-*.jsonl"))
     key = str(sess_file)
     cached = _turns_cache.get(key)
-    if cached and cached[0] == stamp:
-        return cached[1]
+    if cached and (cached[0] == stamp or time.time() - cached[1] < 30):
+        return cached[2]
     turns = _parse_claude_turns(sess_file)
     if sub_dir.is_dir():
         for f in sorted(sub_dir.glob("agent-*.jsonl")):
@@ -3641,7 +3642,7 @@ def _session_turns(sess_file: Path) -> list[dict]:
         turns.sort(key=lambda t: t.get("ts") or "")
     if len(_turns_cache) > 8:                      # 只留最近几个会话的解析结果
         _turns_cache.pop(next(iter(_turns_cache)))
-    _turns_cache[key] = (stamp, turns)
+    _turns_cache[key] = (stamp, time.time(), turns)
     return turns
 
 
@@ -4265,18 +4266,23 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
         return
 
     from vibe.tmux_bridge import capture_pane
-    # 历史回放垫底:终端本身(tmux/claude 备用屏)只有一屏可滚,打开即推一帧从会话
-    # 记录组装的回放,客户端塞进 scrollback 区 —— 打开终端就能往上滚完整历史。
-    try:
-        _bl = await asyncio.to_thread(_stream_backlog, target)
-        if _bl:
-            await ws.send_text("\x00BL\x00" + _bl)
-    except Exception:
-        pass
     prev_hash = ""
     last_change_at = time.monotonic()
     import logging
     logger = logging.getLogger(__name__)
+    # 先推第一帧实时画面(切换即见),再补历史回放 —— 回放要解析几 MB 会话文件,
+    # 冷缓存时耗时秒级,不能挡在首帧前面。客户端会把回放插到 scrollback 最前。
+    try:
+        _first = await asyncio.to_thread(capture_pane, target, 300, ansi=True)
+        prev_hash = hashlib.md5(_first.encode()).hexdigest()
+        await ws.send_text(_first)
+        _bl = await asyncio.to_thread(_stream_backlog, target)
+        if _bl:
+            await ws.send_text("\x00BL\x00" + _bl)
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        pass
     try:
         while True:
             text = await asyncio.to_thread(capture_pane, target, 300, ansi=True)
