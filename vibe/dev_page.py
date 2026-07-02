@@ -2784,16 +2784,17 @@ function _onWsDotClick() {
 }
 
 async function _sendToTerminal(keys, promptText) {
-  if (!_currentTarget) return;
+  if (!_currentTarget) return false;
   try {
     var _body = { keys: keys };
     if (promptText) _body.prompt = promptText;   // 子账号:供后端精确归属这条 prompt(不靠时间)
-    await fetch('/api/terminals/' + encodeURIComponent(_currentTarget) + '/send', {
+    var res = await fetch('/api/terminals/' + encodeURIComponent(_currentTarget) + '/send', {
       method: 'POST',
       headers: _authHeaders({'Content-Type': 'application/json'}),
       body: JSON.stringify(_body)
     });
-  } catch(e) { console.warn('send error:', e); }
+    return res.ok;
+  } catch(e) { console.warn('send error:', e); return false; }
 }
 
 var _inScrollMode = false;
@@ -2946,24 +2947,37 @@ function _initMobileInput() {
   });
 }
 
+var _sendingCmd = false;   // 在途锁:网络卡时连按回车,同一条消息会重复发出
+
 async function _sendMobileCmd() {
+  if (_sendingCmd) return;   // 上一条还在路上,这次按键直接吞掉(防重复发送)
   var input = document.getElementById('mobile-cmd-input');
   var text = input.value;
-  // Exit scroll mode first
-  if (_inScrollMode) await _scrollTerminal('exit');
-  if (text) {
-    // Add to history (dedup, max 100)
-    _cmdHistory = _cmdHistory.filter(function(c) { return c !== text; });
-    _cmdHistory.push(text);
-    if (_cmdHistory.length > 100) _cmdHistory = _cmdHistory.slice(-100);
-    localStorage.setItem('mira-cmd-history', JSON.stringify(_cmdHistory));
-    _historyIdx = -1;
-  }
-  // Send text + Enter (empty text = bare Enter for confirmations/selections)
-  await _sendToTerminal(text + '\n', text || null);   // 非空文本作为 prompt 原文精确归属
+  _sendingCmd = true;
+  // 立即清空输入框(不等网络返回):既是即时反馈,也保证极端时序下不会重发同一段文字
   input.value = '';
   input.style.height = 'auto';
-  input.focus();
+  try {
+    // Exit scroll mode first
+    if (_inScrollMode) await _scrollTerminal('exit');
+    if (text) {
+      // Add to history (dedup, max 100)
+      _cmdHistory = _cmdHistory.filter(function(c) { return c !== text; });
+      _cmdHistory.push(text);
+      if (_cmdHistory.length > 100) _cmdHistory = _cmdHistory.slice(-100);
+      localStorage.setItem('mira-cmd-history', JSON.stringify(_cmdHistory));
+      _historyIdx = -1;
+    }
+    // Send text + Enter (empty text = bare Enter for confirmations/selections)
+    var ok = await _sendToTerminal(text + '\n', text || null);   // 非空文本作为 prompt 原文精确归属
+    if (!ok && text && !input.value) {
+      input.value = text;   // 发送失败:把文字还回输入框,别让长 prompt 丢掉
+      _showToast('发送失败,请重试', 2000);
+    }
+  } finally {
+    _sendingCmd = false;
+    input.focus();
+  }
 }
 
 function _navigateHistory(dir) {
