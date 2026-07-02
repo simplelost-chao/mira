@@ -2341,6 +2341,7 @@ var _SPECIAL_KEYS = {
   'Ctrl+A': '\x01',
   'Ctrl+E': '\x05',
   'Ctrl+U': '\x15',
+  'Ctrl+O': '\x0f',
   'Esc':    '\x1b',
   'Up':     '\x1b[A',
   'Down':   '\x1b[B',
@@ -3914,6 +3915,7 @@ init();
         <button class="mobile-key-btn ok-btn" onclick="_sendOk()" title="确认">OK</button>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn" data-key="Ctrl+C">⌃C</button>
+        <button class="mobile-key-btn" data-key="Ctrl+O" title="展开/收起后台代理与详细输出">⌃O</button>
         <button class="mobile-key-btn" data-key="Esc">Esc</button>
         <button class="mobile-key-btn" data-key="Tab">Tab</button>
         <button class="mobile-key-btn" onclick="_clearInput()" title="清空输入框">Cls</button>
