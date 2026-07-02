@@ -277,8 +277,8 @@ def render_dev_page() -> str:
   .term-scroll-badge { display: none; }
   /* Mobile-only elements hidden on desktop */
   .mobile-term-output { display: none; }
-  /* scrollback/live 双区:display:contents 让两个 div 的文本按父级 pre-wrap 连续排版 */
-  .mobile-term-output .term-sb, .mobile-term-output .term-live { display: contents; }
+  /* head/scrollback/live 三区:display:contents 让 div 的文本按父级 pre-wrap 连续排版 */
+  .mobile-term-output .term-head, .mobile-term-output .term-sb, .mobile-term-output .term-live { display: contents; }
   .mobile-input-bar { display: none; }
   .dev-page.stream-mode .term-iframe-wrap {
     display: none;
@@ -2479,12 +2479,17 @@ var _sbRebuild = false;   // 封顶裁剪后需要全量重建 DOM
 var _sbPrevPlain = null;  // 上一帧纯文本行(对齐比较用)
 var _sbPrevRaw = null;    // 上一帧原始行(含 ANSI,取滚出内容用)
 var _sbLastData = null;   // 上一帧原文(去重)
+var _sbAnchor = 0;        // 冻结区边界:快照前 _sbAnchor 行是不再变的旧历史(owner pane
+                          // 进 claude 前的 tmux 历史);丢行发生在这条边界上,渲染时
+                          // scrollback 要插在冻结区和实时屏之间才能保持时间顺序
+var _sbHeadRaw = null;    // 冻结区上次渲染的原文(不变就不重写 DOM)
 var _SB_MAX_LINES = 2000;
 
 function _sbReset(target) {
   _sbTarget = target;
   _sbChunks = []; _sbLines = 0; _sbFlushedIdx = 0; _sbRebuild = false;
-  _sbPrevPlain = null; _sbPrevRaw = null; _sbLastData = null;
+  _sbPrevPlain = null; _sbPrevRaw = null; _sbLastData = null; _sbAnchor = 0;
+  _sbHeadRaw = null;
 }
 
 function _sbStripLine(l) {
@@ -2502,30 +2507,37 @@ function _sbIngest(data) {
   var prevP = _sbPrevPlain, prevR = _sbPrevRaw;
   _sbPrevPlain = plain; _sbPrevRaw = raw;
   if (!prevP) return;
-  // 找 cur 的第一个非空行,在 prev 里定位它 → 滚出行数 s
-  var f = 0;
-  while (f < plain.length && !plain[f]) f++;
-  if (f >= plain.length) return;
+  // 1. 两帧公共前缀 p = 冻结区边界。丢行不一定发生在快照顶部:owner pane 的快照是
+  //    「几百行冻结的 tmux 旧历史 + claude 当前屏」,claude 的行从中间边界消失,
+  //    顶部永远不动 —— 所以必须从第一个变化点开始对齐,而不是从第 0 行。
+  var n = Math.min(plain.length, prevP.length);
+  var p = 0;
+  while (p < n && plain[p] === prevP[p]) p++;
+  if (p >= prevP.length) return;   // prev 是 cur 的前缀:只是底部追加,没有丢行
+  if (p >= plain.length) return;   // cur 是 prev 的前缀:内容收缩(折叠),不追加
+  // 2. 在变化点之后找上移量 s:cur[p+k] == prev[p+s+k](即 prev 的 p..p+s 行丢了)
   var s = -1;
-  for (var i = f; i < prevP.length; i++) {   // i>=f:只认"向上滚"(s>0)
-    if (prevP[i] !== plain[f]) continue;
-    // 校验后续行匹配度(避开底部 6 行 chrome 区,那里每帧都在变)
-    var checked = 0, hit = 0;
-    for (var k = 1; k <= 12 && f + k < plain.length - 6 && i + k < prevP.length; k++) {
+  var maxS = Math.min(prevP.length - p, 400);
+  for (var cand = 1; cand <= maxS; cand++) {
+    var checked = 0, hit = 0, anchored = false;
+    for (var k = 0; k < 14 && p + k < plain.length - 6 && p + cand + k < prevP.length; k++) {
+      var a = plain[p + k], b = prevP[p + cand + k];
+      if (!a && !b) continue;          // 双空行不计分
       checked++;
-      if (prevP[i + k] === plain[f + k]) hit++;
+      if (a === b) { hit++; if (a) anchored = true; }
     }
-    if (!checked || hit / checked >= 0.7) { s = i - f; break; }
+    if (checked >= 3 && anchored && hit / checked >= 0.7) { s = cand; break; }
   }
-  if (s <= 0) return;   // s=0 没滚;s<0/对不上(清屏、跳变)→ 保守不追加
-  var chunkRaw = prevR.slice(0, s);
+  if (s <= 0) return;   // 原地改写(流式更新)/折叠/清屏跳变 → 保守不追加
+  var chunkRaw = prevR.slice(p, p + s);
   var hasContent = false;
-  for (var c = 0; c < s; c++) if (prevP[c]) { hasContent = true; break; }
-  if (!hasContent) return;   // 滚出的全是空行,不值得积累
+  for (var c = p; c < p + s; c++) if (prevP[c]) { hasContent = true; break; }
+  if (!hasContent) { _sbAnchor = p; return; }   // 全空行:边界照记,内容不积累
   var html = _ansiToHtml(chunkRaw.join('\n') + '\n', true);
   if (!html) return;
   _sbChunks.push({ html: html, lines: s });
   _sbLines += s;
+  _sbAnchor = p;
   while (_sbLines > _SB_MAX_LINES && _sbChunks.length > 1) {
     _sbLines -= _sbChunks.shift().lines;
     if (_sbFlushedIdx > 0) _sbFlushedIdx--;
@@ -2584,17 +2596,27 @@ function _connectTermWs(target) {
     _pendingWsData = null;
     if (data === _lastWsData) return;
     _lastWsData = data;
-    // 双区结构:scrollback(只增量追加)+ live(每帧重建为最新快照)。
-    // 分开的目的:live 高频重建时不重建几千行的 scrollback,保持每帧开销和从前一样。
-    var sbEl = output.firstElementChild;
-    if (!sbEl || !sbEl.classList.contains('term-sb')) {
-      output.innerHTML = '<div class="term-sb"></div><div class="term-live"></div>';
-      sbEl = output.firstElementChild;
+    // 三区结构:head(快照里 anchor 之前的冻结旧历史)+ scrollback(只增量追加)+
+    // live(anchor 之后的实时屏,每帧重建)。scrollback 必须插在冻结区和实时屏之间,
+    // 时间顺序才对;head 内容不变时跳过重写,live 高频重建也不碰几千行的 scrollback。
+    var headEl = output.firstElementChild;
+    if (!headEl || !headEl.classList.contains('term-head')) {
+      output.innerHTML = '<div class="term-head"></div><div class="term-sb"></div><div class="term-live"></div>';
+      headEl = output.firstElementChild;
       _sbFlushedIdx = 0;   // DOM 是新的,已积累的 scrollback 需要重新灌入
       _sbRebuild = _sbChunks.length > 0;
+      _sbHeadRaw = null;
+    }
+    var sbEl = headEl.nextElementSibling;
+    var allLines = data.split('\n');
+    var anchor = Math.min(_sbAnchor, allLines.length);
+    var headRaw = anchor > 0 ? allLines.slice(0, anchor).join('\n') + '\n' : '';
+    if (_sbHeadRaw !== headRaw) {
+      _sbHeadRaw = headRaw;
+      headEl.innerHTML = headRaw ? _ansiToHtml(headRaw, true) : '';
     }
     _sbFlush(sbEl);
-    sbEl.nextElementSibling.innerHTML = _ansiToHtml(data);
+    sbEl.nextElementSibling.innerHTML = _ansiToHtml(allLines.slice(anchor).join('\n'));
     output.scrollTop = output.scrollHeight;
     // Cache snapshot for tab switcher (last 20 lines of plain text)
     if (_currentTarget) {
