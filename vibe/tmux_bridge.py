@@ -93,6 +93,15 @@ def send_keys(target: str, keys: str) -> None:
         if proc.returncode != 0:
             raise RuntimeError(f"send-keys failed for target '{target}': {proc.stderr.strip()}")
 
+    # copy-mode(滚动模式)会静默吞掉 send-keys -l 的字节(含 \x03),且自己不退出——
+    # 客户端的滚动状态标志不跨页面刷新,pane 却可能一直留在 copy-mode,先退出再发
+    mode = subprocess.run(
+        [_TMUX_BIN, "display", "-p", "-t", target, "#{pane_in_mode}"],
+        capture_output=True, text=True, env=_TMUX_ENV,
+    )
+    if mode.returncode == 0 and mode.stdout.strip() == "1":
+        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cancel"])
+
     # Control characters (Ctrl+C, Ctrl+U, Esc, etc.) — send directly
     if len(keys) == 1 and ord(keys) < 32 and keys != '\n':
         _run([_TMUX_BIN, "send-keys", "-t", target, "-l", keys])

@@ -2947,7 +2947,7 @@ function _initMobileInput() {
   });
 
   // Special key buttons + scroll buttons
-  document.getElementById('mobile-keys-row').addEventListener('click', function(e) {
+  document.getElementById('mobile-keys-row').addEventListener('click', async function(e) {
     var btn = e.target.closest('.mobile-key-btn');
     if (!btn) return;
     // Scroll buttons — on mobile, scroll the text output natively
@@ -2967,14 +2967,16 @@ function _initMobileInput() {
     // Regular special keys
     var keyName = btn.dataset.key;
     var seq = _SPECIAL_KEYS[keyName];
+    // 发键前退出滚动模式:copy-mode 会静默吞掉发进去的字节(后端也有兜底 cancel);
+    // await 保证"退出"先于"发键"到达,不然并发竞态下 ^C 可能先到被吞
     if (!seq && keyName && keyName.length === 1) {
       // Single char keys (digits etc): send char + Enter
-      if (!_isMobile && _inScrollMode) _scrollTerminal('exit');
+      if (_inScrollMode) await _scrollTerminal('exit');
       _sendToTerminal(keyName + '\n');
       return;
     }
     if (seq) {
-      if (!_isMobile && _inScrollMode) _scrollTerminal('exit');
+      if (_inScrollMode) await _scrollTerminal('exit');
       _sendToTerminal(seq);
     }
   });
