@@ -2906,14 +2906,15 @@ function _initMobileInput() {
       e.preventDefault();
       _sendMobileCmd();
     }
-    // Up/Down arrow for history when input is empty
+    // 空输入框时 ↑/↓ 直通终端(导航 claude 的菜单/选项);历史回溯改用 Alt+↑/↓。
+    // 输入框有内容时不拦截,让方向键正常移动光标。
     if (e.key === 'ArrowUp' && !input.value.trim()) {
       e.preventDefault();
-      _navigateHistory(-1);
+      if (e.altKey) _navigateHistory(-1); else _sendToTerminal('\x1b[A');
     }
     if (e.key === 'ArrowDown' && !input.value.trim()) {
       e.preventDefault();
-      _navigateHistory(1);
+      if (e.altKey) _navigateHistory(1); else _sendToTerminal('\x1b[B');
     }
   });
 
