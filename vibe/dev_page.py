@@ -2775,6 +2775,29 @@ function _sendOk() {
   _sendToTerminal('y\n');
   _showToast('已确认', 1500);
 }
+
+// 智能 ↵:画面输入行上有幽灵建议(暗色文字)时,自动 Tab 采纳再回车发出;
+// 否则发裸回车(选菜单)。实测规则:裸回车对幽灵建议无效,必须 Tab 先采纳。
+function _smartEnter() {
+  var ghost = false;
+  try {
+    var lines = (_sbLastData || '').split('\n');
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].indexOf('❯') === -1) continue;
+      var m = lines[i].match(/❯.*?\x1b\[2m\s*(\S[^\x1b]*)/);
+      // 排除通用占位符(Try "...")——那不是可采纳的建议,Tab 它可能误触别的功能
+      ghost = !!(m && !/^Try\b/.test(m[1]));
+      break;   // 只看最后一个 ❯ 行(= claude 的输入框)
+    }
+  } catch (e) {}
+  if (ghost) {
+    _sendToTerminal('\t');
+    setTimeout(function() { _sendToTerminal('\n'); }, 600);   // 等 claude 处理完采纳
+    _showToast('已采纳建议并发送', 1500);
+  } else {
+    _sendToTerminal('\n');
+  }
+}
 function _clearInput() {
   _sendToTerminal('\x15');  // Ctrl+U: clear terminal input line
 }
@@ -3943,7 +3966,7 @@ init();
         </label>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn ok-btn" onclick="_sendOk()" title="确认">OK</button>
-        <button class="mobile-key-btn" data-key="Enter" title="发送回车(发出 claude 的幽灵建议/选中菜单)">↵</button>
+        <button class="mobile-key-btn" onclick="_smartEnter()" title="智能回车:有幽灵建议时自动采纳并发送,否则发裸回车(选菜单)">↵</button>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn" data-key="Ctrl+C">⌃C</button>
         <button class="mobile-key-btn" data-key="Ctrl+O" title="展开/收起后台代理与详细输出">⌃O</button>
