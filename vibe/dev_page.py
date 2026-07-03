@@ -3943,6 +3943,7 @@ init();
         </label>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn ok-btn" onclick="_sendOk()" title="确认">OK</button>
+        <button class="mobile-key-btn" data-key="Enter" title="发送回车(发出 claude 的幽灵建议/选中菜单)">↵</button>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn" data-key="Ctrl+C">⌃C</button>
         <button class="mobile-key-btn" data-key="Ctrl+O" title="展开/收起后台代理与详细输出">⌃O</button>
