@@ -3510,10 +3510,16 @@ def sub_pane_output(request: Request, target: str, lines: int = 200):
 def _claude_session_file(cwd: str):
     """pane cwd → ~/.claude/projects/<编码路径>/ 下最新修改的会话 jsonl;找不到返回 None。
     claude 的目录名编码 = 路径中非 [A-Za-z0-9-] 字符全部替换成 '-'。
-    cwd 可能是项目子目录(用户 cd 过),逐级向上找存在的会话目录。"""
+    cwd 可能是项目子目录(用户 cd 过),逐级向上找存在的会话目录;但不越过 scan_dirs
+    (项目容器目录)——容器目录下的会话属于别的项目,新项目还没有会话目录时
+    向上误拿会让新终端混入上一个项目的历史。"""
+    from vibe.config import load_global_config
+    scan_roots = set(load_global_config().get("scan_dirs") or [])
     base = Path.home() / ".claude" / "projects"
     p = Path(cwd)
     for cand in [p, *p.parents]:
+        if cand != p and str(cand) in scan_roots:
+            break
         enc = re.sub(r"[^A-Za-z0-9-]", "-", str(cand))
         d = base / enc
         if d.is_dir():

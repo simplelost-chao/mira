@@ -687,3 +687,53 @@ def test_dev_order_rejects_non_list(tmp_path):
         r = client.post("/api/dev/order", json={"order": "nope"},
                         headers={"X-Admin-Token": "x"})
     assert r.status_code == 400
+
+
+# ── _claude_session_file:cwd → 会话 jsonl 的向上查找边界 ──────────────────────
+
+def _enc_path(p):
+    import re
+    return re.sub(r"[^A-Za-z0-9-]", "-", str(p))
+
+
+def _claude_home(tmp_path, session_dirs):
+    """建假 ~/.claude/projects/<enc>/x.jsonl,返回 home 路径。"""
+    home = tmp_path / "home"
+    for d in session_dirs:
+        sd = home / ".claude" / "projects" / _enc_path(d)
+        sd.mkdir(parents=True, exist_ok=True)
+        (sd / "x.jsonl").write_text("{}\n")
+    return home
+
+
+def test_session_file_does_not_cross_scan_root(tmp_path):
+    # 新项目还没有自己的会话目录时,不能向上拿到容器目录(scan_dirs)里
+    # 别的项目的会话——否则新开项目的终端会混入上一个项目的历史回放
+    scan = tmp_path / "home" / "work"
+    home = _claude_home(tmp_path, [scan])          # 容器目录有别的会话
+    (scan / "newproj").mkdir(parents=True)
+    with patch("vibe.main.Path.home", return_value=home), \
+         patch("vibe.config.load_global_config", return_value={"scan_dirs": [str(scan)]}):
+        assert main._claude_session_file(str(scan / "newproj")) is None
+
+
+def test_session_file_walks_up_within_project(tmp_path):
+    # 用户在项目里 cd 进子目录:向上找到项目根的会话目录,不受边界影响
+    scan = tmp_path / "home" / "work"
+    proj = scan / "oldproj"
+    home = _claude_home(tmp_path, [proj])
+    (proj / "sub").mkdir(parents=True)
+    with patch("vibe.main.Path.home", return_value=home), \
+         patch("vibe.config.load_global_config", return_value={"scan_dirs": [str(scan)]}):
+        f = main._claude_session_file(str(proj / "sub"))
+    assert f is not None and _enc_path(proj) in str(f)
+
+
+def test_session_file_exact_match_at_scan_root(tmp_path):
+    # pane 就开在容器目录本身(临时会话):精确匹配仍然可用,只禁向上越界
+    scan = tmp_path / "home" / "work"
+    home = _claude_home(tmp_path, [scan])
+    with patch("vibe.main.Path.home", return_value=home), \
+         patch("vibe.config.load_global_config", return_value={"scan_dirs": [str(scan)]}):
+        f = main._claude_session_file(str(scan))
+    assert f is not None
