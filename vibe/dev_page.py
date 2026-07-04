@@ -2298,7 +2298,10 @@ function _connectPtyWs(target) {
     if (_ptyWs !== ws) return;
     _setWsDot(false);
     if (_currentTarget !== target) return;
-    if (_hasPaneTarget(target)) {
+    // 子账号行是 loadSubProjects 渲染的 data-pid,不是 .term-pane-row/.term-single(data-target);
+    // _hasPaneTarget 在子账号下恒为 false → 误判"pane 已消失"→ loadPanes 里的
+    // "非 admin 弹 openLoginModal" 会把子账号踢到 owner 登录框。子账号一律走重连,不查 pane 存活。
+    if (_isSub || _hasPaneTarget(target)) {
       setTimeout(function() { if (_ptyWs === ws) _connectPtyWs(target); }, _ptyRetryDelay);
       _ptyRetryDelay = Math.min(_ptyRetryDelay * 2, 30000);
     } else {
