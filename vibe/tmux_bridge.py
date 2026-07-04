@@ -1,7 +1,9 @@
 import os
 import re
+import secrets
 import shutil
 import subprocess
+import time
 
 _TARGET_RE = re.compile(r'^[\w.-]+:\d+\.\d+$')
 
@@ -161,3 +163,75 @@ def scroll_pane(target: str, direction: str, lines: int = 5) -> None:
         _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "history-top"])
     elif direction == "bottom":
         _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "history-bottom"])
+
+
+# ── viewer 会话:真终端直连的隔离层 ──────────────────────────────────────────
+# 每条观看 WS 连接一个独立分组会话:共享源 session 的窗口内容,但"当前窗口"指针
+# 各自独立 —— 多端同看、随意切换项目,内容归属不可能串台。
+
+def create_viewer_session(target: str) -> str:
+    """target 'mira:3.0' → 分组到 'mira' 的临时会话 v-<hex>,当前窗口 3。
+    viewer 内禁 tmux 前缀键(子账号切不了窗口)、关状态栏(画面 100% 是 pane 内容)。"""
+    if not _TARGET_RE.match(target):
+        raise RuntimeError(f"Invalid tmux target format: {target!r}")
+    session, rest = target.split(":", 1)
+    window = rest.split(".", 1)[0]
+    name = "v-" + secrets.token_hex(6)
+
+    def _run(cmd: list[str]) -> None:
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=_TMUX_ENV)
+        if proc.returncode != 0:
+            raise RuntimeError(f"viewer session failed for '{target}': {proc.stderr.strip()}")
+
+    try:
+        _run([_TMUX_BIN, "new-session", "-d", "-t", session, "-s", name])
+        _run([_TMUX_BIN, "select-window", "-t", f"{name}:{window}"])
+        _run([_TMUX_BIN, "set-option", "-t", name, "prefix", "None"])
+        _run([_TMUX_BIN, "set-option", "-t", name, "status", "off"])
+    except RuntimeError:
+        kill_viewer_session(name)   # 半成品不留
+        raise
+    return name
+
+
+def kill_viewer_session(name: str) -> None:
+    """幂等销毁 viewer 会话。只认 v-* 前缀,防止误杀真实会话。"""
+    if not name.startswith("v-"):
+        return
+    subprocess.run([_TMUX_BIN, "kill-session", "-t", name],
+                   capture_output=True, text=True, env=_TMUX_ENV)
+
+
+def window_size(target: str) -> tuple[int, int]:
+    """target 所在窗口的 (cols, rows)。"""
+    proc = subprocess.run(
+        [_TMUX_BIN, "display-message", "-p", "-t", target, "#{window_width} #{window_height}"],
+        capture_output=True, text=True, env=_TMUX_ENV)
+    if proc.returncode != 0:
+        raise RuntimeError(f"window_size failed for '{target}': {proc.stderr.strip()}")
+    w, h = proc.stdout.split()
+    return int(w), int(h)
+
+
+def cleanup_orphan_viewers(max_age_seconds: int = 300) -> int:
+    """兜底:清掉无客户端且创建超过 max_age 的 v-* 会话。
+    正常路径由 WS 关闭时显式 kill;进程崩溃/断电时关闭事件会丢,靠这里回收。"""
+    proc = subprocess.run(
+        [_TMUX_BIN, "list-sessions", "-F", "#{session_name}\t#{session_attached}\t#{session_created}"],
+        capture_output=True, text=True, env=_TMUX_ENV)
+    if proc.returncode != 0:
+        return 0
+    now = time.time()
+    n = 0
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3 or not parts[0].startswith("v-"):
+            continue
+        try:
+            if int(parts[1]) == 0 and now - int(parts[2]) > max_age_seconds:
+                subprocess.run([_TMUX_BIN, "kill-session", "-t", parts[0]],
+                               capture_output=True, text=True, env=_TMUX_ENV)
+                n += 1
+        except ValueError:
+            continue
+    return n
