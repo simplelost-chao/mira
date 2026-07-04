@@ -42,6 +42,9 @@ def list_panes() -> list[dict]:
         if len(parts) < 5:
             continue
         session, window, pane, command, cwd = parts[:5]
+        # viewer 分组会话(v-*)与源会话共享窗口,不滤会在列表里出现重复面板
+        if session.startswith("v-"):
+            continue
         title = parts[5] if len(parts) > 5 else ""
         target = f"{session}:{window}.{pane}"
         panes.append({

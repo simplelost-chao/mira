@@ -30,6 +30,18 @@ def test_list_panes_returns_empty_when_no_tmux():
         assert list_panes() == []
 
 
+def test_list_panes_excludes_viewer_sessions():
+    fake = (
+        "work\t0\t0\tccc\t/Users/chao/projects/mira\n"
+        "v-abcdef123456\t3\t0\tccc\t/Users/chao/projects/vt-b\n"
+    )
+    with patch('subprocess.run', return_value=_make_proc(stdout=fake)):
+        from vibe.tmux_bridge import list_panes
+        panes = list_panes()
+    assert len(panes) == 1
+    assert panes[0]['session'] == 'work'
+
+
 def test_capture_pane_returns_text():
     with patch('subprocess.run', return_value=_make_proc(stdout='hello\nworld\n')):
         from vibe.tmux_bridge import capture_pane
