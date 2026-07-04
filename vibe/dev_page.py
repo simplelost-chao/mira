@@ -2362,16 +2362,29 @@ function _connectPtyWs(target) {
   };
 }
 
+function _ptySendSize() {
+  if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN && _ptyTerm)
+    _ptyWs.send(JSON.stringify({ type: 'resize', cols: _ptyTerm.cols, rows: _ptyTerm.rows }));
+}
+
 function _ptyFitResize() {
   if (!_ptyFit || !_ptyTerm) return;
   try { _ptyFit.fit(); } catch (_) { return; }
-  // fit 用 clientWidth 算列数,但 clientWidth 含 padding → 可能多算出 1 列;
-  // 兜底:渲染后仍横向溢出就减列,直到贴合(最多退 3 列,防御死循环)
-  var wrap = document.getElementById('xterm-container');
-  for (var g = 0; g < 3 && wrap && wrap.scrollWidth > wrap.clientWidth && _ptyTerm.cols > 10; g++)
-    _ptyTerm.resize(_ptyTerm.cols - 1, _ptyTerm.rows);
-  if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
-    _ptyWs.send(JSON.stringify({ type: 'resize', cols: _ptyTerm.cols, rows: _ptyTerm.rows }));
+  _ptySendSize();
+  // fit 按 clientWidth(含 padding)算列,会多出 1-2 列 → 右缘溢出。画布尺寸要
+  // 下一帧才落地,同帧量不到 —— 延后量实际溢出像素,一次性折算该减几列。
+  setTimeout(function() {
+    var wrap = document.getElementById('xterm-container');
+    if (!wrap || !_ptyTerm) return;
+    var over = wrap.scrollWidth - wrap.clientWidth;
+    if (over <= 0) return;
+    var cw = wrap.scrollWidth / _ptyTerm.cols;   // 实测单元格宽
+    var drop = Math.min(4, Math.ceil(over / cw));
+    if (_ptyTerm.cols - drop > 10) {
+      _ptyTerm.resize(_ptyTerm.cols - drop, _ptyTerm.rows);
+      _ptySendSize();
+    }
+  }, 80);
 }
 
 function _xtermSnapshot() {
