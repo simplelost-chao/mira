@@ -2257,7 +2257,7 @@ function _connectPtyWs(target) {
   if (!_ptyTerm) {
     _ptyTerm = new Terminal({
       fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
-      fontSize: 13,
+      fontSize: _isMobile ? 12 : 13,   // 手机小一号(用户点名),列数也随之多几列
       // tmux 客户端本身跑在备用屏,xterm 的 scrollback 永远积累不到内容(实测):
       // 滚动 = 滚轮/触摸事件翻译成转义序列透传给 tmux/claude,由它们原地重绘
       scrollback: 0,
