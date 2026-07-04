@@ -2254,21 +2254,41 @@ function _connectPtyWs(target) {
     _ptyTerm = new Terminal({
       fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
       fontSize: 13,
-      // claude TUI(备用屏)本无历史,长历史走"历史"按钮;但普通 shell 输出有——
-      // 开 scrollback 让 shell 内容可上滑,对备用屏画面无影响
-      scrollback: 2000,
-      disableStdin: _isMobile,  // 手机 xterm 只当显示器,输入走输入栏(绕 iOS 软键盘坑)
+      // tmux 客户端本身跑在备用屏,xterm 的 scrollback 永远积累不到内容(实测):
+      // 滚动 = 滚轮/触摸事件翻译成转义序列透传给 tmux/claude,由它们原地重绘
+      scrollback: 0,
       theme: _xtermTheme()
     });
     _ptyTerm.open(wrap);
+    // 输出通道(桌面敲键 + 手机合成滚轮的转义序列都走这里)
+    _ptyTerm.onData(function(d) {
+      if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
+        _ptyWs.send(new TextEncoder().encode(d));
+    });
     if (!_isMobile) {
       _ptyFit = new FitAddon.FitAddon();
       _ptyTerm.loadAddon(_ptyFit);
-      _ptyTerm.onData(function(d) {
-        if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
-          _ptyWs.send(new TextEncoder().encode(d));
-      });
       window.addEventListener('resize', _ptyFitResize);
+    } else {
+      // 手机:不用 disableStdin(它会连滚轮转义都拦掉),改用 inputmode=none 抑制软键盘;
+      // 竖向滑动合成 WheelEvent 交给 xterm 按已协商的模式(鼠标上报/备用屏滚动)翻译,
+      // 与桌面滚轮完全同一条链路 —— "跟电脑版一样能滑"
+      var ta = wrap.querySelector('.xterm-helper-textarea');
+      if (ta) { ta.setAttribute('inputmode', 'none'); ta.setAttribute('aria-hidden', 'true'); }
+      var _tY = null, _tX = null;
+      wrap.addEventListener('touchstart', function(e) {
+        _tY = e.touches[0].clientY; _tX = e.touches[0].clientX;
+      }, { passive: true });
+      wrap.addEventListener('touchmove', function(e) {
+        if (_tY === null) return;
+        var dy = _tY - e.touches[0].clientY;
+        var dx = _tX - e.touches[0].clientX;
+        if (Math.abs(dx) > Math.abs(dy)) return;   // 横向手势留给容器原生横滑
+        _tY = e.touches[0].clientY; _tX = e.touches[0].clientX;
+        var el = wrap.querySelector('.xterm-screen') || wrap;
+        el.dispatchEvent(new WheelEvent('wheel', { deltaY: dy * 2, deltaMode: 0, bubbles: true, cancelable: true }));
+      }, { passive: true });
+      wrap.addEventListener('touchend', function() { _tY = null; _tX = null; }, { passive: true });
     }
   } else {
     _ptyTerm.reset();   // 换 pane 先清屏:上一个 pane 的残影一个字都不能留(防串)
