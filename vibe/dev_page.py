@@ -280,6 +280,10 @@ def render_dev_page() -> str:
   /* head/scrollback/live 三区:display:contents 让 div 的文本按父级 pre-wrap 连续排版 */
   .mobile-term-output .term-head, .mobile-term-output .term-sb, .mobile-term-output .term-live { display: contents; }
   .mobile-input-bar { display: none; }
+  .xterm-wrap { display: none; flex: 1; min-height: 0; position: relative; background: var(--bg); }
+  .xterm-wrap.visible { display: block; }
+  #xterm-container { position: absolute; inset: 0; padding: 4px 0 0 6px; }
+  .dev-page.stream-mode .xterm-wrap.visible ~ .mobile-term-output { display: none !important; }
 
   /* ── claude 完整会话历史(读 ~/.claude jsonl)── */
   .hist-overlay { position: fixed; inset: 0; z-index: 400; background: var(--bg); display: none; flex-direction: column; }
@@ -2138,53 +2142,15 @@ async function _copyTmuxBuffer() {
 
 function showTerminal() {
   document.getElementById('term-placeholder').style.display = 'none';
-  // Show desktop toolbar
   var toolbar = document.getElementById('term-toolbar');
   if (toolbar) toolbar.classList.add('visible');
   var devPage = document.getElementById('dev-page');
-
-  // owner 桌面若开了"输入框模式"配置,也走 stream(流式输出 + 本地输入框,一次输入很多不卡)
-  if (_isMobile || _currentIsRemote || localStorage.getItem('mira-input-box-mode')) {
-    if (devPage) devPage.classList.add('stream-mode');
-    document.getElementById('ttyd-frame').classList.remove('visible');
-    document.getElementById('mobile-term-output').classList.add('visible');
-    document.getElementById('mobile-token-bar').classList.add('visible');
-    document.getElementById('mobile-input-bar').style.display = 'flex';
-    _startBufferPoll();
-    if (_currentTarget) _connectTermWs(_currentTarget);
-    _focusInputBox();   // 桌面:切进来直接能敲字,不用先点输入框
-    return;
-  }
-
-  if (devPage) { devPage.classList.remove('stream-mode'); devPage.classList.remove('sub-hybrid'); }
-  _disconnectTermWs();
-  document.getElementById('mobile-term-output').classList.remove('visible');
-  document.getElementById('mobile-token-bar').classList.remove('visible');
-  document.getElementById('mobile-input-bar').style.display = '';
-  const frame = document.getElementById('ttyd-frame');
-  if (!frame.src) {
-    frame.src = '/terminal/';
-    frame.addEventListener('load', () => {
-      try {
-        frame.contentWindow.addEventListener('beforeunload', e => {
-          e.stopImmediatePropagation();
-        }, true);
-        frame.contentWindow.document.addEventListener('keydown', e => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
-            _copyTmuxBuffer();
-          }
-        }, true);
-      } catch(e) {}
-      _applyTtydTheme();
-    });
-  }
-  frame.classList.add('visible');
-  requestAnimationFrame(function() {
-    _resizeTtydFrame();
-    setTimeout(_resizeTtydFrame, 80);
-    setTimeout(_resizeTtydFrame, 250);
-  });
-  _startBufferPoll();
+  if (devPage) { devPage.classList.add('stream-mode'); devPage.classList.remove('sub-hybrid'); }
+  document.getElementById('xterm-wrap').classList.add('visible');
+  document.getElementById('mobile-token-bar').classList.add('visible');
+  document.getElementById('mobile-input-bar').style.display = 'flex';
+  if (_currentTarget) _connectPtyWs(_currentTarget);
+  if (!_isMobile) _focusInputBox();
 }
 
 function showPlaceholder() {
@@ -2193,13 +2159,14 @@ function showPlaceholder() {
   document.getElementById('dev-page').classList.remove('sub-hybrid');
   document.getElementById('ttyd-frame').classList.remove('visible');
   document.getElementById('mobile-term-output').classList.remove('visible');
+  document.getElementById('xterm-wrap').classList.remove('visible');
   document.getElementById('mobile-token-bar').classList.remove('visible');
   document.getElementById('mobile-input-bar').style.display = '';
   var toolbar = document.getElementById('term-toolbar');
   if (toolbar) toolbar.classList.remove('visible');
   var switcher = document.getElementById('pane-switcher');
   if (switcher) switcher.classList.remove('open');
-  _disconnectTermWs();
+  _disconnectPtyWs();
   try { localStorage.removeItem('mira-dev-target'); } catch(e) {}  // 主动回列表 → 清掉恢复记录
   _currentIsRemote = false;
   if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
@@ -2605,6 +2572,109 @@ function _hasPaneTarget(target) {
   return !!document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"], .term-single[data-target="' + CSS.escape(target) + '"]');
 }
 
+// ── xterm.js PTY 真终端(100% 复刻;快照拼接链路的替代) ─────────────────────
+var _ptyWs = null, _ptyTerm = null, _ptyFit = null, _snapTimer = null;
+var _ptyRetryDelay = 2000;
+
+function _xtermTheme() {
+  var cs = getComputedStyle(document.body);
+  function v(name, fb) { var x = cs.getPropertyValue(name).trim(); return x || fb; }
+  return { background: v('--bg', '#0d1117'), foreground: v('--text', '#e6edf3'),
+           cursor: v('--accent', '#58a6ff') };
+}
+
+function _connectPtyWs(target) {
+  _disconnectPtyWs();
+  var wrap = document.getElementById('xterm-container');
+  if (!wrap) return;
+  if (!_ptyTerm) {
+    _ptyTerm = new Terminal({
+      fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+      fontSize: 13,
+      scrollback: 0,            // 备用屏无历史;长历史走"历史"按钮
+      disableStdin: _isMobile,  // 手机 xterm 只当显示器,输入走输入栏(绕 iOS 软键盘坑)
+      theme: _xtermTheme()
+    });
+    _ptyTerm.open(wrap);
+    if (!_isMobile) {
+      _ptyFit = new FitAddon.FitAddon();
+      _ptyTerm.loadAddon(_ptyFit);
+      _ptyTerm.onData(function(d) {
+        if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
+          _ptyWs.send(new TextEncoder().encode(d));
+      });
+      window.addEventListener('resize', _ptyFitResize);
+    }
+  } else {
+    _ptyTerm.reset();   // 换 pane 先清屏:上一个 pane 的残影一个字都不能留(防串)
+  }
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var ws = new WebSocket(proto + '//' + location.host + '/ws/terminal/'
+           + encodeURIComponent(target) + '/pty?token=' + encodeURIComponent(_adminToken || _subToken));
+  ws.binaryType = 'arraybuffer';
+  _ptyWs = ws;
+  ws.onopen = function() { _ptyRetryDelay = 2000; _setWsDot(true); };
+  ws.onmessage = function(e) {
+    if (_ptyWs !== ws || !_ptyTerm) return;
+    if (typeof e.data === 'string') {
+      var c = {};
+      try { c = JSON.parse(e.data); } catch (_) { return; }
+      if (c.type === 'init') {
+        _ptyTerm.resize(c.cols, c.rows);
+        if (_isMobile) _fitMobileFont(c.cols);   // 手机:缩字号不改窗口(不打扰他端)
+        else _ptyFitResize();                     // 桌面:fit 并上报 resize
+      }
+      return;
+    }
+    _ptyTerm.write(new Uint8Array(e.data));
+    if (!_snapTimer) _snapTimer = setTimeout(function() {
+      _snapTimer = null;
+      if (_currentTarget) _paneSnapshots[_currentTarget] = _xtermSnapshot();
+    }, 2000);
+  };
+  ws.onclose = function() {
+    if (_ptyWs !== ws) return;
+    _setWsDot(false);
+    if (_currentTarget === target && _hasPaneTarget(target)) {
+      setTimeout(function() { if (_ptyWs === ws) _connectPtyWs(target); }, _ptyRetryDelay);
+      _ptyRetryDelay = Math.min(_ptyRetryDelay * 2, 30000);
+    }
+  };
+}
+
+function _ptyFitResize() {
+  if (!_ptyFit || !_ptyTerm) return;
+  try { _ptyFit.fit(); } catch (_) { return; }
+  if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
+    _ptyWs.send(JSON.stringify({ type: 'resize', cols: _ptyTerm.cols, rows: _ptyTerm.rows }));
+}
+
+function _fitMobileFont(cols) {
+  // 0.60 ≈ 等宽字体宽/高比;目标是窗口整行塞进屏宽,字小但不重排
+  var wrap = document.getElementById('xterm-container');
+  if (!wrap || !cols) return;
+  var size = Math.max(6, Math.min(15, Math.floor(wrap.clientWidth / cols / 0.60)));
+  _ptyTerm.options.fontSize = size;
+}
+
+function _xtermSnapshot() {
+  // 供 pane 切换器预览:取 xterm 缓冲最后 20 个非空行
+  if (!_ptyTerm) return '';
+  var buf = _ptyTerm.buffer.active, out = [];
+  for (var i = 0; i < buf.length; i++) {
+    var line = buf.getLine(i);
+    if (line) { var s = line.translateToString(true); if (s.trim()) out.push(s); }
+  }
+  return out.slice(-20).join('\n');
+}
+
+function _disconnectPtyWs() {
+  if (_ptyWs) {
+    var w = _ptyWs; _ptyWs = null;
+    try { w.onclose = null; w.close(); } catch (_) {}
+  }
+}
+
 var _wsRetryDelay = 2000;   // WS 重连退避(成功连上后在 onopen 重置)
 function _connectTermWs(target) {
   _disconnectTermWs();
@@ -2808,10 +2878,10 @@ function _sendNum(sel) {
   sel.value = '';
 }
 function _onWsDotClick() {
-  if (_termWs && _termWs.readyState === WebSocket.OPEN) return;
+  if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN) return;
   if (_currentTarget) {
     _setWsDot(true);
-    _connectTermWs(_currentTarget);
+    _connectPtyWs(_currentTarget);
   }
 }
 
@@ -3642,9 +3712,7 @@ async function _loadPaneHistory(initial) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 // ── 子账号视图:复用 dev 页全套(皮肤/终端/快捷键/上传/topbar 用量),只换数据源与权限 ──
-// 终端用子账号自己的【可写】ttyd(/subterm/<port>/),会话已加固到拿不到裸 shell。
-let _subTermBase = '';
-
+// 终端统一走 xterm PTY 直连(同 showTerminal),不再用子账号 ttyd(/subterm/<port>/)。
 async function initSub() {
   document.getElementById('dev-page').classList.add('sub-mode');
   document.body.classList.add('sub-mode');
@@ -3663,12 +3731,12 @@ async function initSub() {
     if (document.hidden) {
       clearInterval(_subInterval); _subInterval = null;
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
-      _disconnectTermWs();
+      _disconnectPtyWs();
     } else {
       loadSubProjects();
       _subInterval = setInterval(loadSubProjects, 15000);
       if (_currentTarget && document.getElementById('dev-page').classList.contains('detail-open')) {
-        if (_isMobile) _connectTermWs(_currentTarget);
+        _connectPtyWs(_currentTarget);
         _startTokenRefresh(_currentTarget, 'claude');
       }
     }
@@ -3716,7 +3784,6 @@ async function selectSubProject(pid) {
   if (!res || !res.ok) { _subTermError(res && res.status === 403 ? '无权访问该项目' : '会话启动失败,稍后重试'); return; }
   var d = await res.json();
   _currentTarget = d.target;
-  _subTermBase = d.term_base || '';
   showSubTerminal();
   if (d.target) { _loadPaneTokens(d.target, 'claude'); _updateTopbarUsage('claude'); _startTokenRefresh(d.target, 'claude'); }
 }
@@ -3733,31 +3800,12 @@ function showSubTerminal() {
   var toolbar = document.getElementById('term-toolbar'); if (toolbar) toolbar.classList.add('visible');
   var devPage = document.getElementById('dev-page');
   devPage.classList.add('stream-mode');
-  if (_isMobile) {
-    // 手机:stream 模式(iframe 在手机上输入有问题)—— 输出流+输入栏,输入走后端带账号
-    devPage.classList.remove('sub-hybrid');
-    document.getElementById('ttyd-frame').classList.remove('visible');
-    document.getElementById('mobile-term-output').classList.add('visible');
-    document.getElementById('mobile-token-bar').classList.add('visible');
-    document.getElementById('mobile-input-bar').style.display = 'flex';
-    if (_currentTarget) _connectTermWs(_currentTarget);
-    return;
-  }
-  // 桌面:真终端 + 输入框并存 —— 显示用可写 ttyd(claude 自己管完整历史,滚动/字号原生);
-  // 输入推荐走底部输入框(经后端、prompt 100% 带账号),直接在终端敲的归属走时间推断。
-  if (!_subTermBase) { _subTermError('终端暂不可用,请重试'); return; }
-  devPage.classList.add('sub-hybrid');
-  var frame = document.getElementById('ttyd-frame');
-  if (!frame.src || !frame.src.endsWith(_subTermBase)) {
-    frame.src = _subTermBase;
-    frame.addEventListener('load', function() { _applyTtydTheme(); });
-  }
-  frame.classList.add('visible');
-  document.getElementById('mobile-term-output').classList.remove('visible');
+  devPage.classList.remove('sub-hybrid');
+  document.getElementById('xterm-wrap').classList.add('visible');
+  document.getElementById('mobile-token-bar').classList.add('visible');
   document.getElementById('mobile-input-bar').style.display = 'flex';
-  _disconnectTermWs();   // 桌面 hybrid 由 iframe 渲染,不需要快照流
-  requestAnimationFrame(function() { _resizeTtydFrame(); setTimeout(_resizeTtydFrame, 250); });
-  _focusInputBox();   // 切进来直接能在输入框敲字
+  if (_currentTarget) _connectPtyWs(_currentTarget);
+  if (!_isMobile) _focusInputBox();
 }
 
 function _focusInputBox() {
@@ -3871,7 +3919,7 @@ async function init() {
       _stopBufferPoll();
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
       // 后台主动断开终端 WS:避免 iOS 掐断时触发 onclose 的重连/回列表逻辑
-      _disconnectTermWs();
+      _disconnectPtyWs();
     } else {
       loadPanes();
       _panesInterval = setInterval(loadPanes, 8000);
@@ -3879,9 +3927,9 @@ async function init() {
       if (_currentTarget) {
         var t = _paneToolMap[_currentTarget] || '';
         if (t) _startTokenRefresh(_currentTarget, t);
-        // 回前台:仍在流式终端视图则重连 WS 恢复输出
-        if (_isMobile && document.getElementById('dev-page').classList.contains('detail-open')) {
-          _connectTermWs(_currentTarget);
+        // 回前台:仍在终端详情视图则重连 WS 恢复输出
+        if (document.getElementById('dev-page').classList.contains('detail-open')) {
+          _connectPtyWs(_currentTarget);
         }
       }
     }
@@ -3896,6 +3944,9 @@ init();
         "<head>\n"
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, interactive-widget=resizes-visual">\n'
+        '<link rel="stylesheet" href="/static/xterm/xterm.css">\n'
+        '<script src="/static/xterm/xterm.js"></script>\n'
+        '<script src="/static/xterm/addon-fit.js"></script>\n'
         "<title>Dev · Mira</title>\n"
         "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>\n"
         '<link rel="stylesheet" href="/static/fonts/fonts.css">\n'
@@ -3956,6 +4007,8 @@ init();
     </div>
     <!-- Mobile token bar -->
     <div class="mobile-token-bar" id="mobile-token-bar"><span class="ws-dot ok" id="ws-dot" onclick="_onWsDotClick()" title="连接状态"></span></div>
+    <!-- xterm.js PTY 真终端(替代下面的快照拼接 mobile-term-output) -->
+    <div class="xterm-wrap" id="xterm-wrap"><div id="xterm-container"></div></div>
     <!-- Mobile: independent terminal output via WebSocket (ANSI-rendered) -->
     <div class="mobile-term-output" id="mobile-term-output"></div>
     <!-- Mobile input bar: bypasses iframe input issues via tmux send-keys -->
