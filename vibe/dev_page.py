@@ -2264,6 +2264,9 @@ function _connectPtyWs(target) {
       theme: _xtermTheme()
     });
     _ptyTerm.open(wrap);
+    // canvas 渲染器:字形直接画进单元格。iOS Safari 上 DOM 渲染器有亚像素字距缝
+    // (测量宽 vs 实际字形宽偏差累积),canvas 无此问题且滚动渲染更快;失败回退 DOM
+    try { _ptyTerm.loadAddon(new CanvasAddon.CanvasAddon()); } catch (_) {}
     // 输出通道(桌面敲键 + 手机合成滚轮的转义序列都走这里)
     _ptyTerm.onData(function(d) {
       if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
@@ -3299,6 +3302,7 @@ init();
         '<link rel="stylesheet" href="/static/xterm/xterm.css">\n'
         '<script src="/static/xterm/xterm.js"></script>\n'
         '<script src="/static/xterm/addon-fit.js"></script>\n'
+        '<script src="/static/xterm/addon-canvas.js"></script>\n'
         "<title>Dev · Mira</title>\n"
         "<script>document.documentElement.dataset.theme = localStorage.getItem('mira-skin') || 'default';</script>\n"
         '<link rel="stylesheet" href="/static/fonts/fonts.css">\n'
