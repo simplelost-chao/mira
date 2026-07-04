@@ -8,6 +8,7 @@ import os
 import pty as _pty_mod
 import re
 import secrets
+import signal as _signal
 import struct
 import subprocess
 import termios
@@ -4105,6 +4106,10 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                         if 10 <= rc <= 500 and 4 <= rr <= 200:
                             fcntl.ioctl(master, termios.TIOCSWINSZ,
                                         struct.pack("HHHH", rr, rc, 0, 0))
+                            try:
+                                proc.send_signal(_signal.SIGWINCH)   # 子进程无控制终端,内核不会替我们发
+                            except Exception:
+                                pass
 
         t1 = asyncio.create_task(_pty_to_ws())
         t2 = asyncio.create_task(_ws_to_pty())
