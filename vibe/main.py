@@ -30,10 +30,6 @@ cli = typer.Typer()
 
 from contextlib import asynccontextmanager
 
-# ttyd 已退役(owner/sub 均改走 PTY WS 直连);_TTYD_PORT 仍被
-# /api/terminal/focus 用于识别 owner 终端连接的 tmux 客户端,保留。
-_TTYD_PORT = 7681
-
 
 def _migrate_remote_passwords() -> None:
     """自动将 remote_hosts 中的明文密码迁移为 hash 存储。"""
@@ -4385,68 +4381,7 @@ async def ws_service_status(websocket: WebSocket):
         pass
 
 
-# ── Terminal focus / new-window API ────────────────────────────────────────────
-
-_ttyd_focus_cache: dict = {"sig": None, "ttys": set()}
-
-
-@api.post("/api/terminal/focus")
-def terminal_focus(request: Request, body: dict):
-    """Switch tmux client view to a specific pane (used by sidebar click)."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
-    target = (body.get("target") or "").strip()
-    if not target:
-        raise HTTPException(status_code=400, detail="target required")
-    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
-    import re
-    # target format: session:window.pane  e.g. "mira:0.1"
-    m = re.match(r'^(.+):(\d+)\.(\d+)$', target)
-    if not m:
-        raise HTTPException(status_code=400, detail="invalid target format")
-    session, window, _pane = m.group(1), m.group(2), m.group(3)
-    # Select the window and pane in the target session.
-    subprocess.run([_TMUX_BIN, "select-window", "-t", f"{session}:{window}"],
-                   env=_TMUX_ENV, capture_output=True)
-    subprocess.run([_TMUX_BIN, "select-pane", "-t", target],
-                   env=_TMUX_ENV, capture_output=True)
-
-    # 只切 owner 的【全局 ttyd】(监听 7681)派生的 tmux 客户端,按【进程身份】识别,
-    # 不按"当前在哪个会话"判断——因为 admin 点开子账号面板时,自己的 ttyd 会临时
-    # 连到 sub-* 会话;若按会话过滤会把 admin 自己也跳过 → 切不回来(乱了)。
-    # 子账号 ttyd 监听 7700+,永远不在这里,自然不会被切。
-    # 枚举 owner ttyd(7681)派生的 tmux 客户端子进程 pid。lsof+pgrep 较轻;真正贵的是
-    # 逐个子进程 ps 查 TTY。用【子进程集签名】缓存解析结果:集合不变→直接复用(跳过 ps);
-    # 集合一变(新开标签页多了 client、或 ttyd 重启 pid 变)→重算,从而既不漏新客户端、
-    # 也不会踩 pid 复用拿到旧 TTY。冷路径把 N 次 ps 合并成 1 次。
-    lsof = subprocess.run(["lsof", f"-tiTCP:{_TTYD_PORT}", "-sTCP:LISTEN"],
-                          capture_output=True, text=True)
-    child_pids: list[str] = []
-    for pid in lsof.stdout.split():
-        ch = subprocess.run(["pgrep", "-P", pid.strip()], capture_output=True, text=True)
-        child_pids.extend(c.strip() for c in ch.stdout.split() if c.strip())
-    sig = tuple(sorted(child_pids))
-    if sig and sig == _ttyd_focus_cache.get("sig"):
-        owner_ttys: set[str] = _ttyd_focus_cache["ttys"]
-    else:
-        owner_ttys = set()
-        if child_pids:
-            ps = subprocess.run(["ps", "-p", ",".join(child_pids), "-o", "tty="],
-                                capture_output=True, text=True)
-            for t in ps.stdout.split():
-                t = t.strip()
-                if t and t != "??":
-                    owner_ttys.add(f"/dev/{t}")
-        _ttyd_focus_cache["sig"] = sig
-        _ttyd_focus_cache["ttys"] = owner_ttys
-    switched = 0
-    for tty in owner_ttys:
-        subprocess.run(
-            [_TMUX_BIN, "switch-client", "-c", tty, "-t", f"{session}:{window}"],
-            env=_TMUX_ENV, capture_output=True,
-        )
-        switched += 1
-    return {"ok": True, "switched": switched}
+# ── Terminal new-window API ─────────────────────────────────────────────────
 
 
 @api.post("/api/terminal/new-window")

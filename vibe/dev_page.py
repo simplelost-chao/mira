@@ -1735,15 +1735,6 @@ async function selectPane(target, cmd) {
     if (projName) projName.textContent = _isMobile ? '' : ' · ' + name;
   }
 
-  if (!_isMobile && !_currentIsRemote) {
-    // Fire-and-forget: don't block UI on tmux focus switch
-    fetch('/api/terminal/focus', {
-      method: 'POST',
-      headers: _authHeaders({'Content-Type': 'application/json'}),
-      body: JSON.stringify({ target })
-    }).catch(function() {});
-  }
-
   showTerminal();
   var paneRow = document.querySelector('.term-pane-row[data-target="' + CSS.escape(target) + '"]');
   var tool = _paneToolMap[target] || (paneRow ? paneRow.dataset.tool : '') || '';
