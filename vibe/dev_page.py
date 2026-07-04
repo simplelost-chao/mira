@@ -268,7 +268,8 @@ def render_dev_page() -> str:
   .mobile-input-bar { display: none; }
   .xterm-wrap { display: none; flex: 1; min-height: 0; position: relative; background: var(--bg); }
   .xterm-wrap.visible { display: block; }
-  #xterm-container { position: absolute; inset: 0; padding: 4px 0 0 6px; }
+  /* 手机字号有 11px 下限,宽窗口(100+ 列)塞不进屏宽 → 容器横向可滑;桌面 fit 后无溢出,规则无副作用 */
+  #xterm-container { position: absolute; inset: 0; padding: 4px 0 0 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .dev-page.stream-mode .xterm-wrap.visible ~ .mobile-term-output { display: none !important; }
 
   /* ── claude 完整会话历史(读 ~/.claude jsonl)── */
@@ -2253,7 +2254,9 @@ function _connectPtyWs(target) {
     _ptyTerm = new Terminal({
       fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
       fontSize: 13,
-      scrollback: 0,            // 备用屏无历史;长历史走"历史"按钮
+      // claude TUI(备用屏)本无历史,长历史走"历史"按钮;但普通 shell 输出有——
+      // 开 scrollback 让 shell 内容可上滑,对备用屏画面无影响
+      scrollback: 2000,
       disableStdin: _isMobile,  // 手机 xterm 只当显示器,输入走输入栏(绕 iOS 软键盘坑)
       theme: _xtermTheme()
     });
@@ -2319,10 +2322,11 @@ function _ptyFitResize() {
 }
 
 function _fitMobileFont(cols) {
-  // 0.60 ≈ 等宽字体宽/高比;目标是窗口整行塞进屏宽,字小但不重排
+  // 0.60 ≈ 等宽字体宽/高比。原方案"整行塞进屏宽"在 100+ 列窗口下字号只有 6px,
+  // 根本看不清 → 下限提到 11px,塞不下的部分靠容器横向滑动看(内容不丢)
   var wrap = document.getElementById('xterm-container');
   if (!wrap || !cols) return;
-  var size = Math.max(6, Math.min(15, Math.floor(wrap.clientWidth / cols / 0.60)));
+  var size = Math.max(11, Math.min(15, Math.floor(wrap.clientWidth / cols / 0.60)));
   _ptyTerm.options.fontSize = size;
 }
 
