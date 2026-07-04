@@ -9,7 +9,6 @@ import pty as _pty_mod
 import re
 import secrets
 import shutil
-import signal as _signal
 import struct
 import subprocess
 import termios
@@ -267,12 +266,6 @@ def _remote_refresh_loop() -> None:
             except Exception as e:
                 import logging as _rlog
                 _rlog.getLogger(__name__).warning("remote poll failed for %s: %s", host.alias, e)
-        # 兜底回收孤儿 viewer 会话(WS 关闭事件因崩溃丢失时靠这里)
-        try:
-            from vibe.tmux_bridge import cleanup_orphan_viewers
-            await asyncio.to_thread(cleanup_orphan_viewers)
-        except Exception:
-            pass
 
     import asyncio as _aio
     import logging as _rlog
@@ -838,6 +831,13 @@ def _background_refresh():
             _rebuild_and_persist()
         except Exception as e:
             _log.getLogger(__name__).warning("background refresh failed: %s", e)
+        # 兜底回收孤儿 viewer 会话(WS 关闭事件因崩溃丢失时靠这里;挂在常驻刷新循环,
+        # 不能挂 _poll_once —— 那个循环没配远程主机时根本不会启动)
+        try:
+            from vibe.tmux_bridge import cleanup_orphan_viewers
+            cleanup_orphan_viewers()
+        except Exception:
+            pass
 
 
 def _get_remote_host(alias: str) -> _RemoteHost | None:
@@ -4331,9 +4331,14 @@ def _spawn_pty_attach(viewer: str, cols: int, rows: int):
     master, slave = _pty_mod.openpty()
     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
     env = {**_TMUX_ENV, "TERM": "xterm-256color"}
-    proc = subprocess.Popen([_TMUX_BIN, "attach-session", "-t", viewer],
-                            stdin=slave, stdout=slave, stderr=slave,
-                            env=env, start_new_session=True)
+    try:
+        proc = subprocess.Popen([_TMUX_BIN, "attach-session", "-t", viewer],
+                                stdin=slave, stdout=slave, stderr=slave,
+                                env=env, start_new_session=True)
+    except Exception:
+        os.close(master)
+        os.close(slave)
+        raise
     os.close(slave)
     return master, proc
 
@@ -4437,7 +4442,10 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                     except ValueError:
                         continue
                     if c.get("type") == "resize":
-                        rc, rr = int(c.get("cols", 0)), int(c.get("rows", 0))
+                        try:
+                            rc, rr = int(c.get("cols", 0)), int(c.get("rows", 0))
+                        except (ValueError, TypeError):
+                            continue
                         if 10 <= rc <= 500 and 4 <= rr <= 200:
                             fcntl.ioctl(master, termios.TIOCSWINSZ,
                                         struct.pack("HHHH", rr, rc, 0, 0))
@@ -4448,15 +4456,24 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
             await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
         finally:
             t1.cancel(); t2.cancel()
+            await asyncio.gather(t1, t2, return_exceptions=True)
     except Exception:
         pass
     finally:
         # 顺序要紧:先杀 attach 进程让阻塞中的 os.read 拿到 EOF,再关 fd、销毁会话
-        if proc is not None:
+        def _reap_proc():
             try:
                 proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
             except Exception:
                 pass
+
+        if proc is not None:
+            await asyncio.to_thread(_reap_proc)
         if master is not None:
             try:
                 os.close(master)
