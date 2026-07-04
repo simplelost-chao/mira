@@ -268,8 +268,12 @@ def render_dev_page() -> str:
   .mobile-input-bar { display: none; }
   .xterm-wrap { display: none; flex: 1; min-height: 0; position: relative; background: var(--bg); }
   .xterm-wrap.visible { display: block; }
-  /* 手机字号有 11px 下限,宽窗口(100+ 列)塞不进屏宽 → 容器横向可滑;桌面 fit 后无溢出,规则无副作用 */
+  /* 注意:padding 计入 clientWidth,会骗过 fit 的宽度计算(_ptyFitResize 里有溢出兜底) */
   #xterm-container { position: absolute; inset: 0; padding: 4px 0 0 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 900px) {
+    /* 手机:间距收紧到 2px,把宽度尽量留给内容 */
+    #xterm-container { padding: 2px 0 0 2px; }
+  }
   .dev-page.stream-mode .xterm-wrap.visible ~ .mobile-term-output { display: none !important; }
 
   /* ── claude 完整会话历史(读 ~/.claude jsonl)── */
@@ -2277,21 +2281,25 @@ function _connectPtyWs(target) {
       // 与桌面滚轮完全同一条链路;松手后带动量衰减(终端按行滚,惯性补手感)
       var ta = wrap.querySelector('.xterm-helper-textarea');
       if (ta) { ta.setAttribute('inputmode', 'none'); ta.setAttribute('aria-hidden', 'true'); }
-      var _tY = null, _tX = null, _tVel = 0, _tPrevT = 0, _tRAF = 0;
+      var _tY = null, _tX = null, _tVel = 0, _tPrevT = 0, _tRAF = 0, _tAcc = 0;
       function _wheel(dy) {
         var el = wrap.querySelector('.xterm-screen') || wrap;
         el.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, deltaMode: 0, bubbles: true, cancelable: true }));
       }
-      function _inertia() {
+      // 关键性能点:每次 touchmove 直接派发会产生 60Hz 的滚动转义流,每个都触发
+      // tmux 整屏重绘回传 → 洪水拥塞=延时感。改为累积增量、每帧合并派发一次。
+      function _tFlush() {
         _tRAF = 0;
-        if (Math.abs(_tVel) < 1.5) return;
-        _wheel(_tVel);
-        _tVel *= 0.93;   // 每帧衰减 7%,≈0.5s 滑止
-        _tRAF = requestAnimationFrame(_inertia);
+        if (_tAcc) { _wheel(_tAcc); _tAcc = 0; }
+        if (_tY === null && Math.abs(_tVel) >= 1.5) {   // 手指已离开:惯性接力
+          _tAcc = _tVel;
+          _tVel *= 0.93;   // 每帧衰减 7%,≈0.5s 滑止
+          _tRAF = requestAnimationFrame(_tFlush);
+        }
       }
       wrap.addEventListener('touchstart', function(e) {
         if (_tRAF) { cancelAnimationFrame(_tRAF); _tRAF = 0; }   // 手指按下即停惯性
-        _tVel = 0; _tPrevT = e.timeStamp;
+        _tVel = 0; _tAcc = 0; _tPrevT = e.timeStamp;
         _tY = e.touches[0].clientY; _tX = e.touches[0].clientX;
       }, { passive: true });
       wrap.addEventListener('touchmove', function(e) {
@@ -2303,11 +2311,12 @@ function _connectPtyWs(target) {
         var dt = Math.max(1, e.timeStamp - _tPrevT);
         _tPrevT = e.timeStamp;
         _tVel = (dy / dt) * 16;   // 换算成每帧(16ms)速度,touchend 后接力
-        _wheel(dy * 1.5);
+        _tAcc += dy * 1.5;
+        if (!_tRAF) _tRAF = requestAnimationFrame(_tFlush);
       }, { passive: true });
       wrap.addEventListener('touchend', function() {
         _tY = null; _tX = null;
-        if (Math.abs(_tVel) >= 1.5 && !_tRAF) _tRAF = requestAnimationFrame(_inertia);
+        if (Math.abs(_tVel) >= 1.5 && !_tRAF) _tRAF = requestAnimationFrame(_tFlush);
       }, { passive: true });
     }
   } else {
@@ -2356,6 +2365,11 @@ function _connectPtyWs(target) {
 function _ptyFitResize() {
   if (!_ptyFit || !_ptyTerm) return;
   try { _ptyFit.fit(); } catch (_) { return; }
+  // fit 用 clientWidth 算列数,但 clientWidth 含 padding → 可能多算出 1 列;
+  // 兜底:渲染后仍横向溢出就减列,直到贴合(最多退 3 列,防御死循环)
+  var wrap = document.getElementById('xterm-container');
+  for (var g = 0; g < 3 && wrap && wrap.scrollWidth > wrap.clientWidth && _ptyTerm.cols > 10; g++)
+    _ptyTerm.resize(_ptyTerm.cols - 1, _ptyTerm.rows);
   if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
     _ptyWs.send(JSON.stringify({ type: 'resize', cols: _ptyTerm.cols, rows: _ptyTerm.rows }));
 }
