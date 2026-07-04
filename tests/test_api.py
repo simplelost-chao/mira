@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from vibe.main import api
 from vibe import main
 
@@ -175,28 +175,6 @@ def test_terminals_send_empty_keys():
             headers={'X-Admin-Token': 'x'},
         )
     assert resp.status_code == 400
-
-
-def test_ttyd_watch_keeps_live_process_when_http_probe_fails():
-    live_proc = MagicMock()
-    live_proc.poll.return_value = None
-    with patch('vibe.main._ttyd_proc', live_proc), \
-         patch('vibe.main._ttyd_healthy', return_value=False) as mock_healthy, \
-         patch('vibe.main._start_ttyd') as mock_start:
-        from vibe.main import _ensure_ttyd_running
-        _ensure_ttyd_running()
-    mock_healthy.assert_not_called()
-    mock_start.assert_not_called()
-
-
-def test_ttyd_watch_restarts_exited_process():
-    exited_proc = MagicMock()
-    exited_proc.poll.return_value = 1
-    with patch('vibe.main._ttyd_proc', exited_proc), \
-         patch('vibe.main._start_ttyd') as mock_start:
-        from vibe.main import _ensure_ttyd_running
-        _ensure_ttyd_running()
-    mock_start.assert_called_once_with()
 
 
 def test_stats_no_auth():

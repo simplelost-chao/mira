@@ -8,7 +8,6 @@ import os
 import pty as _pty_mod
 import re
 import secrets
-import shutil
 import struct
 import subprocess
 import termios
@@ -18,7 +17,7 @@ import uuid
 import typer
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from urllib.parse import urlparse
@@ -31,195 +30,9 @@ cli = typer.Typer()
 
 from contextlib import asynccontextmanager
 
-# ── ttyd subprocess management ─────────────────────────────────────────────────
+# ttyd 已退役(owner/sub 均改走 PTY WS 直连);_TTYD_PORT 仍被
+# /api/terminal/focus 用于识别 owner 终端连接的 tmux 客户端,保留。
 _TTYD_PORT = 7681
-_TTYD_CLIENT_OPTIONS = ("rendererType=canvas",)
-_ttyd_proc: subprocess.Popen | None = None
-
-# 子账号只读 ttyd:每子账号一个,端口由 open_id 哈希决定,挂在他自己的 tmux session(只读)。
-_SUB_TTYD_BASE = 7700
-_SUB_TTYD_RANGE = 250
-_sub_ttyd_procs: dict = {}   # open_id -> Popen
-_sub_ttyd_ports: dict = {}   # open_id -> 已分配端口(本进程内稳定、互不碰撞)
-_sub_ttyd_port_lock = threading.Lock()
-
-
-def _sub_ttyd_port(open_id: str) -> int:
-    """给每个子账号分配一个【互不碰撞】的 ttyd 端口。
-    旧实现用 hash%250,两个子账号可能撞同一端口 → 互相杀 ttyd、串到对方终端。
-    改为按 open_id 在范围内分配第一个未占用端口,进程内稳定。"""
-    with _sub_ttyd_port_lock:
-        if open_id in _sub_ttyd_ports:
-            return _sub_ttyd_ports[open_id]
-        used = set(_sub_ttyd_ports.values())
-        for off in range(_SUB_TTYD_RANGE):
-            p = _SUB_TTYD_BASE + off
-            if p not in used:
-                _sub_ttyd_ports[open_id] = p
-                return p
-        # 兜底:子账号超过 250 个(几乎不可能)→ 回退 hash
-        return _SUB_TTYD_BASE + (int(hashlib.sha256(open_id.encode()).hexdigest(), 16) % _SUB_TTYD_RANGE)
-
-
-def _kill_port_listeners(port: int) -> None:
-    """杀掉监听该端口的进程(用于回收残留 ttyd,保证新实例能 bind)。"""
-    try:
-        r = subprocess.run(["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"],
-                           capture_output=True, text=True)
-        for pid in r.stdout.split():
-            subprocess.run(["kill", pid])
-    except Exception:
-        pass
-
-
-def _ensure_sub_ttyd(open_id: str) -> int | None:
-    """确保该子账号有一个【可写】ttyd,挂在他自己的 session sub-<openid>。
-    可写但安全:会话已禁用 tmux prefix + claude 跑在外壳脚本里,逃不到裸 shell。
-    返回端口。base-path = /subterm/<port>,供 mira 反代时路径对齐。"""
-    sess = _sub_session_name(open_id)
-    if _tmux_run("has-session", "-t", sess).returncode != 0:
-        return None   # 还没有会话,先 _ensure_sub_session
-    port = _sub_ttyd_port(open_id)
-    proc = _sub_ttyd_procs.get(open_id)
-    if proc is not None and proc.poll() is None:
-        return port   # 已在跑
-    ttyd = _ttyd_bin()
-    if not Path(ttyd).exists():
-        return None
-    # 清掉可能残留在该端口的旧 ttyd(如服务重启后遗留的实例),否则新的 --writable 实例 bind 失败,
-    # 反代会连回那个旧的只读实例 → 子账号能看不能输入。
-    _kill_port_listeners(port)
-    base = f"/subterm/{port}"
-    cmd = [ttyd, "-p", str(port), "--base-path", base, "--writable"]
-    for opt in _TTYD_CLIENT_OPTIONS:
-        cmd += ["--client-option", opt]
-    cmd += [_tmux_bin(), "attach", "-t", sess]
-    _sub_ttyd_procs[open_id] = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return port
-
-def _ttyd_bin() -> str:
-    return shutil.which("ttyd") or "/opt/homebrew/bin/ttyd"
-
-def _tmux_bin() -> str:
-    return shutil.which("tmux") or "/opt/homebrew/bin/tmux"
-
-def _ttyd_auth_header() -> dict[str, str]:
-    from vibe.config import load_global_config
-    pwd = (load_global_config().get("admin_password") or "").strip()
-    if not pwd:
-        return {}
-    token = base64.b64encode(f"admin:{pwd}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
-
-def _ttyd_healthy(timeout: float = 1.0) -> bool:
-    """Return True when ttyd is reachable with Mira's configured auth."""
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{_TTYD_PORT}/terminal/",
-        headers=_ttyd_auth_header(),
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return 200 <= resp.status < 400
-    except urllib.error.HTTPError as e:
-        # 401 means the port is occupied by ttyd, but not usable by Mira.
-        return 200 <= e.code < 400
-    except Exception:
-        return False
-
-def _ttyd_listener_pids() -> list[str]:
-    proc = subprocess.run(
-        ["lsof", f"-tiTCP:{_TTYD_PORT}", "-sTCP:LISTEN"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        return []
-    return [pid.strip() for pid in proc.stdout.splitlines() if pid.strip()]
-
-def _ttyd_command(pid: str) -> str:
-    proc = subprocess.run(
-        ["ps", "-p", pid, "-o", "command="],
-        capture_output=True, text=True,
-    )
-    return proc.stdout.strip()
-
-def _ttyd_command_has_expected_options(cmd: str) -> bool:
-    return all(opt in cmd or opt.replace("=", " ") in cmd for opt in _TTYD_CLIENT_OPTIONS)
-
-def _ttyd_listener_has_expected_options() -> bool:
-    for pid in _ttyd_listener_pids():
-        cmd = _ttyd_command(pid)
-        if "ttyd" in cmd and _ttyd_command_has_expected_options(cmd):
-            return True
-    return False
-
-def _stop_stale_ttyd_listeners() -> None:
-    """Stop Mira's ttyd listener when it lacks required client options.
-
-    The tmux session is not killed; only the browser bridge is restarted.
-    """
-    for pid in _ttyd_listener_pids():
-        cmd = _ttyd_command(pid)
-        if "ttyd" not in cmd or _ttyd_command_has_expected_options(cmd):
-            continue
-        try:
-            subprocess.run(["kill", pid], capture_output=True)
-        except Exception:
-            pass
-
-def _start_ttyd() -> None:
-    """Start ttyd subprocess. Uses admin_password as HTTP basic auth (admin:<pwd>).
-
-    Without admin_password set, ttyd is wide open — only safe on localhost/tailnet.
-    With it set, every request to /terminal/ requires Authorization header.
-    """
-    global _ttyd_proc
-    ttyd = _ttyd_bin()
-    tmux = _tmux_bin()
-    if not Path(ttyd).exists():
-        return
-    if _ttyd_healthy():
-        if _ttyd_listener_has_expected_options():
-            return
-        _stop_stale_ttyd_listeners()
-        time.sleep(0.3)
-
-    from vibe.config import load_global_config
-    pwd = (load_global_config().get("admin_password") or "").strip()
-
-    cmd = [
-        ttyd, "-p", str(_TTYD_PORT),
-        "--writable",
-        "--base-path", "/terminal",
-    ]
-    for opt in _TTYD_CLIENT_OPTIONS:
-        cmd += ["--client-option", opt]
-    if pwd:
-        cmd += ["--credential", f"admin:{pwd}"]
-    # Ensure mira tmux session exists before ttyd starts (ttyd only creates it on client connect)
-    subprocess.run([tmux, "new-session", "-d", "-s", "mira", "-c", str(Path.home())],
-                   capture_output=True)  # ignore error if already exists
-
-    cmd += [tmux, "new-session", "-A", "-s", "mira", "-c", str(Path.home())]
-
-    _ttyd_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def _ensure_ttyd_running() -> None:
-    """Start ttyd when Mira has no live child process to serve terminals."""
-    if _ttyd_proc is None or _ttyd_proc.poll() is not None:
-        _start_ttyd()
-
-
-def _watch_ttyd() -> None:
-    """Restart ttyd only after its process exits.
-
-    HTTP health probes can fail independently of the already established
-    terminal WebSocket. Restarting a live ttyd on such a failure disconnects
-    every browser session and leaves ttyd's reconnect prompt in a loop.
-    """
-    while True:
-        time.sleep(5)
-        _ensure_ttyd_running()
 
 
 def _migrate_remote_passwords() -> None:
@@ -302,15 +115,11 @@ async def _lifespan(app: FastAPI):
     from vibe.terminal_monitor import run_monitor
     threading.Thread(target=run_monitor, daemon=True).start()
     threading.Thread(target=_monitor_base_services_loop, daemon=True, name='mira-svc-monitor').start()
-    _start_ttyd()
-    threading.Thread(target=_watch_ttyd, daemon=True).start()
     # 远程主机
     _init_remote_hosts()
     if _remote_hosts:
         threading.Thread(target=_remote_refresh_loop, daemon=True).start()
     yield
-    if _ttyd_proc:
-        _ttyd_proc.terminate()
 
 api = FastAPI(title="Vibe Manager", lifespan=_lifespan)
 # gzip 压缩:页面 HTML(dev 页 ~180KB)、stats/prompts 等大 JSON 响应都能省 ~5-8 倍带宽
@@ -3475,8 +3284,8 @@ def sub_projects(request: Request):
 
 
 @api.post("/api/sub/project/{project_id}/session")
-def sub_open_session(request: Request, project_id: str, response: Response):
-    """子账号:进入某授权项目 → 起/复用加固 claude 会话 + 只读 ttyd,返回 target 与终端端口。"""
+def sub_open_session(request: Request, project_id: str):
+    """子账号:进入某授权项目 → 起/复用加固 claude 会话,返回 target。"""
     principal = _get_principal(request)
     if not principal or principal[0] != "sub":
         raise HTTPException(status_code=401, detail="需要子账号登录")
@@ -3487,16 +3296,9 @@ def sub_open_session(request: Request, project_id: str, response: Response):
     target = _ensure_sub_session(open_id, project_id)
     if not target:
         raise HTTPException(status_code=400, detail="项目不存在或无法创建会话")
-    # 让只读 ttyd 显示这个项目的窗口
+    # 让终端显示这个项目的窗口(PTY attach 时呈现)
     _tmux_run("select-window", "-t", target.rsplit(".", 1)[0])
-    port = _ensure_sub_ttyd(open_id)
-    # 给只读终端代理发一个 cookie(= 子账号会话 token),供 /subterm 反代鉴权
-    sub_tok = request.headers.get("X-Sub-Token") or ""
-    if sub_tok:
-        response.set_cookie("sub_term", sub_tok, path="/subterm", httponly=True,
-                            samesite="lax", secure=True, max_age=7 * 24 * 3600)
-    return {"target": target, "term_port": port,
-            "term_base": (f"/subterm/{port}/" if port else None)}
+    return {"target": target}
 
 
 @api.get("/api/sub/pane/{target:path}/output")
@@ -3700,46 +3502,6 @@ def dev_pane_history(request: Request, target: str, before: int = 0, limit: int 
                 break
     return {"turns": turns[start:end], "total": total, "has_more": start > 0,
             "session": sess_file.stem[:8]}
-
-
-def _stream_backlog(target: str) -> str | None:
-    """终端流的历史回放垫底:从会话 jsonl 组装终端风格文本(prompt 高亮/子代理
-    缩进降级/工具摘要)。去掉最后一个回合——那部分正在实时屏上,避免和实时区重复。"""
-    r = _tmux_run("display-message", "-t", target, "-p", "#{pane_current_path}")
-    if r.returncode != 0:
-        return None
-    sess_file = _claude_session_file(r.stdout.strip())
-    if not sess_file:
-        return None
-    turns = _session_turns(sess_file)
-    last_user = None
-    for i in range(len(turns) - 1, -1, -1):
-        if turns[i]["role"] == "user" and not turns[i].get("agent"):
-            last_user = i
-            break
-    if last_user is not None:
-        turns = turns[:last_user]
-    turns = turns[-150:]
-    if not turns:
-        return None
-    out = []
-    for t in turns:
-        txt = (t.get("text") or "").strip()
-        if t.get("agent"):
-            if txt:
-                out.append("\x1b[2m  ↳ [" + t["agent"][:40] + "] " + txt[:600] + "\x1b[0m")
-        elif t["role"] == "user":
-            out.append("")
-            out.append("\x1b[1;36m❯ " + txt[:3000] + "\x1b[0m")
-        elif txt:
-            out.append(txt)
-        tools = t.get("tools") or {}
-        if tools:
-            summ = " · ".join(k.split("__")[-1] + (f"×{v}" if v > 1 else "") for k, v in tools.items())
-            out.append("\x1b[2m  ⚙ " + summ[:200] + "\x1b[0m")
-    return ("\x1b[2m════ 历史回放(来自会话记录)════\x1b[0m\n"
-            + "\n".join(out)
-            + "\n\x1b[2m════ 以上历史 · 以下实时 ════\x1b[0m\n")
 
 
 @api.post("/api/sub/pane/{target:path}/send")
@@ -4222,108 +3984,6 @@ async def terminals_output(request: Request, target: str, lines: int = 200):
     return {"target": target, "output": text}
 
 
-@api.websocket("/ws/terminal/{target:path}/stream")
-async def terminal_stream_ws(ws: WebSocket, target: str):
-    """Stream terminal output via WebSocket for mobile clients.
-
-    Uses adaptive capture-pane polling and only sends when content changes.
-    Active terminals refresh at 25 FPS for smooth typing, then back off when
-    idle so mobile and desktop remain independent without constant high CPU.
-    """
-    # WS 认证：优先检查 header，兼容 query param（浏览器 WS 无法设 header）
-    ws_token = ws.headers.get("x-admin-token") or ws.query_params.get("token", "")
-    expected = _admin_token()
-    authed = (expected is None) or (bool(ws_token) and hmac.compare_digest(ws_token, expected))
-    if not authed:
-        # 子账号:token 对应有效会话,且 target 属于他自己的 session 才放行(只读输出)
-        from vibe.accounts import session_open_id
-        oid = session_open_id(ws_token)
-        if not (oid and _sub_target_project(oid, target)):
-            await ws.close(code=1008, reason="Unauthorized")
-            return
-    await ws.accept()
-
-    # 远程 WebSocket 代理：连接远程 Mira 的同名 WS 端点，双向转发
-    remote_host, real_target = _parse_target(target)
-    if remote_host is not None:
-        import websockets as _ws
-        import logging
-        logger = logging.getLogger(__name__)
-        remote_ws_url = remote_host.url.replace("http://", "ws://").replace("https://", "wss://")
-        remote_ws_url += f"/ws/terminal/{real_target}/stream"
-        # token 通过 header 传输，不放在 URL 中（避免日志泄露）
-        extra_headers = {}
-        if remote_host.token:
-            extra_headers["X-Admin-Token"] = remote_host.token
-        try:
-            async with _ws.connect(remote_ws_url, additional_headers=extra_headers) as remote_ws:
-                async def _remote_to_client():
-                    try:
-                        async for msg in remote_ws:
-                            if isinstance(msg, bytes):
-                                await ws.send_bytes(msg)
-                            else:
-                                await ws.send_text(msg)
-                    except Exception:
-                        pass
-
-                async def _client_to_remote():
-                    try:
-                        async for msg in ws.iter_text():
-                            await remote_ws.send(msg)
-                    except Exception:
-                        pass
-
-                await asyncio.gather(_remote_to_client(), _client_to_remote())
-        except Exception as e:
-            logger.warning("remote terminal stream closed for %s via %s: %s", real_target, remote_host.alias, e)
-            try:
-                await ws.close(code=1011, reason="Remote terminal stream failed")
-            except Exception:
-                pass
-        return
-
-    from vibe.tmux_bridge import capture_pane
-    prev_hash = ""
-    last_change_at = time.monotonic()
-    import logging
-    logger = logging.getLogger(__name__)
-    # 先推第一帧实时画面(切换即见),再补历史回放 —— 回放要解析几 MB 会话文件,
-    # 冷缓存时耗时秒级,不能挡在首帧前面。客户端会把回放插到 scrollback 最前。
-    try:
-        _first = await asyncio.to_thread(capture_pane, target, 300, ansi=True)
-        prev_hash = hashlib.md5(_first.encode()).hexdigest()
-        await ws.send_text(_first)
-        _bl = await asyncio.to_thread(_stream_backlog, target)
-        if _bl:
-            await ws.send_text("\x00BL\x00" + _bl)
-    except WebSocketDisconnect:
-        return
-    except Exception:
-        pass
-    try:
-        while True:
-            text = await asyncio.to_thread(capture_pane, target, 300, ansi=True)
-            h = hashlib.md5(text.encode()).hexdigest()
-            if h != prev_hash:
-                prev_hash = h
-                last_change_at = time.monotonic()
-                await ws.send_text(text)
-            active = (time.monotonic() - last_change_at) < 1.5
-            # 8 FPS(活跃)/3 FPS(空闲)对终端阅读已足够。每帧是一次 capture-pane subprocess
-            # fork(拉 300 行带 ANSI),原来的 25 FPS 在多客户端时会把 threadpool 线程吃满、
-            # 拖慢其他同步端点(panes 轮询/focus/写操作)。
-            await asyncio.sleep(0.12 if active else 0.3)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        logger.warning("terminal stream closed for %s: %s", target, e)
-        try:
-            await ws.close(code=1011, reason="Terminal stream failed")
-        except Exception:
-            pass
-
-
 def _spawn_pty_attach(viewer: str, cols: int, rows: int):
     """openpty + tmux attach 到 viewer 会话。独立函数方便测试 mock。
     返回 (master_fd, Popen);失败抛 RuntimeError。"""
@@ -4349,7 +4009,7 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
     协议:accept 后先发 {"type":"init","cols","rows"};binary 帧=终端字节(双向);
     客户端 text 帧 {"type":"resize","cols","rows"} 调 PTY 尺寸(手机端约定不发)。"""
     import json as _json
-    # 鉴权:与 terminal_stream_ws 完全一致
+    # 鉴权:admin token 或子账号 session token
     ws_token = ws.headers.get("x-admin-token") or ws.query_params.get("token", "")
     expected = _admin_token()
     authed = (expected is None) or (bool(ws_token) and hmac.compare_digest(ws_token, expected))
@@ -4725,402 +4385,6 @@ async def ws_service_status(websocket: WebSocket):
         pass
 
 
-# ── ttyd HTTP proxy ─────────────────────────────────────────────────────────────
-
-# Injected before ttyd's application script. It reports connection state to the
-# parent dev page, keeps ttyd's automatic reconnect enabled after socket errors,
-# and hides ttyd's text overlays (Connection Closed / Press Enter to Reconnect).
-_TTYD_CONNECTION_INJECT = """<script id="mira-ttyd-connection">
-(function(){
-var NativeWebSocket=window.WebSocket;
-function notify(connected){
-  try{window.parent.postMessage({type:'mira-ttyd-connection',connected:connected},'*');}catch(_){}
-}
-function MiraWebSocket(url,protocols){
-  var ws=protocols===undefined?new NativeWebSocket(url):new NativeWebSocket(url,protocols);
-  if(String(url).indexOf('/terminal/ws')!==-1){
-    var nativeAdd=ws.addEventListener.bind(ws);
-    nativeAdd('open',function(){notify(true);});
-    nativeAdd('close',function(){notify(false);});
-    nativeAdd('error',function(){notify(false);});
-    // ttyd disables automatic reconnect when its error listener runs. The
-    // close event still follows and will use ttyd's normal reconnect path.
-    ws.addEventListener=function(type,listener,options){
-      if(type==='error')return;
-      return nativeAdd(type,listener,options);
-    };
-  }
-  return ws;
-}
-MiraWebSocket.prototype=NativeWebSocket.prototype;
-Object.setPrototypeOf(MiraWebSocket,NativeWebSocket);
-window.WebSocket=MiraWebSocket;
-var style=document.createElement('style');
-style.textContent='.xterm>div[style*="font-size: xx-large"]{display:none!important}';
-document.head.appendChild(style);
-notify(false);
-})();
-</script>"""
-
-
-# Injected into ttyd's HTML so the terminal follows Mira's active skin.
-# Runs inside the iframe: reads localStorage, polls for the xterm Terminal
-# instance (React mounts it async), and listens for postMessage updates.
-_TTYD_THEME_INJECT = """<script id="mira-ttyd-theme">
-(function(){
-/* Per-skin config: colors + terminal options */
-var T={
-  'default':{
-    bg:'#080c14',fg:'#eef1f7',cu:'#4f46e5',ca:'#080c14',sel:'rgba(79,70,229,.3)',
-    k:'#0e1420',r:'#e06c75',g:'#3fb950',y:'#d29922',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#eef1f7',
-    bk:'#2a3040',br:'#e06c75',bg2:'#3fb950',by:'#e5a650',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
-    cursorStyle:'block',cursorBlink:false,fontSize:14},
-  'claude-light':{
-    bg:'#f5f3ef',fg:'#1a1a1a',cu:'#da7756',ca:'#ffffff',sel:'rgba(218,119,86,.25)',
-    k:'#383a42',r:'#dc2626',g:'#16a34a',y:'#ca8a04',b:'#4078f2',m:'#a626a4',c:'#0184bc',w:'#1a1a1a',
-    bk:'#b0b0b0',br:'#dc2626',bg2:'#16a34a',by:'#d97706',bb:'#4078f2',bm:'#a626a4',bc:'#0184bc',bw:'#383a42',
-    cursorStyle:'bar',cursorBlink:true,fontSize:14},
-  'claude-dark':{
-    bg:'#131313',fg:'#ededed',cu:'#09B83E',ca:'#131313',sel:'rgba(9,184,62,.25)',
-    k:'#1a1a1a',r:'#ef4444',g:'#4caf50',y:'#d4a84b',b:'#4e9eff',m:'#c792ea',c:'#56b6c2',w:'#ededed',
-    bk:'#3a3a3a',br:'#ef4444',bg2:'#4caf50',by:'#e5a84b',bb:'#82aaff',bm:'#d9a0f5',bc:'#89ddff',bw:'#ffffff',
-    cursorStyle:'block',cursorBlink:false,fontSize:14},
-  'neon-pixel':{
-    bg:'#0a0a0a',fg:'#e0e0ff',cu:'#ff00ff',ca:'#0a0a0a',sel:'rgba(0,255,0,.2)',
-    k:'#0e0e1a',r:'#ff0040',g:'#00ff00',y:'#ffff00',b:'#00ccff',m:'#ff00ff',c:'#00ffff',w:'#e0e0ff',
-    bk:'#2a2a40',br:'#ff0040',bg2:'#00ff00',by:'#ff8800',bb:'#00ccff',bm:'#ff00ff',bc:'#00ffff',bw:'#ffffff',
-    cursorStyle:'block',cursorBlink:true,fontSize:14},
-  'pixel-cyber':{
-    bg:'#020c1a',fg:'#eef8ff',cu:'#ff0055',ca:'#020c1a',sel:'rgba(0,212,255,.2)',
-    k:'#04111f',r:'#ff3355',g:'#00ff88',y:'#ffaa00',b:'#00d4ff',m:'#a855f7',c:'#00d4ff',w:'#eef8ff',
-    bk:'#1a3a50',br:'#ff3355',bg2:'#00ff88',by:'#ffaa00',bb:'#00d4ff',bm:'#a855f7',bc:'#00d4ff',bw:'#ffffff',
-    cursorStyle:'block',cursorBlink:true,fontSize:14}
-};
-/* Per-skin CSS injected into the iframe body */
-var CSS_EXTRA={
-  'neon-pixel':[
-    /* CRT vignette: brighter center, dim corners */
-    '.xterm{position:relative}',
-    '.xterm::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:10;',
-    'background:radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,.55) 100%)}',
-    /* Faint green phosphor scanlines */
-    '.xterm::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:11;',
-    'background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,255,0,.028) 3px,rgba(0,255,0,.028) 4px)}',
-    /* Accent scrollbar */
-    '.xterm-viewport::-webkit-scrollbar{width:6px}',
-    '.xterm-viewport::-webkit-scrollbar-thumb{background:#ff00ff;border-radius:0}',
-    '.xterm-viewport::-webkit-scrollbar-track{background:#0a0a0a}',
-    /* Green border around terminal */
-    '.xterm-screen{outline:1px solid rgba(0,255,0,.2)}'
-  ].join(''),
-  'pixel-cyber':[
-    /* CRT vignette: cyan-tinted */
-    '.xterm{position:relative}',
-    '.xterm::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:10;',
-    'background:radial-gradient(ellipse at center,transparent 55%,rgba(0,8,20,.65) 100%)}',
-    /* Cyan scanlines */
-    '.xterm::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:11;',
-    'background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,212,255,.022) 3px,rgba(0,212,255,.022) 4px)}',
-    /* Cyan scrollbar */
-    '.xterm-viewport::-webkit-scrollbar{width:6px}',
-    '.xterm-viewport::-webkit-scrollbar-thumb{background:#00d4ff;border-radius:0}',
-    '.xterm-viewport::-webkit-scrollbar-track{background:#020c1a}',
-    /* Cyan border frame */
-    '.xterm-screen{outline:1px solid rgba(0,212,255,.3);box-shadow:0 0 20px rgba(0,212,255,.08) inset}'
-  ].join(''),
-  'claude-light':[
-    '.xterm-viewport::-webkit-scrollbar{width:6px}',
-    '.xterm-viewport::-webkit-scrollbar-thumb{background:#da7756;border-radius:3px}',
-    '.xterm-viewport::-webkit-scrollbar-track{background:#e8e4de}'
-  ].join(''),
-  'claude-dark':[
-    '.xterm-viewport::-webkit-scrollbar{width:6px}',
-    '.xterm-viewport::-webkit-scrollbar-thumb{background:#09B83E;border-radius:3px}',
-    '.xterm-viewport::-webkit-scrollbar-track{background:#131313}'
-  ].join(''),
-  'default':[
-    '.xterm-viewport::-webkit-scrollbar{width:6px}',
-    '.xterm-viewport::-webkit-scrollbar-thumb{background:#4f46e5;border-radius:3px}',
-    '.xterm-viewport::-webkit-scrollbar-track{background:#080c14}'
-  ].join('')
-};
-var _term=null;
-function skin(){return localStorage.getItem('mira-skin')||'default';}
-function applyCSS(t,sk){
-  var s=document.getElementById('mira-s');
-  if(!s){s=document.createElement('style');s.id='mira-s';document.head.appendChild(s);}
-  s.textContent='html,body,.xterm,.xterm-viewport{background:'+t.bg+'!important}'
-    +(CSS_EXTRA[sk]||'');
-}
-function mkTheme(t){
-  return {background:t.bg,foreground:t.fg,cursor:t.cu,cursorAccent:t.ca,
-    selectionBackground:t.sel,
-    black:t.k,red:t.r,green:t.g,yellow:t.y,blue:t.b,magenta:t.m,cyan:t.c,white:t.w,
-    brightBlack:t.bk,brightRed:t.br,brightGreen:t.bg2,brightYellow:t.by,
-    brightBlue:t.bb,brightMagenta:t.bm,brightCyan:t.bc,brightWhite:t.bw};
-}
-function setTheme(term,t){
-  var th=mkTheme(t);
-  try{term.options.theme=th;}catch(e){try{term.setOption('theme',th);}catch(e2){}}
-  try{term.options.cursorStyle=t.cursorStyle||'block';}catch(e){try{term.setOption('cursorStyle',t.cursorStyle||'block');}catch(e2){}}
-  try{term.options.cursorBlink=!!t.cursorBlink;}catch(e){try{term.setOption('cursorBlink',!!t.cursorBlink);}catch(e2){}}
-}
-function fitTerm(){
-  var term=_term||(window.term&&window.term.element?window.term:null);
-  if(term)_term=term;
-  try{if(window.fitAddon&&window.fitAddon.fit)window.fitAddon.fit();}catch(e){}
-  try{if(term&&term.fit)term.fit();}catch(e){}
-  try{window.dispatchEvent(new Event('resize'));}catch(e){}
-}
-function apply(){
-  var sk=skin();var t=T[sk]||T['default'];
-  applyCSS(t,sk);
-  if(_term){setTheme(_term,t);setTimeout(fitTerm,0);return;}
-  if(window.term&&window.term.element){_term=window.term;setTheme(_term,t);setTimeout(fitTerm,0);return;}
-  var n=0,id=setInterval(function(){
-    if(window.term&&window.term.element){
-      clearInterval(id);_term=window.term;setTheme(_term,T[skin()]||T['default']);setTimeout(fitTerm,0);
-    } else if(++n>100){clearInterval(id);}
-  },150);
-}
-window.addEventListener('message',function(e){
-  if(!e.data)return;
-  if(e.data.type==='mira-theme')apply();
-  if(e.data.type==='mira-resize'){fitTerm();setTimeout(fitTerm,80);setTimeout(fitTerm,250);}
-});
-// Notify parent on mouseup so it can grab tmux buffer immediately
-document.addEventListener('mouseup',function(e){
-  if(e.button===0)try{window.parent.postMessage({type:'mira-mouseup'},'*');}catch(_){}
-},true);
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);
-else apply();
-})();
-</script>"""  # end _TTYD_THEME_INJECT
-
-# Reusable httpx client for ttyd proxy (avoids per-request connection pool churn)
-import httpx as _httpx
-_ttyd_http_client: _httpx.AsyncClient | None = None
-
-def _get_ttyd_http_client() -> _httpx.AsyncClient:
-    global _ttyd_http_client
-    if _ttyd_http_client is None or _ttyd_http_client.is_closed:
-        _ttyd_http_client = _httpx.AsyncClient(trust_env=False, timeout=10)
-    return _ttyd_http_client
-
-@api.api_route("/terminal/{path:path}", methods=["GET", "POST", "HEAD"])
-async def ttyd_http_proxy(path: str, request: Request):
-    """Proxy HTTP requests (HTML/JS/CSS assets) to the ttyd process.
-
-    No admin check here — ttyd is bound to 127.0.0.1 and unreachable
-    from outside. The security boundary is Mira's login page.
-    """
-    import base64
-    from vibe.config import load_global_config
-
-    url = f"http://127.0.0.1:{_TTYD_PORT}/terminal/{path}"
-    params = str(request.url.query)
-    if params:
-        url += "?" + params
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection", "authorization")}
-    pwd = (load_global_config().get("admin_password") or "").strip()
-    if pwd:
-        token = base64.b64encode(f"admin:{pwd}".encode()).decode()
-        headers["Authorization"] = f"Basic {token}"
-    try:
-        resp = await _get_ttyd_http_client().request(
-            method=request.method,
-            url=url,
-            headers=headers,
-            content=await request.body(),
-        )
-    except _httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="ttyd 未运行")
-    # Strip hop-by-hop and encoding headers (httpx decompresses; don't re-claim gzip)
-    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length", "www-authenticate"}
-    headers = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
-    content = resp.content
-    # Connection interception must run before ttyd creates its WebSocket. Theme
-    # sync can run after the application has mounted the xterm instance.
-    if "text/html" in resp.headers.get("content-type", ""):
-        if b"</head>" in content:
-            content = content.replace(b"</head>", _TTYD_CONNECTION_INJECT.encode() + b"</head>", 1)
-        if b"</body>" in content:
-            content = content.replace(b"</body>", _TTYD_THEME_INJECT.encode() + b"</body>", 1)
-    return Response(content=content, status_code=resp.status_code, headers=headers)
-
-
-@api.websocket("/terminal/ws")
-async def ttyd_ws_proxy(websocket: WebSocket):
-    """Proxy WebSocket connection to ttyd.
-
-    Forwards admin:<admin_password> as basic auth to ttyd (which requires it
-    when --credential is set). Security boundary remains Mira login + ttyd auth.
-    """
-    import websockets as _ws
-    import base64
-    import logging
-    from vibe.config import load_global_config
-    logger = logging.getLogger(__name__)
-
-    # ttyd 自身的 basic auth (--credential) 已经是安全边界，
-    # 这里不再做 Mira token 验证——ttyd 前端 JS 无法注入 query param。
-    await websocket.accept(subprotocol="tty")
-    ttyd_url = f"ws://127.0.0.1:{_TTYD_PORT}/terminal/ws"
-
-    pwd = (load_global_config().get("admin_password") or "").strip()
-    extra_headers = []
-    if pwd:
-        token = base64.b64encode(f"admin:{pwd}".encode()).decode()
-        extra_headers = [("Authorization", f"Basic {token}")]
-
-    try:
-        async with _ws.connect(
-            ttyd_url, subprotocols=["tty"],
-            additional_headers=extra_headers,
-            proxy=None,
-            compression=None,
-        ) as ttyd_ws:
-            async def browser_to_ttyd():
-                try:
-                    while True:
-                        msg = await websocket.receive()
-                        msg_type = msg.get("type")
-                        if msg_type == "websocket.disconnect":
-                            break
-                        if msg_type != "websocket.receive":
-                            continue
-                        if msg.get("bytes") is not None:
-                            await ttyd_ws.send(msg["bytes"])
-                        elif msg.get("text") is not None:
-                            await ttyd_ws.send(msg["text"])
-                except WebSocketDisconnect:
-                    pass
-                except Exception as e:
-                    logger.warning("browser->ttyd relay failed: %s", e)
-                    raise
-
-            async def ttyd_to_browser():
-                try:
-                    async for msg in ttyd_ws:
-                        if isinstance(msg, bytes):
-                            await websocket.send_bytes(msg)
-                        else:
-                            await websocket.send_text(msg)
-                except WebSocketDisconnect:
-                    pass
-                except Exception as e:
-                    logger.warning("ttyd->browser relay failed: %s", e)
-                    raise
-
-            t1 = asyncio.create_task(browser_to_ttyd())
-            t2 = asyncio.create_task(ttyd_to_browser())
-            done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-            for task in done:
-                exc = task.exception()
-                if exc:
-                    raise exc
-    except Exception as e:
-        logger.warning("ttyd ws proxy closed: %s", e)
-    finally:
-        try:
-            # ttyd automatically reconnects abnormal closures. A normal 1000
-            # close makes its UI wait for Enter instead.
-            await websocket.close(code=1012, reason="Terminal bridge reconnect")
-        except Exception:
-            pass
-
-
-# ── 子账号只读终端作用域代理(/subterm/<port>/…)────────────────────────────────
-# 每个子账号一个只读 ttyd(无 --writable),端口由 open_id 决定。代理用 cookie
-# (= 子账号会话 token)鉴权,只放行"端口 == 自己端口"的请求,杜绝偷看别人终端。
-
-def _subterm_open_id(cookie_token: str, port: int):
-    """校验 cookie 会话,且其端口 == 请求端口。通过返回 open_id,否则 None。"""
-    from vibe.accounts import session_open_id
-    oid = session_open_id(cookie_token or "")
-    if not oid or _sub_ttyd_port(oid) != port:
-        return None
-    return oid
-
-
-@api.api_route("/subterm/{port:int}/{path:path}", methods=["GET", "POST", "HEAD"])
-async def sub_ttyd_http_proxy(port: int, path: str, request: Request):
-    if not _subterm_open_id(request.cookies.get("sub_term"), port):
-        raise HTTPException(status_code=403, detail="无权访问该终端")
-    url = f"http://127.0.0.1:{port}/subterm/{port}/{path}"
-    params = str(request.url.query)
-    if params:
-        url += "?" + params
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
-    try:
-        resp = await _get_ttyd_http_client().request(
-            method=request.method, url=url, headers=headers, content=await request.body(),
-        )
-    except _httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="终端未运行")
-    skip = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length"}
-    out = {k: v for k, v in resp.headers.items() if k.lower() not in skip}
-    content = resp.content
-    # 让子账号的终端也跟随 Mira 皮肤(注入主题同步脚本,与 owner 终端一致)
-    if "text/html" in resp.headers.get("content-type", ""):
-        if b"</head>" in content:
-            content = content.replace(b"</head>", _TTYD_CONNECTION_INJECT.encode() + b"</head>", 1)
-        if b"</body>" in content:
-            content = content.replace(b"</body>", _TTYD_THEME_INJECT.encode() + b"</body>", 1)
-    return Response(content=content, status_code=resp.status_code, headers=out)
-
-
-@api.websocket("/subterm/{port}/ws")
-async def sub_ttyd_ws_proxy(websocket: WebSocket, port: int):
-    import websockets as _ws
-    import logging
-    logger = logging.getLogger(__name__)
-    if not _subterm_open_id(websocket.cookies.get("sub_term"), int(port)):
-        await websocket.close(code=1008)
-        return
-    await websocket.accept(subprotocol="tty")
-    ttyd_url = f"ws://127.0.0.1:{int(port)}/subterm/{int(port)}/ws"
-    try:
-        async with _ws.connect(ttyd_url, subprotocols=["tty"], proxy=None, compression=None) as ttyd_ws:
-            async def browser_to_ttyd():
-                while True:
-                    msg = await websocket.receive()
-                    if msg.get("type") == "websocket.disconnect":
-                        break
-                    if msg.get("type") != "websocket.receive":
-                        continue
-                    if msg.get("bytes") is not None:
-                        await ttyd_ws.send(msg["bytes"])
-                    elif msg.get("text") is not None:
-                        await ttyd_ws.send(msg["text"])
-
-            async def ttyd_to_browser():
-                async for msg in ttyd_ws:
-                    if isinstance(msg, bytes):
-                        await websocket.send_bytes(msg)
-                    else:
-                        await websocket.send_text(msg)
-
-            t1 = asyncio.create_task(browser_to_ttyd())
-            t2 = asyncio.create_task(ttyd_to_browser())
-            done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-            for task in done:
-                exc = task.exception()
-                if exc:
-                    raise exc
-    except Exception as e:
-        logger.warning("sub ttyd ws proxy closed: %s", e)
-    finally:
-        try:
-            await websocket.close(code=1012, reason="Terminal bridge reconnect")
-        except Exception:
-            pass
-
-
 # ── Terminal focus / new-window API ────────────────────────────────────────────
 
 _ttyd_focus_cache: dict = {"sig": None, "ttys": set()}
@@ -5185,20 +4449,6 @@ def terminal_focus(request: Request, body: dict):
     return {"ok": True, "switched": switched}
 
 
-@api.post("/api/terminals/{target:path}/scroll")
-def terminal_scroll(request: Request, target: str, body: dict):
-    """Scroll a tmux pane using copy-mode (for mobile touch scroll)."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
-    from vibe.tmux_bridge import scroll_pane
-    direction = (body.get("direction") or "").strip()
-    if direction not in ("up", "down", "page-up", "page-down", "top", "bottom", "exit"):
-        raise HTTPException(status_code=400, detail="invalid direction")
-    lines = min(int(body.get("lines", 5)), 50)
-    scroll_pane(target, direction, lines)
-    return {"ok": True}
-
-
 @api.post("/api/terminal/new-window")
 def terminal_new_window(request: Request, body: dict):
     """Create a new tmux window, optionally in a project directory."""
@@ -5226,21 +4476,6 @@ def terminal_new_window(request: Request, body: dict):
     except Exception:
         pass
     return {"ok": True}
-
-
-@api.get("/api/terminal/buffer")
-def terminal_buffer(request: Request):
-    """Return tmux paste buffer (last copied text from copy-mode)."""
-    if not _is_admin(request):
-        raise HTTPException(status_code=401, detail="需要管理员权限")
-    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
-    result = subprocess.run(
-        [_TMUX_BIN, "show-buffer"],
-        env=_TMUX_ENV, capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        return {"text": ""}
-    return {"text": result.stdout}
 
 
 @cli.callback()

@@ -131,40 +131,6 @@ def send_keys(target: str, keys: str) -> None:
             _run([_TMUX_BIN, "send-keys", "-t", target, "Enter"])
 
 
-def scroll_pane(target: str, direction: str, lines: int = 5) -> None:
-    """Scroll a tmux pane using copy-mode.
-
-    direction: 'up', 'down', 'top', 'bottom', 'page-up', 'page-down', 'exit'
-    """
-    if not _TARGET_RE.match(target):
-        raise RuntimeError(f"Invalid tmux target format: {target!r}")
-
-    def _run(cmd: list[str]) -> None:
-        subprocess.run(cmd, capture_output=True, text=True, env=_TMUX_ENV)
-
-    if direction == "exit":
-        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cancel"])
-        return
-
-    # Enter copy-mode if not already in it (idempotent)
-    _run([_TMUX_BIN, "copy-mode", "-t", target])
-
-    if direction == "up":
-        for _ in range(lines):
-            _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cursor-up"])
-    elif direction == "down":
-        for _ in range(lines):
-            _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "cursor-down"])
-    elif direction == "page-up":
-        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "page-up"])
-    elif direction == "page-down":
-        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "page-down"])
-    elif direction == "top":
-        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "history-top"])
-    elif direction == "bottom":
-        _run([_TMUX_BIN, "send-keys", "-t", target, "-X", "history-bottom"])
-
-
 # ── viewer 会话:真终端直连的隔离层 ──────────────────────────────────────────
 # 每条观看 WS 连接一个独立分组会话:共享源 session 的窗口内容,但"当前窗口"指针
 # 各自独立 —— 多端同看、随意切换项目,内容归属不可能串台。
