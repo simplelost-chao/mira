@@ -2583,6 +2583,11 @@ function _xtermTheme() {
            cursor: v('--accent', '#58a6ff') };
 }
 
+function _refreshXtermTheme() {
+  // 换肤实时生效:xterm v5 的 options 是响应式 setter
+  if (_ptyTerm) _ptyTerm.options.theme = _xtermTheme();
+}
+
 function _connectPtyWs(target) {
   _disconnectPtyWs();
   var wrap = document.getElementById('xterm-container');
@@ -2635,9 +2640,13 @@ function _connectPtyWs(target) {
   ws.onclose = function() {
     if (_ptyWs !== ws) return;
     _setWsDot(false);
-    if (_currentTarget === target && _hasPaneTarget(target)) {
+    if (_currentTarget !== target) return;
+    if (_hasPaneTarget(target)) {
       setTimeout(function() { if (_ptyWs === ws) _connectPtyWs(target); }, _ptyRetryDelay);
       _ptyRetryDelay = Math.min(_ptyRetryDelay * 2, 30000);
+    } else {
+      showPlaceholder();   // pane 已不存在(窗口被关):回列表,不留冻结残影
+      loadPanes();
     }
   };
 }
@@ -3104,13 +3113,10 @@ function _navigateHistory(dir) {
 var _paneSnapshots = {};
 
 function _saveSnapshot() {
-  if (!_currentTarget) return;
-  var output = document.getElementById('mobile-term-output');
-  if (output && output.textContent) {
-    // Save last ~20 lines of plain text for preview
-    var lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
-    _paneSnapshots[_currentTarget] = lines.slice(-20).join('\n');
-  }
+  // 切走瞬间抓一帧预览:PTY 路径从 xterm 缓冲取,不再依赖已退役的 DOM 输出区
+  if (!_currentTarget || !_ptyTerm) return;
+  var snap = _xtermSnapshot();
+  if (snap) _paneSnapshots[_currentTarget] = snap;
 }
 
 function _openTabSwitcher() {
@@ -3716,7 +3722,7 @@ async function _loadPaneHistory(initial) {
 async function initSub() {
   document.getElementById('dev-page').classList.add('sub-mode');
   document.body.classList.add('sub-mode');
-  new MutationObserver(function() { _applyTtydTheme(); })
+  new MutationObserver(function() { _refreshXtermTheme(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   document.getElementById('term-pane-list').addEventListener('click', function(e) {
     var row = e.target.closest('.term-pane-row');
@@ -3883,7 +3889,7 @@ async function init() {
     selectPane(row.dataset.target, row.dataset.cmd);
   });
   // Watch for skin changes and sync to ttyd iframe
-  new MutationObserver(function() { _applyTtydTheme(); })
+  new MutationObserver(function() { _refreshXtermTheme(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   // Init mobile input bar + upload handlers
   _initMobileInput();
