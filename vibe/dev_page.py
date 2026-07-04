@@ -2265,30 +2265,50 @@ function _connectPtyWs(target) {
       if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
         _ptyWs.send(new TextEncoder().encode(d));
     });
-    if (!_isMobile) {
-      _ptyFit = new FitAddon.FitAddon();
-      _ptyTerm.loadAddon(_ptyFit);
-      window.addEventListener('resize', _ptyFitResize);
-    } else {
+    // 两端统一 fit+resize:手机也把窗口重排成自己的宽度(约 50 列,claude TUI 原生
+    // 自适应窄屏,右侧不再缺内容)。tmux 共享窗口尺寸跟随最后操作端 —— 手机打开时
+    // 桌面同看同一窗口会变窄,桌面一操作又变回,内容归属不受影响(用户拍板的取舍)
+    _ptyFit = new FitAddon.FitAddon();
+    _ptyTerm.loadAddon(_ptyFit);
+    window.addEventListener('resize', _ptyFitResize);
+    if (_isMobile) {
       // 手机:不用 disableStdin(它会连滚轮转义都拦掉),改用 inputmode=none 抑制软键盘;
       // 竖向滑动合成 WheelEvent 交给 xterm 按已协商的模式(鼠标上报/备用屏滚动)翻译,
-      // 与桌面滚轮完全同一条链路 —— "跟电脑版一样能滑"
+      // 与桌面滚轮完全同一条链路;松手后带动量衰减(终端按行滚,惯性补手感)
       var ta = wrap.querySelector('.xterm-helper-textarea');
       if (ta) { ta.setAttribute('inputmode', 'none'); ta.setAttribute('aria-hidden', 'true'); }
-      var _tY = null, _tX = null;
+      var _tY = null, _tX = null, _tVel = 0, _tPrevT = 0, _tRAF = 0;
+      function _wheel(dy) {
+        var el = wrap.querySelector('.xterm-screen') || wrap;
+        el.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, deltaMode: 0, bubbles: true, cancelable: true }));
+      }
+      function _inertia() {
+        _tRAF = 0;
+        if (Math.abs(_tVel) < 1.5) return;
+        _wheel(_tVel);
+        _tVel *= 0.93;   // 每帧衰减 7%,≈0.5s 滑止
+        _tRAF = requestAnimationFrame(_inertia);
+      }
       wrap.addEventListener('touchstart', function(e) {
+        if (_tRAF) { cancelAnimationFrame(_tRAF); _tRAF = 0; }   // 手指按下即停惯性
+        _tVel = 0; _tPrevT = e.timeStamp;
         _tY = e.touches[0].clientY; _tX = e.touches[0].clientX;
       }, { passive: true });
       wrap.addEventListener('touchmove', function(e) {
         if (_tY === null) return;
         var dy = _tY - e.touches[0].clientY;
         var dx = _tX - e.touches[0].clientX;
-        if (Math.abs(dx) > Math.abs(dy)) return;   // 横向手势留给容器原生横滑
         _tY = e.touches[0].clientY; _tX = e.touches[0].clientX;
-        var el = wrap.querySelector('.xterm-screen') || wrap;
-        el.dispatchEvent(new WheelEvent('wheel', { deltaY: dy * 2, deltaMode: 0, bubbles: true, cancelable: true }));
+        if (Math.abs(dx) > Math.abs(dy)) { _tVel = 0; return; }   // 横向手势不惯性
+        var dt = Math.max(1, e.timeStamp - _tPrevT);
+        _tPrevT = e.timeStamp;
+        _tVel = (dy / dt) * 16;   // 换算成每帧(16ms)速度,touchend 后接力
+        _wheel(dy * 1.5);
       }, { passive: true });
-      wrap.addEventListener('touchend', function() { _tY = null; _tX = null; }, { passive: true });
+      wrap.addEventListener('touchend', function() {
+        _tY = null; _tX = null;
+        if (Math.abs(_tVel) >= 1.5 && !_tRAF) _tRAF = requestAnimationFrame(_inertia);
+      }, { passive: true });
     }
   } else {
     _ptyTerm.reset();   // 换 pane 先清屏:上一个 pane 的残影一个字都不能留(防串)
@@ -2306,8 +2326,7 @@ function _connectPtyWs(target) {
       try { c = JSON.parse(e.data); } catch (_) { return; }
       if (c.type === 'init') {
         _ptyTerm.resize(c.cols, c.rows);
-        if (_isMobile) _fitMobileFont(c.cols);   // 手机:缩字号不改窗口(不打扰他端)
-        else _ptyFitResize();                     // 桌面:fit 并上报 resize
+        _ptyFitResize();   // 两端统一:fit 到自己屏宽并上报(窗口重排,右侧不缺)
       }
       return;
     }
@@ -2339,15 +2358,6 @@ function _ptyFitResize() {
   try { _ptyFit.fit(); } catch (_) { return; }
   if (_ptyWs && _ptyWs.readyState === WebSocket.OPEN)
     _ptyWs.send(JSON.stringify({ type: 'resize', cols: _ptyTerm.cols, rows: _ptyTerm.rows }));
-}
-
-function _fitMobileFont(cols) {
-  // 0.60 ≈ 等宽字体宽/高比。原方案"整行塞进屏宽"在 100+ 列窗口下字号只有 6px,
-  // 根本看不清 → 下限提到 11px,塞不下的部分靠容器横向滑动看(内容不丢)
-  var wrap = document.getElementById('xterm-container');
-  if (!wrap || !cols) return;
-  var size = Math.max(11, Math.min(15, Math.floor(wrap.clientWidth / cols / 0.60)));
-  _ptyTerm.options.fontSize = size;
 }
 
 function _xtermSnapshot() {
