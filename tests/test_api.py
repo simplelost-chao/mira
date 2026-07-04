@@ -737,3 +737,35 @@ def test_session_file_exact_match_at_scan_root(tmp_path):
          patch("vibe.config.load_global_config", return_value={"scan_dirs": [str(scan)]}):
         f = main._claude_session_file(str(scan))
     assert f is not None
+
+
+# ── PTY 终端 WS:鉴权 ─────────────────────────────────────────────────────────
+
+def test_pty_ws_rejects_without_token():
+    from starlette.websockets import WebSocketDisconnect
+    with patch("vibe.main._admin_token", return_value="tok"):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/terminal/mira:0.0/pty"):
+                pass
+
+
+def test_pty_ws_rejects_sub_foreign_target():
+    from starlette.websockets import WebSocketDisconnect
+    with patch("vibe.main._admin_token", return_value="tok"), \
+         patch("vibe.accounts.session_open_id", return_value="ou_x"), \
+         patch("vibe.main._sub_target_project", return_value=None):
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/terminal/mira:0.0/pty?token=subtok"):
+                pass
+
+
+def test_pty_ws_owner_gets_init_frame():
+    # attach 全链路 mock 掉,只验证协议首帧
+    with patch("vibe.main._admin_token", return_value="tok"), \
+         patch("vibe.tmux_bridge.create_viewer_session", return_value="v-abc123abc123"), \
+         patch("vibe.tmux_bridge.window_size", return_value=(120, 40)), \
+         patch("vibe.tmux_bridge.kill_viewer_session"), \
+         patch("vibe.main._spawn_pty_attach", return_value=(None, None)) as _sp:
+        with client.websocket_connect("/ws/terminal/mira:0.0/pty?token=tok") as ws:
+            msg = ws.receive_json()
+    assert msg == {"type": "init", "cols": 120, "rows": 40}

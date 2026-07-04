@@ -1,12 +1,18 @@
 import asyncio
 import base64
+import fcntl
 import hashlib
 import hmac
 import ipaddress
+import os
+import pty as _pty_mod
 import re
 import secrets
 import shutil
+import signal as _signal
+import struct
 import subprocess
+import termios
 import urllib.error
 import urllib.request
 import uuid
@@ -261,6 +267,12 @@ def _remote_refresh_loop() -> None:
             except Exception as e:
                 import logging as _rlog
                 _rlog.getLogger(__name__).warning("remote poll failed for %s: %s", host.alias, e)
+        # 兜底回收孤儿 viewer 会话(WS 关闭事件因崩溃丢失时靠这里)
+        try:
+            from vibe.tmux_bridge import cleanup_orphan_viewers
+            await asyncio.to_thread(cleanup_orphan_viewers)
+        except Exception:
+            pass
 
     import asyncio as _aio
     import logging as _rlog
@@ -4308,6 +4320,151 @@ async def terminal_stream_ws(ws: WebSocket, target: str):
         logger.warning("terminal stream closed for %s: %s", target, e)
         try:
             await ws.close(code=1011, reason="Terminal stream failed")
+        except Exception:
+            pass
+
+
+def _spawn_pty_attach(viewer: str, cols: int, rows: int):
+    """openpty + tmux attach 到 viewer 会话。独立函数方便测试 mock。
+    返回 (master_fd, Popen);失败抛 RuntimeError。"""
+    from vibe.tmux_bridge import _TMUX_BIN, _TMUX_ENV
+    master, slave = _pty_mod.openpty()
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    env = {**_TMUX_ENV, "TERM": "xterm-256color"}
+    proc = subprocess.Popen([_TMUX_BIN, "attach-session", "-t", viewer],
+                            stdin=slave, stdout=slave, stderr=slave,
+                            env=env, start_new_session=True)
+    os.close(slave)
+    return master, proc
+
+
+@api.websocket("/ws/terminal/{target:path}/pty")
+async def terminal_pty_ws(ws: WebSocket, target: str):
+    """真终端直连:每条连接一个独立 viewer 分组会话 + PTY attach,字节原样转发。
+    协议:accept 后先发 {"type":"init","cols","rows"};binary 帧=终端字节(双向);
+    客户端 text 帧 {"type":"resize","cols","rows"} 调 PTY 尺寸(手机端约定不发)。"""
+    import json as _json
+    # 鉴权:与 terminal_stream_ws 完全一致
+    ws_token = ws.headers.get("x-admin-token") or ws.query_params.get("token", "")
+    expected = _admin_token()
+    authed = (expected is None) or (bool(ws_token) and hmac.compare_digest(ws_token, expected))
+    if not authed:
+        from vibe.accounts import session_open_id
+        oid = session_open_id(ws_token)
+        if not (oid and _sub_target_project(oid, target)):
+            await ws.close(code=1008, reason="Unauthorized")
+            return
+    await ws.accept()
+
+    # 远程代理:双向转发到远程 mira 的同名端点(binary/text 均透传)
+    remote_host, real_target = _parse_target(target)
+    if remote_host is not None:
+        import websockets as _wslib
+        url = (remote_host.url.replace("http://", "ws://").replace("https://", "wss://")
+               + f"/ws/terminal/{real_target}/pty")
+        extra = {"X-Admin-Token": remote_host.token} if remote_host.token else {}
+        try:
+            async with _wslib.connect(url, additional_headers=extra) as rws:
+                async def _r2c():
+                    try:
+                        async for m in rws:
+                            if isinstance(m, bytes):
+                                await ws.send_bytes(m)
+                            else:
+                                await ws.send_text(m)
+                    except Exception:
+                        pass
+                async def _c2r():
+                    try:
+                        while True:
+                            m = await ws.receive()
+                            if m.get("type") == "websocket.disconnect":
+                                break
+                            if m.get("bytes") is not None:
+                                await rws.send(m["bytes"])
+                            elif m.get("text"):
+                                await rws.send(m["text"])
+                    except Exception:
+                        pass
+                await asyncio.gather(_r2c(), _c2r())
+        except Exception:
+            pass
+        finally:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+        return
+
+    import vibe.tmux_bridge as _tb
+    try:
+        viewer = await asyncio.to_thread(_tb.create_viewer_session, target)
+    except RuntimeError as e:
+        await ws.close(code=1011, reason=str(e)[:100])
+        return
+    master = proc = None
+    try:
+        cols, rows = await asyncio.to_thread(_tb.window_size, target)
+        await ws.send_text(_json.dumps({"type": "init", "cols": cols, "rows": rows}))
+        master, proc = _spawn_pty_attach(viewer, cols, rows)
+        if master is None:   # 测试桩:只验协议首帧
+            return
+        loop = asyncio.get_running_loop()
+
+        def _read_master():
+            try:
+                return os.read(master, 65536)
+            except OSError:
+                return b""
+
+        async def _pty_to_ws():
+            while True:
+                data = await loop.run_in_executor(None, _read_master)
+                if not data:
+                    break
+                await ws.send_bytes(data)
+
+        async def _ws_to_pty():
+            while True:
+                m = await ws.receive()
+                if m.get("type") == "websocket.disconnect":
+                    break
+                if m.get("bytes"):
+                    os.write(master, m["bytes"])
+                elif m.get("text"):
+                    try:
+                        c = _json.loads(m["text"])
+                    except ValueError:
+                        continue
+                    if c.get("type") == "resize":
+                        rc, rr = int(c.get("cols", 0)), int(c.get("rows", 0))
+                        if 10 <= rc <= 500 and 4 <= rr <= 200:
+                            fcntl.ioctl(master, termios.TIOCSWINSZ,
+                                        struct.pack("HHHH", rr, rc, 0, 0))
+
+        t1 = asyncio.create_task(_pty_to_ws())
+        t2 = asyncio.create_task(_ws_to_pty())
+        try:
+            await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            t1.cancel(); t2.cancel()
+    except Exception:
+        pass
+    finally:
+        # 顺序要紧:先杀 attach 进程让阻塞中的 os.read 拿到 EOF,再关 fd、销毁会话
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        if master is not None:
+            try:
+                os.close(master)
+            except Exception:
+                pass
+        await asyncio.to_thread(_tb.kill_viewer_session, viewer)
+        try:
+            await ws.close()
         except Exception:
             pass
 
