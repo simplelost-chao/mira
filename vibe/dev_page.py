@@ -1,4 +1,4 @@
-"""Dev mode page — sidebar pane list + ttyd iframe."""
+"""Dev mode page — sidebar pane list + xterm.js PTY terminal."""
 
 _BUILD_ID = None
 
@@ -174,8 +174,6 @@ def render_dev_page() -> str:
   .term-drag-handle:hover { color: var(--accent); }
   .term-drag-handle:active { cursor: grabbing; }
   body.dev-dragging, body.dev-dragging * { cursor: grabbing !important; }
-  /* 拖拽时让终端 iframe 不吃鼠标事件,否则光标划过它时 mousemove 会被 iframe 截走 */
-  body.dev-dragging #ttyd-frame { pointer-events: none !important; }
   .dev-drag-ghost {
     position: fixed; z-index: 5000; pointer-events: none; white-space: nowrap;
     background: var(--panel); border: 1px solid var(--accent); border-radius: 6px;
@@ -253,7 +251,7 @@ def render_dev_page() -> str:
     background: rgba(255,255,255,.06); color: var(--muted);
   }
 
-  /* ── ttyd iframe ── */
+  /* ── 终端主区域 ── */
   .term-main {
     flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
   }
@@ -263,18 +261,6 @@ def render_dev_page() -> str:
     color: var(--muted); font-size: 13px; text-align: center; gap: 10px; line-height: 1.7;
   }
   .term-placeholder code { color: var(--sub); font-size: 11px; }
-  .term-iframe-wrap {
-    flex: 1; position: relative; min-height: 0; overflow: hidden;
-  }
-  #ttyd-frame {
-    border: none; display: block; visibility: hidden; pointer-events: none; background: var(--bg);
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    overflow: hidden;
-  }
-  #ttyd-frame.visible { visibility: visible; pointer-events: auto; }
-  /* Touch overlay + scroll badge: mobile-only (hidden on desktop) */
-  .term-touch-overlay { display: none; }
-  .term-scroll-badge { display: none; }
   /* Mobile-only elements hidden on desktop */
   .mobile-term-output { display: none; }
   /* head/scrollback/live 三区:display:contents 让 div 的文本按父级 pre-wrap 连续排版 */
@@ -315,14 +301,6 @@ def render_dev_page() -> str:
     background: rgba(255,255,255,.05); border-radius: 4px; padding: 1px 7px; margin-bottom: 3px; }
   .hist-turn.hist-agent .hist-asst { color: var(--muted); font-size: 12px; padding-top: 2px; }
 
-  .dev-page.stream-mode .term-iframe-wrap {
-    display: none;
-  }
-  /* 子账号桌面 hybrid:真终端(iframe)做显示(claude 自己管历史,滚动原生),
-     底部输入框沿用 stream 模式全套样式(输入走后端、prompt 带账号) */
-  .dev-page.stream-mode.sub-hybrid .term-iframe-wrap { display: block; }
-  .dev-page.stream-mode.sub-hybrid .mobile-term-output,
-  .dev-page.stream-mode.sub-hybrid .mobile-term-output.visible { display: none !important; }
   .dev-page.stream-mode .mobile-term-output.visible {
     display: block; flex: 1; min-height: 0;
     background: var(--bg); color: var(--text);
@@ -483,12 +461,6 @@ def render_dev_page() -> str:
       overscroll-behavior: none;
       overflow: hidden; max-width: 100vw;
     }
-    /* Mobile: hide iframe completely — use independent WebSocket + ANSI renderer */
-    #ttyd-frame { display: none !important; }
-    .term-touch-overlay { display: none !important; }
-    .term-scroll-badge { display: none !important; }
-    .term-iframe-wrap { flex: none; height: 0; min-height: 0; overflow: hidden; }
-
     /* Mobile terminal text output (WebSocket-fed, ANSI-colored) */
     .mobile-term-output.visible {
       display: block; flex: 1; min-height: 0;
@@ -869,15 +841,6 @@ def render_dev_page() -> str:
     box-shadow: 0 2px 8px rgba(0,255,0,.08);
     background: rgba(10,10,10,.98);
   }
-  /* CRT 扫描线 */
-  [data-theme="neon-pixel"] .term-iframe-wrap::after {
-    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
-    background: repeating-linear-gradient(
-      0deg, transparent, transparent 3px,
-      rgba(0,255,0,.025) 3px, rgba(0,255,0,.025) 4px
-    );
-  }
-  [data-theme="neon-pixel"] #ttyd-frame { background: #0a0a0a; }
   [data-theme="neon-pixel"] .term-group-count { background: rgba(255,0,255,.15); color: #ff00ff; border: 1px solid rgba(255,0,255,.3); }
   [data-theme="neon-pixel"] .term-host-badge { border: 1px solid var(--accent); }
 
@@ -931,16 +894,6 @@ def render_dev_page() -> str:
       linear-gradient(90deg, rgba(0,212,255,.12) 1px, transparent 1px);
     background-size: 24px 24px;
   }
-  /* CRT 扫描线叠在格子上 */
-  [data-theme="pixel-cyber"] .term-iframe-wrap::after {
-    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
-    background:
-      repeating-linear-gradient(
-        0deg, transparent, transparent 3px,
-        rgba(0,212,255,.028) 3px, rgba(0,212,255,.028) 4px
-      );
-  }
-  [data-theme="pixel-cyber"] #ttyd-frame { background: #020c1a; }
   [data-theme="pixel-cyber"] .term-group-count {
     background: rgba(0,212,255,.12); color: #00d4ff;
     border: 1px solid rgba(0,212,255,.3);
@@ -1063,11 +1016,6 @@ def render_dev_page() -> str:
     box-shadow: 0 2px 12px rgba(56,230,255,.07);
     background: rgba(10,15,28,.96);
   }
-  [data-theme="dyson"] .term-iframe-wrap::after {
-    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(56,230,255,.02) 2px, rgba(56,230,255,.02) 3px);
-  }
-  [data-theme="dyson"] #ttyd-frame { background: #070b15; }
   [data-theme="dyson"] .term-group-count { background: rgba(56,230,255,.12); color: #7df9ff; border: 1px solid rgba(56,230,255,.3); }
   [data-theme="dyson"] .term-host-badge { border: 1px solid rgba(56,230,255,.5); color: #7df9ff; }
   [data-theme="dyson"] .term-placeholder {
@@ -1837,13 +1785,6 @@ function _setMobileTokens(html) {
   if (usage) bar.appendChild(usage);            // usage 放回(排在 tokens 之后)
 }
 
-function _resizeTtydFrame() {
-  var frame = document.getElementById('ttyd-frame');
-  if (!frame || !frame.contentWindow) return;
-  try { frame.contentWindow.postMessage({ type: 'mira-resize' }, '*'); } catch(_) {}
-  try { frame.contentWindow.dispatchEvent(new Event('resize')); } catch(_) {}
-}
-
 var _tokensRenderedFor = null;  // 上次渲染 token 的 target
 var _tokensLastHtml = '';       // 上次写入的桌面 html,内容没变就不重写 DOM
 async function _loadPaneTokens(target, tool) {
@@ -2119,27 +2060,6 @@ async function _updateTopbarUsage(tool) {
   } catch(e) {}
 }
 
-async function _copyTmuxBuffer() {
-  try {
-    const res = await fetch('/api/terminal/buffer', { headers: _authHeaders() });
-    if (!res.ok) return;
-    const { text } = await res.json();
-    if (!text) return;
-    // Try modern clipboard API first, fall back to execCommand
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try { await navigator.clipboard.writeText(text); _showToast('已复制 ' + text.length + ' 字符', 1500); return; } catch(e) {}
-    }
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText = 'position:fixed;left:-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    _showToast('已复制 ' + text.length + ' 字符', 1500);
-  } catch(e) { console.warn('copy buffer:', e); }
-}
-
 function showTerminal() {
   document.getElementById('term-placeholder').style.display = 'none';
   var toolbar = document.getElementById('term-toolbar');
@@ -2154,10 +2074,8 @@ function showTerminal() {
 }
 
 function showPlaceholder() {
-  _stopBufferPoll();
   document.getElementById('dev-page').classList.remove('stream-mode');
   document.getElementById('dev-page').classList.remove('sub-hybrid');
-  document.getElementById('ttyd-frame').classList.remove('visible');
   document.getElementById('mobile-term-output').classList.remove('visible');
   document.getElementById('xterm-wrap').classList.remove('visible');
   document.getElementById('mobile-token-bar').classList.remove('visible');
@@ -2314,258 +2232,6 @@ var _SPECIAL_KEYS = {
   'Down':   '\x1b[B',
 };
 
-// ── ANSI-to-HTML converter (supports 16/256/truecolor + bold) ────────────────
-var _ANSI16 = [
-  'var(--ansi-0)','var(--ansi-1)','var(--ansi-2)','var(--ansi-3)',
-  'var(--ansi-4)','var(--ansi-5)','var(--ansi-6)','var(--ansi-7)',
-  'var(--ansi-8)','var(--ansi-9)','var(--ansi-10)','var(--ansi-11)',
-  'var(--ansi-12)','var(--ansi-13)','var(--ansi-14)','var(--ansi-15)'
-];
-var _isLightTheme = function() { return document.documentElement.dataset.theme === 'claude-light'; };
-function _adaptRgb(r, g, b, hasBg) {
-  // Don't adjust foreground when there's an explicit background — the bg provides contrast
-  if (hasBg) return 'rgb('+r+','+g+','+b+')';
-  var lum = (0.299*r + 0.587*g + 0.114*b) / 255;
-  if (_isLightTheme()) {
-    if (lum > 0.82) { var f = 0.25; return 'rgb('+Math.round(r*f)+','+Math.round(g*f)+','+Math.round(b*f)+')'; }
-  } else {
-    if (lum < 0.12) { return 'rgb('+Math.round(r+(255-r)*0.7)+','+Math.round(g+(255-g)*0.7)+','+Math.round(b+(255-b)*0.7)+')'; }
-  }
-  return 'rgb('+r+','+g+','+b+')';
-}
-function _ansi256(n, hasBg) {
-  if (n < 16) return _ANSI16[n];
-  if (n >= 232) { var g = (n - 232) * 10 + 8; return _adaptRgb(g, g, g, hasBg); }
-  n -= 16;
-  return _adaptRgb(Math.floor(n/36)*51, Math.floor((n%36)/6)*51, (n%6)*51, hasBg);
-}
-function _stripAnsi(text) { return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ''); }
-function _ansiToHtml(raw, noChrome) {
-  // noChrome=true:用于 scrollback 片段 —— 只是滚出屏幕的 transcript,没有底部
-  // 输入框/状态栏,跳过 2.8 的 chrome 剥离(否则片段里出现 ❯ 行会被误剥周边内容)。
-  // 1. Strip non-SGR escape sequences FIRST (so they don't interfere with blank-line detection)
-  var text = raw.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ''); // OSC
-  text = text.replace(/\x1b\[[\?]?[0-9;]*[A-LN-Za-ln-z]/g, '');    // CSI non-SGR
-  // 2. Strip trailing whitespace per line (tmux pads to full terminal width)
-  //    Also drop lines that are purely box-drawing chars (tmux borders / status separators)
-  text = text.split('\n').map(function(l) {
-    l = l.replace(/[\s\x1b]+$/, '');
-    var plain = l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
-    if (plain.length > 4 && /^[\u2500-\u257F]+$/.test(plain)) return '\x00HR\x00';
-    return l;
-  }).join('\n');
-  // 2.5. Extract and rejoin URLs split across lines by terminal wrapping.
-  //      Scan raw text char by char: when we hit "https://", collect all URL-safe
-  //      chars while skipping newlines, spaces, and SGR escape codes.
-  var _out = '', _i = 0;
-  while (_i < text.length) {
-    var _hi = text.indexOf('https://', _i);
-    if (_hi === -1) { _out += text.slice(_i); break; }
-    _out += text.slice(_i, _hi);
-    // Scan forward collecting URL chars, skipping \n, \r, spaces, SGR codes
-    var _url = '', _j = _hi, _blanks = 0;
-    while (_j < text.length) {
-      var _ch = text[_j];
-      if (_ch === '\x1b' && text[_j+1] === '[') {
-        // skip SGR sequence
-        var _m = text.indexOf('m', _j + 2);
-        if (_m !== -1) { _j = _m + 1; continue; }
-      }
-      if (_ch === '\n' || _ch === '\r') { _blanks++; _j++; if (_blanks > 3) break; continue; }
-      if (_ch === ' ' || _ch === '\t') { _j++; continue; }
-      // URL-safe characters
-      if (/[A-Za-z0-9%&=?_\-+.\/;:@~#!$'()*,]/.test(_ch)) {
-        _url += _ch; _blanks = 0; _j++;
-      } else { break; }
-    }
-    _out += _url;
-    _i = _j;
-  }
-  text = _out;
-  // 2.8. Strip Claude Code status bar and ASCII pet.
-  //      Layout from bottom: empty, ⏵⏵ status, ───border, ❯ prompt, ───border, pet art, n____n
-  //      Strategy: find ❯ prompt, remove junk below AND above it, keep ❯.
-  if (!noChrome) {
-  var _lines = text.split('\n');
-  function _isJunk(line) {
-    var r = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-    var p = r.trim();
-    if (!p) return true;
-    if ((r.match(/\u2500/g) || []).length > 10) return true;
-    if (/bypass permissions|shift\+tab|esc to interrupt|to manage/i.test(p)) return true;
-    if (/^[⏵⏴►▶]/.test(p)) return true;
-    if (p.length < 40 && /^[\s|_n\/\\(){}\[\]×·├┤┬┴┼\u2800-\u28FF\-.]+$/.test(p)) return true;
-    if (p.length < 30 && /^[A-Z][a-z]+(-[A-Z][a-z]+)?$/.test(p)) return true;
-    return false;
-  }
-  // Find last ❯ prompt in bottom 30 lines
-  var _promptIdx = -1;
-  for (var _k = _lines.length - 1; _k >= 0 && _k >= _lines.length - 30; _k--) {
-    var _pl = _lines[_k].replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
-    if (/^❯/.test(_pl)) { _promptIdx = _k; break; }
-  }
-  if (_promptIdx >= 0) {
-    // Trim pet art from ❯ line: strip ANSI, find ❯ + user input, discard trailing junk
-    var _rawPrompt = _lines[_promptIdx].replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-    var _pm = _rawPrompt.match(/^(❯[^|_\n]*?)\s{5,}/);
-    var _promptLine = _pm ? _pm[1].trimEnd() : _rawPrompt.replace(/\s{10,}.*$/, '').trimEnd();
-    // Remove junk below ❯
-    var _below = _promptIdx + 1;
-    while (_below < _lines.length && _isJunk(_lines[_below])) _below++;
-    // Remove junk above ❯ (pet art, borders)
-    var _above = _promptIdx - 1;
-    while (_above >= 0 && _above >= _promptIdx - 15 && _isJunk(_lines[_above])) _above--;
-    _lines = _lines.slice(0, _above + 1).concat(['\x00HR\x00', _promptLine]).concat(_lines.slice(_below));
-  }
-  text = _lines.join('\n');
-  }
-  // 3. Collapse consecutive blank lines and trim trailing blanks
-  text = text.replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n');
-  // Split on SGR sequences
-  var parts = text.split(/\x1b\[([0-9;]*)m/);
-  var html = '', fg = '', bg = '', bold = false;
-  for (var i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      var t = escHtml(parts[i]);
-      if (!t) continue;
-      if (fg || bg || bold) {
-        var s = '';
-        if (fg) s += 'color:' + fg + ';';
-        if (bg) s += 'background:' + bg + ';';
-        if (bold) s += 'font-weight:700;';
-        html += '<span style="' + s + '">' + t + '</span>';
-      } else {
-        html += t;
-      }
-    } else {
-      var codes = parts[i] ? parts[i].split(';').map(Number) : [0];
-      for (var j = 0; j < codes.length; j++) {
-        var c = codes[j];
-        if (c === 0) { fg = ''; bg = ''; bold = false; }
-        else if (c === 1) bold = true;
-        else if (c === 22) bold = false;
-        else if (c >= 30 && c <= 37) fg = _ANSI16[c - 30 + (bold ? 8 : 0)];
-        else if (c >= 40 && c <= 47) bg = _ANSI16[c - 40];
-        else if (c >= 90 && c <= 97) fg = _ANSI16[c - 82];
-        else if (c >= 100 && c <= 107) bg = _ANSI16[c - 92];
-        else if (c === 39) fg = '';
-        else if (c === 49) bg = '';
-        else if (c === 38 && codes[j+1] === 5) { fg = _ansi256(codes[j+2]||0, !!bg); j += 2; }
-        else if (c === 48 && codes[j+1] === 5) { bg = _ansi256(codes[j+2]||0, false); j += 2; }
-        else if (c === 38 && codes[j+1] === 2) { fg = _adaptRgb(codes[j+2]||0, codes[j+3]||0, codes[j+4]||0, !!bg); j += 4; }
-        else if (c === 48 && codes[j+1] === 2) { bg = 'rgb('+(codes[j+2]||0)+','+(codes[j+3]||0)+','+(codes[j+4]||0)+')'; j += 4; }
-      }
-    }
-  }
-  // Phase 3: highlight prompt lines (lines ending with $, %, >, ❯)
-  html = html.split('\n').map(function(line) {
-    if (line === '\x00HR\x00') return '<hr class="term-sep">';
-    var stripped = line.replace(/<[^>]*>/g, '').trim();
-    if (/[$%>❯]\s*$/.test(stripped) && stripped.length > 0) {
-      return '<span class="term-line-prompt">' + line + '</span>';
-    }
-    return line;
-  }).join('\n');
-  // Phase 4: make URLs clickable (https://... outside of existing <a> tags)
-  html = html.replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener" class="term-link">$1</a>');
-  return html;
-}
-
-// ── Mobile WebSocket terminal stream ────────────────────────────────────────
-var _termWs = null;
-
-// ── Stream 模式 scrollback 积累(快照拼接)────────────────────────────────────
-// claude 的 TUI 自己管理视口:旧内容被原地擦除,不经过 tmux 滚动,pane 历史是 0
-// (子账号 pane 尤其如此,从出生就是 claude)。WS 快照因此只有可见一屏,没法往上翻。
-// 解法:每帧快照和上一帧做行对齐,识别「滚出屏幕顶部的行」,在客户端积累成 scrollback。
-var _sbTarget = null;     // scrollback 归属的 pane target
-var _sbChunks = [];       // [{html, lines}] 已积累的片段(整段追加/整段丢弃,不切内部)
-var _sbLines = 0;         // 总行数(封顶用)
-var _sbFlushedIdx = 0;    // 已写入 DOM 的 chunk 数(增量 append)
-var _sbRebuild = false;   // 封顶裁剪后需要全量重建 DOM
-var _sbPrevPlain = null;  // 上一帧纯文本行(对齐比较用)
-var _sbPrevRaw = null;    // 上一帧原始行(含 ANSI,取滚出内容用)
-var _sbLastData = null;   // 上一帧原文(去重)
-var _sbAnchor = 0;        // 冻结区边界:快照前 _sbAnchor 行是不再变的旧历史(owner pane
-                          // 进 claude 前的 tmux 历史);丢行发生在这条边界上,渲染时
-                          // scrollback 要插在冻结区和实时屏之间才能保持时间顺序
-var _sbHeadRaw = null;    // 冻结区上次渲染的原文(不变就不重写 DOM)
-var _sbSeeded = false;    // 是否已收过服务端历史回放帧(重连去重)
-var _SB_MAX_LINES = 2000;
-
-function _sbReset(target) {
-  _sbTarget = target;
-  _sbChunks = []; _sbLines = 0; _sbFlushedIdx = 0; _sbRebuild = false;
-  _sbPrevPlain = null; _sbPrevRaw = null; _sbLastData = null; _sbAnchor = 0;
-  _sbHeadRaw = null; _sbSeeded = false;
-}
-
-function _sbStripLine(l) {
-  return l.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-          .replace(/\x1b\[[?]?[0-9;]*[a-zA-Z]/g, '')
-          .replace(/\s+$/, '');
-}
-
-// 每条 WS 消息都要经过这里(而不是只在渲染帧),否则用户上滑暂停渲染期间的滚动会丢。
-function _sbIngest(data) {
-  if (data === _sbLastData) return;
-  _sbLastData = data;
-  var raw = data.split('\n');
-  var plain = raw.map(_sbStripLine);
-  var prevP = _sbPrevPlain, prevR = _sbPrevRaw;
-  _sbPrevPlain = plain; _sbPrevRaw = raw;
-  if (!prevP) return;
-  // 1. 两帧公共前缀 p = 冻结区边界。丢行不一定发生在快照顶部:owner pane 的快照是
-  //    「几百行冻结的 tmux 旧历史 + claude 当前屏」,claude 的行从中间边界消失,
-  //    顶部永远不动 —— 所以必须从第一个变化点开始对齐,而不是从第 0 行。
-  var n = Math.min(plain.length, prevP.length);
-  var p = 0;
-  while (p < n && plain[p] === prevP[p]) p++;
-  if (p >= prevP.length) return;   // prev 是 cur 的前缀:只是底部追加,没有丢行
-  if (p >= plain.length) return;   // cur 是 prev 的前缀:内容收缩(折叠),不追加
-  // 2. 在变化点之后找上移量 s:cur[p+k] == prev[p+s+k](即 prev 的 p..p+s 行丢了)
-  var s = -1;
-  var maxS = Math.min(prevP.length - p, 400);
-  for (var cand = 1; cand <= maxS; cand++) {
-    var checked = 0, hit = 0, anchored = false;
-    for (var k = 0; k < 14 && p + k < plain.length - 6 && p + cand + k < prevP.length; k++) {
-      var a = plain[p + k], b = prevP[p + cand + k];
-      if (!a && !b) continue;          // 双空行不计分
-      checked++;
-      if (a === b) { hit++; if (a) anchored = true; }
-    }
-    if (checked >= 3 && anchored && hit / checked >= 0.7) { s = cand; break; }
-  }
-  if (s <= 0) return;   // 原地改写(流式更新)/折叠/清屏跳变 → 保守不追加
-  var chunkRaw = prevR.slice(p, p + s);
-  var hasContent = false;
-  for (var c = p; c < p + s; c++) if (prevP[c]) { hasContent = true; break; }
-  if (!hasContent) { _sbAnchor = p; return; }   // 全空行:边界照记,内容不积累
-  var html = _ansiToHtml(chunkRaw.join('\n') + '\n', true);
-  if (!html) return;
-  _sbChunks.push({ html: html, lines: s });
-  _sbLines += s;
-  _sbAnchor = p;
-  while (_sbLines > _SB_MAX_LINES && _sbChunks.length > 1) {
-    _sbLines -= _sbChunks.shift().lines;
-    if (_sbFlushedIdx > 0) _sbFlushedIdx--;
-    _sbRebuild = true;
-  }
-}
-
-// 渲染帧里调用:把积累的 scrollback 增量刷进 DOM(只在跟随模式下被调,不打断上滑手势)
-function _sbFlush(sbEl) {
-  if (_sbRebuild) {
-    sbEl.innerHTML = _sbChunks.map(function(c) { return c.html; }).join('');
-    _sbFlushedIdx = _sbChunks.length;
-    _sbRebuild = false;
-    return;
-  }
-  while (_sbFlushedIdx < _sbChunks.length) {
-    sbEl.insertAdjacentHTML('beforeend', _sbChunks[_sbFlushedIdx++].html);
-  }
-}
-
 function _hasPaneTarget(target) {
   // 同时认分组里的 .term-pane-row 和单终端项目的 .term-single(顶层项);
   // 只认前者会让单终端项目在 WS 一断时被误判为"已消失"→ 踢回列表。
@@ -2684,157 +2350,6 @@ function _disconnectPtyWs() {
   }
 }
 
-var _wsRetryDelay = 2000;   // WS 重连退避(成功连上后在 onopen 重置)
-function _connectTermWs(target) {
-  _disconnectTermWs();
-  // 换 pane 才清 scrollback;同 pane 重连(后台回前台/断线)保留已积累的历史
-  if (_sbTarget !== target) _sbReset(target);
-  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  var url = proto + '//' + location.host + '/ws/terminal/' + encodeURIComponent(target)
-            + '/stream?token=' + encodeURIComponent(_adminToken || _subToken);
-  var termWs = new WebSocket(url);
-  _termWs = termWs;
-  var output = document.getElementById('mobile-term-output');
-
-  var _lastWsData = '';
-  var _pendingWsData = null;
-  var _renderWsFrame = 0;
-  var _termFollow = true;   // true=跟随最新输出到底;false=用户上滑看历史,暂停整屏重建
-
-  function _termAtBottom() {
-    return (output.scrollHeight - output.scrollTop - output.clientHeight) < 60;
-  }
-
-  function _renderTerminalFrame() {
-    _renderWsFrame = 0;
-    var data = _pendingWsData;
-    if (_termWs !== termWs || !output || data === null) return;
-    // 用户在看历史(_termFollow=false)时不重建 DOM:iOS Safari 上整屏 innerHTML 替换会
-    // 清除正在进行的触摸滚动,程序在跑时后端高频推全量快照 → 高频重建 → 手势每次都被打断,
-    // 表现为"完全滑不动"。故上滑期间只把最新数据留在 _pendingWsData,滑回底部再恢复跟随。
-    if (!_termFollow) return;
-    _pendingWsData = null;
-    if (data === _lastWsData) return;
-    _lastWsData = data;
-    // 三区结构:head(快照里 anchor 之前的冻结旧历史)+ scrollback(只增量追加)+
-    // live(anchor 之后的实时屏,每帧重建)。scrollback 必须插在冻结区和实时屏之间,
-    // 时间顺序才对;head 内容不变时跳过重写,live 高频重建也不碰几千行的 scrollback。
-    var headEl = output.firstElementChild;
-    // DOM 归属校验:三区 DOM 是跨帧复用的,切 pane 后旧 pane 的 scrollback DOM 还留着,
-    // 必须整体重建,否则别的项目的历史会串到当前 pane 上面(咬过:argus 里看到其他项目)。
-    if (!headEl || !headEl.classList.contains('term-head') || output.dataset.sbTarget !== target) {
-      output.innerHTML = '<div class="term-head"></div><div class="term-sb"></div><div class="term-live"></div>';
-      output.dataset.sbTarget = target;
-      headEl = output.firstElementChild;
-      _sbFlushedIdx = 0;   // DOM 是新的,已积累的 scrollback 需要重新灌入
-      _sbRebuild = _sbChunks.length > 0;
-      _sbHeadRaw = null;
-    }
-    var sbEl = headEl.nextElementSibling;
-    var allLines = data.split('\n');
-    var anchor = Math.min(_sbAnchor, allLines.length);
-    var headRaw = anchor > 0 ? allLines.slice(0, anchor).join('\n') + '\n' : '';
-    if (_sbHeadRaw !== headRaw) {
-      _sbHeadRaw = headRaw;
-      headEl.innerHTML = headRaw ? _ansiToHtml(headRaw, true) : '';
-    }
-    _sbFlush(sbEl);
-    sbEl.nextElementSibling.innerHTML = _ansiToHtml(allLines.slice(anchor).join('\n'));
-    output.scrollTop = output.scrollHeight;
-    // Cache snapshot for tab switcher (last 20 lines of plain text)
-    if (_currentTarget) {
-      var _lines = output.textContent.split('\n').filter(function(l) { return l.trim(); });
-      _paneSnapshots[_currentTarget] = _lines.slice(-20).join('\n');
-    }
-  }
-
-  // 触摸/滚动驱动"跟随最新 ↔ 看历史"切换。覆盖式绑定(on*),避免每次重连累加监听器。
-  function _resumeIfPending() {
-    if (_pendingWsData !== null && !_renderWsFrame)
-      _renderWsFrame = requestAnimationFrame(_renderTerminalFrame);
-  }
-  output.ontouchstart = function() { _termFollow = false; };  // 手指一碰即暂停重建,手势才不被打断
-  output.ontouchend = function() { if (_termAtBottom()) { _termFollow = true; _resumeIfPending(); } };
-  output.onscroll = function() {
-    if (_termAtBottom()) { if (!_termFollow) { _termFollow = true; _resumeIfPending(); } }
-    else { _termFollow = false; }
-  };
-
-  termWs._cancelPendingRender = function() {
-    if (_renderWsFrame) cancelAnimationFrame(_renderWsFrame);
-    _renderWsFrame = 0;
-    _pendingWsData = null;
-  };
-
-  termWs.onmessage = function(e) {
-    if (_termWs !== termWs) return;
-    if (!output) return;
-    // 服务端的历史回放帧:插到 scrollback 最前(它在首帧之后才到,期间可能已积累)
-    if (e.data.lastIndexOf('\x00BL\x00', 0) === 0) {
-      if (_sbTarget === target && !_sbSeeded) {
-        _sbSeeded = true;   // 重连不重复
-        var blHtml = _ansiToHtml(e.data.slice(4) + '\n', true);
-        if (blHtml) {
-          var blLines = (e.data.match(/\n/g) || []).length + 1;
-          _sbChunks.unshift({ html: blHtml, lines: blLines });
-          _sbLines += blLines;
-          _sbRebuild = true;   // 顺序变了,整体重建
-          // 空闲 pane 可能很久不来下一帧,主动刷一次(仅跟随模式,不打断上滑阅读)
-          var headEl = output.firstElementChild;
-          if (_termFollow && headEl && headEl.classList.contains('term-head')) {
-            _sbFlush(headEl.nextElementSibling);
-            output.scrollTop = output.scrollHeight;
-          }
-        }
-      }
-      return;
-    }
-    // scrollback 拼接必须每条消息都做(渲染可以丢帧,滚出的历史行不能丢)
-    if (_sbTarget === target) _sbIngest(e.data);
-    // Keep only the newest terminal snapshot and render at most once per
-    // animation frame. This prevents ANSI conversion and full DOM replacement
-    // from queueing up while output is arriving quickly.
-    _pendingWsData = e.data;
-    if (!_renderWsFrame) _renderWsFrame = requestAnimationFrame(_renderTerminalFrame);
-  };
-
-  termWs.onclose = function() {
-    termWs._cancelPendingRender();
-    if (_termWs === termWs) _termWs = null;
-    _setWsDot(false);
-    // Auto-reconnect if still viewing this pane in stream mode.
-    // 后台(document.hidden)不重连:iOS 掐断连接时不该触发下面的"回列表"逻辑,
-    // 回前台由 visibilitychange 统一重连。
-    if (_currentTarget !== target ||
-        !document.getElementById('dev-page').classList.contains('detail-open') ||
-        document.hidden) return;
-    var _retry = _wsRetryDelay;
-    _wsRetryDelay = Math.min(_wsRetryDelay * 1.5, 20000);   // 指数退避,防重连风暴
-    setTimeout(async function() {
-      if (_currentTarget !== target || document.hidden) return;
-      try { await loadPanes(true); } catch(e) {}
-      if (!_hasPaneTarget(target)) {
-        _currentTarget = null;
-        showPlaceholder();
-        return;
-      }
-      _connectTermWs(target);
-    }, _retry);
-  };
-  termWs.onopen = function() { _setWsDot(true); _wsRetryDelay = 2000; };
-  termWs.onerror = function() {};
-}
-
-function _disconnectTermWs() {
-  if (_termWs) {
-    if (_termWs._cancelPendingRender) _termWs._cancelPendingRender();
-    _termWs.onclose = null;  // prevent auto-reconnect
-    _termWs.onmessage = null;  // 断开后残留消息不得再进拼接/渲染(防串台)
-    try { _termWs.close(); } catch(e) {}
-    _termWs = null;
-  }
-}
-
 function _setWsDot(connected) {
   var dot = document.getElementById('ws-dot');
   if (dot) {
@@ -2908,32 +2423,6 @@ async function _sendToTerminal(keys, promptText) {
   } catch(e) { console.warn('send error:', e); return false; }
 }
 
-var _inScrollMode = false;
-var _scrollBadgeTimer = null;
-
-async function _scrollTerminal(direction, lines) {
-  if (!_currentTarget) return;
-  try {
-    await fetch('/api/terminals/' + encodeURIComponent(_currentTarget) + '/scroll', {
-      method: 'POST',
-      headers: _authHeaders({'Content-Type': 'application/json'}),
-      body: JSON.stringify({ direction: direction, lines: lines || 5 })
-    });
-    // Show scroll badge briefly
-    _inScrollMode = (direction !== 'exit');
-    var badge = document.getElementById('term-scroll-badge');
-    if (badge) {
-      badge.classList.toggle('visible', _inScrollMode);
-      clearTimeout(_scrollBadgeTimer);
-      if (_inScrollMode) {
-        _scrollBadgeTimer = setTimeout(function() {
-          badge.classList.remove('visible');
-        }, 1500);
-      }
-    }
-  } catch(e) { console.warn('scroll error:', e); }
-}
-
 var _mobileInputInited = false;
 function _initMobileInput() {
   // 桌面也要绑定:owner 的"输入框模式"和子账号在桌面都用这套输入框,回车发送/发送按钮/
@@ -2943,44 +2432,6 @@ function _initMobileInput() {
   var sendBtn = document.getElementById('mobile-send-btn');
   if (!input || !sendBtn) return;
   _mobileInputInited = true;
-
-  // ── Touch-to-scroll on terminal overlay ──
-  var overlay = document.getElementById('term-touch-overlay');
-  if (overlay) {
-    var _touchStartY = 0;
-    var _touchAccum = 0;
-    var _scrollThreshold = 30; // px per scroll step
-
-    overlay.addEventListener('touchstart', function(e) {
-      _touchStartY = e.touches[0].clientY;
-      _touchAccum = 0;
-    }, { passive: true });
-
-    overlay.addEventListener('touchmove', function(e) {
-      var dy = _touchStartY - e.touches[0].clientY; // positive = scroll up (see older)
-      _touchStartY = e.touches[0].clientY;
-      _touchAccum += dy;
-      if (Math.abs(_touchAccum) >= _scrollThreshold) {
-        var steps = Math.floor(Math.abs(_touchAccum) / _scrollThreshold);
-        _touchAccum = _touchAccum % _scrollThreshold;
-        _scrollTerminal(dy > 0 ? 'up' : 'down', steps * 3);
-      }
-    }, { passive: true });
-
-    overlay.addEventListener('touchend', function() {
-      _touchAccum = 0;
-    }, { passive: true });
-
-    // Double-tap to exit scroll mode
-    var _lastTap = 0;
-    overlay.addEventListener('touchend', function(e) {
-      var now = Date.now();
-      if (now - _lastTap < 300 && _inScrollMode) {
-        _scrollTerminal('exit');
-      }
-      _lastTap = now;
-    });
-  }
 
   // Auto-resize textarea height
   function autoResize() {
@@ -3025,37 +2476,18 @@ function _initMobileInput() {
     _sendMobileCmd();
   });
 
-  // Special key buttons + scroll buttons
+  // Special key buttons
   document.getElementById('mobile-keys-row').addEventListener('click', async function(e) {
     var btn = e.target.closest('.mobile-key-btn');
     if (!btn) return;
-    // Scroll buttons — on mobile, scroll the text output natively
-    var scrollDir = btn.dataset.scroll;
-    if (scrollDir) {
-      if (_isMobile) {
-        var output = document.getElementById('mobile-term-output');
-        if (output) {
-          var h = output.clientHeight * 0.8;
-          output.scrollBy({ top: scrollDir.includes('up') ? -h : h, behavior: 'smooth' });
-        }
-      } else {
-        _scrollTerminal(scrollDir);
-      }
-      return;
-    }
-    // Regular special keys
     var keyName = btn.dataset.key;
     var seq = _SPECIAL_KEYS[keyName];
-    // 发键前退出滚动模式:copy-mode 会静默吞掉发进去的字节(后端也有兜底 cancel);
-    // await 保证"退出"先于"发键"到达,不然并发竞态下 ^C 可能先到被吞
     if (!seq && keyName && keyName.length === 1) {
       // Single char keys (digits etc): send char + Enter
-      if (_inScrollMode) await _scrollTerminal('exit');
       _sendToTerminal(keyName + '\n');
       return;
     }
     if (seq) {
-      if (_inScrollMode) await _scrollTerminal('exit');
       _sendToTerminal(seq);
     }
   });
@@ -3072,8 +2504,6 @@ async function _sendMobileCmd() {
   input.value = '';
   input.style.height = 'auto';
   try {
-    // Exit scroll mode first
-    if (_inScrollMode) await _scrollTerminal('exit');
     if (text) {
       // Add to history (dedup, max 100)
       _cmdHistory = _cmdHistory.filter(function(c) { return c !== text; });
@@ -3284,95 +2714,6 @@ function _showToast(msg, duration) {
   el.classList.add('show');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration || 3000);
-}
-
-// ── Auto-copy: poll tmux buffer for changes ──────────────────────────────────
-// tmux mouse mode captures text selection into paste buffer.
-// We poll the buffer and auto-copy to system clipboard when it changes.
-var _bufferPollTimer = null;
-var _lastTmuxBuffer = '';
-
-function _startBufferPoll() {
-  if (_bufferPollTimer) return;
-  // Snapshot current buffer so we don't immediately copy old content
-  fetch('/api/terminal/buffer', { headers: _authHeaders() })
-    .then(function(r) { return r.ok ? r.json() : {}; })
-    .then(function(d) { _lastTmuxBuffer = (d.text || '').trim(); })
-    .catch(function() {});
-  _bufferPollTimer = setInterval(_checkBufferChange, 4000);
-}
-
-function _stopBufferPoll() {
-  if (_bufferPollTimer) { clearInterval(_bufferPollTimer); _bufferPollTimer = null; }
-}
-
-var _pendingCopyText = null;
-
-function _doCopy(text) {
-  var ok = false;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(function() {
-      _showToast('已复制 ' + text.length + ' 字符', 1500);
-    }).catch(function() {
-      // clipboard API failed, try execCommand in next click
-      _execCopy(text);
-    });
-    return;
-  }
-  _execCopy(text);
-}
-
-function _execCopy(text) {
-  var ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.cssText = 'position:fixed;left:-9999px;top:0';
-  document.body.appendChild(ta);
-  ta.select();
-  var ok = false;
-  try { ok = document.execCommand('copy'); } catch(_) {}
-  document.body.removeChild(ta);
-  _showToast(ok ? '已复制 ' + text.length + ' 字符' : '复制失败', 1500);
-}
-
-function _showCopyToast(text) {
-  _pendingCopyText = text;
-  var preview = text.length > 50 ? text.substring(0, 47) + '…' : text;
-  preview = preview.replace(/\n/g, ' ↵ ');
-  // Remove existing copy-toast
-  var old = document.getElementById('copy-toast');
-  if (old) old.remove();
-  var toast = document.createElement('div');
-  toast.id = 'copy-toast';
-  toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:999;background:var(--panel,#1e293b);color:var(--text,#e2e8f0);border:1px solid var(--accent,#818cf8);border-radius:8px;padding:10px 16px;font-family:var(--mono);font-size:12px;cursor:pointer;max-width:80vw;box-shadow:0 4px 20px rgba(0,0,0,.4);display:flex;align-items:center;gap:10px;';
-  toast.innerHTML = '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + preview.replace(/</g,'&lt;') + '</span><span style="background:var(--accent,#818cf8);color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap">点击复制</span>';
-  toast.addEventListener('click', function() {
-    if (_pendingCopyText) _doCopy(_pendingCopyText);
-    toast.remove();
-  });
-  document.body.appendChild(toast);
-  setTimeout(function() { if (toast.parentNode) toast.remove(); }, 8000);
-}
-
-async function _checkBufferChange() {
-  try {
-    var res = await fetch('/api/terminal/buffer', { headers: _authHeaders() });
-    if (!res.ok) return;
-    var data = await res.json();
-    var text = (data.text || '').trim();
-    if (!text || text.length < 2) return;
-    if (text === _lastTmuxBuffer) return;
-    _lastTmuxBuffer = text;
-    var ok = false;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try { await navigator.clipboard.writeText(text); ok = true; } catch(e) {}
-    }
-    if (ok) {
-      var preview = text.length > 50 ? text.substring(0, 47) + '…' : text;
-      _showToast('已复制: ' + preview.replace(/\n/g, ' ↵ '), 2000);
-    } else {
-      _showCopyToast(text);
-    }
-  } catch(e) { console.warn('[mira-copy] ERROR:', e); }
 }
 
 // ── Image compression ────────────────────────────────────────────────────────
@@ -3610,27 +2951,6 @@ function _initUpload() {
   });
 }
 
-// ── ttyd theme sync ───────────────────────────────────────────────────────────
-function _applyTtydTheme() {
-  var frame = document.getElementById('ttyd-frame');
-  if (!frame || !frame.contentWindow) return;
-  // The injected mira-ttyd-theme script inside the iframe handles everything;
-  // we just tell it the skin changed via postMessage.
-  try { frame.contentWindow.postMessage({ type: 'mira-theme' }, '*'); } catch(_) {}
-}
-
-// ── Listen for status/mouseup from ttyd iframe (via postMessage) ─────────────
-window.addEventListener('message', function(e) {
-  var frame = document.getElementById('ttyd-frame');
-  if (frame && e.source === frame.contentWindow && e.data && e.data.type === 'mira-ttyd-connection') {
-    _setDesktopWsDot(e.data.connected === true);
-    return;
-  }
-  if (e.data && e.data.type === 'mira-mouseup') {
-    setTimeout(_checkBufferChange, 200);
-  }
-});
-
 // ── claude 完整会话历史(读 ~/.claude jsonl,不受终端擦屏影响)──────────────────
 var _histBefore = 0, _histTarget = null, _histLoading = false;
 
@@ -3823,26 +3143,6 @@ function _focusInputBox() {
   }, 80);
 }
 
-// 输入框模式下,预加载/隐藏的 ttyd iframe(加载完 xterm 会自动 focus)会偷走焦点 →
-// 敲字进了终端 iframe。焦点一旦落到 iframe 就抢回输入框。绑定一次。
-document.addEventListener('focusin', function(e) {
-  if (_isMobile) return;
-  var dp = document.getElementById('dev-page');
-  if (!dp || !dp.classList.contains('stream-mode')) return;
-  var t = e.target;
-  if (t && (t.id === 'ttyd-frame' || t.tagName === 'IFRAME')) {
-    var i = document.getElementById('mobile-cmd-input');
-    if (i) i.focus();
-  }
-});
-
-function _focusTerm() {
-  // 把键盘焦点交给终端 iframe,进去就能直接打字(不用先点一下)
-  var frame = document.getElementById('ttyd-frame');
-  try { frame.contentWindow.focus(); } catch (e) {}
-  try { frame.focus(); } catch (e) {}
-}
-
 function _subWaystation(msg, showLogin) {
   document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;flex-direction:column;'
     + 'align-items:center;justify-content:center;gap:18px;text-align:center;padding:24px;'
@@ -3888,18 +3188,12 @@ async function init() {
     if (e.target.closest('.term-pane-kill')) return;
     selectPane(row.dataset.target, row.dataset.cmd);
   });
-  // Watch for skin changes and sync to ttyd iframe
+  // 换肤实时同步 xterm 主题
   new MutationObserver(function() { _refreshXtermTheme(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   // Init mobile input bar + upload handlers
   _initMobileInput();
   _initUpload();
-  // Preload ttyd iframe on desktop so it's ready when user clicks a pane
-  if (!_isMobile && !localStorage.getItem('mira-input-box-mode')) {
-    // 输入框模式不预加载 ttyd(否则它加载完会抢焦点、把敲的字吃进隐藏的终端)
-    var _preFrame = document.getElementById('ttyd-frame');
-    if (_preFrame && !_preFrame.src) _preFrame.src = '/terminal/';
-  }
   await loadDevGroups();
   await loadPanes();
   // 移动端:iOS 可能在后台回收/重载页面 → 用上次停留的终端视图自动恢复,不再掉回项目列表。
@@ -3911,7 +3205,6 @@ async function init() {
     else if (_saved) { try { localStorage.removeItem('mira-dev-target'); } catch(e) {} }
   }
   var _panesInterval = setInterval(loadPanes, 8000);
-  _startBufferPoll();
   // Warm the lightweight project list while the page is idle so the first
   // click on + normally opens with a complete list and no network wait.
   var _preloadProjects = function() { _fetchNewTermProjects().catch(function() {}); };
@@ -3922,14 +3215,12 @@ async function init() {
   document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
       clearInterval(_panesInterval); _panesInterval = null;
-      _stopBufferPoll();
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
       // 后台主动断开终端 WS:避免 iOS 掐断时触发 onclose 的重连/回列表逻辑
       _disconnectPtyWs();
     } else {
       loadPanes();
       _panesInterval = setInterval(loadPanes, 8000);
-      _startBufferPoll();
       if (_currentTarget) {
         var t = _paneToolMap[_currentTarget] || '';
         if (t) _startTokenRefresh(_currentTarget, t);
@@ -3981,7 +3272,7 @@ init();
     </div>
   </div>
 
-  <!-- Main: ttyd iframe -->
+  <!-- Main: xterm.js PTY 终端 -->
   <div class="term-main">
     <!-- Mobile-only header (back to list + project name) -->
     <div class="term-detail-header" id="term-detail-header">
@@ -4005,11 +3296,6 @@ init();
       <span class="desktop-ws-dot err" id="desktop-ws-dot" title="终端连接中"></span>
       <span class="toolbar-tokens" id="toolbar-tokens"></span>
       <span class="toolbar-usage" id="toolbar-usage"></span>
-    </div>
-    <div class="term-iframe-wrap" id="term-iframe-wrap">
-      <div class="term-touch-overlay" id="term-touch-overlay"></div>
-      <div class="term-scroll-badge" id="term-scroll-badge">滚动模式</div>
-      <iframe id="ttyd-frame" allow="clipboard-read; clipboard-write"></iframe>
     </div>
     <!-- Mobile token bar -->
     <div class="mobile-token-bar" id="mobile-token-bar"><span class="ws-dot ok" id="ws-dot" onclick="_onWsDotClick()" title="连接状态"></span></div>
