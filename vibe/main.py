@@ -4193,6 +4193,27 @@ async def upload_image(request: Request, file: UploadFile = File(...), host: str
     return {"path": str(dest)}
 
 
+@api.post("/api/terminals/{target:path}/respawn")
+async def terminals_respawn(request: Request, target: str):
+    """强制退出会话:杀 pane 进程原地重生 shell(⌃C 第二击的兜底,忙碌 claude 也必退)。"""
+    principal = _get_principal(request)
+    if not principal:
+        raise HTTPException(status_code=401, detail="需要登录")
+    if principal[0] == "sub" and not _sub_target_project(principal[1]["feishu_open_id"], target):
+        raise HTTPException(status_code=403, detail="无权操作该会话")
+    remote_host, real_target = _parse_target(target)
+    if remote_host is not None:
+        raise HTTPException(status_code=400, detail="远程会话暂不支持强制退出")
+    from vibe.tmux_bridge import respawn_pane
+    def _do():
+        try:
+            respawn_pane(target)
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    await asyncio.to_thread(_do)
+    return {"ok": True}
+
+
 @api.post("/api/terminals/{target:path}/send")
 async def terminals_send(request: Request, target: str, body: dict):
     principal = _get_principal(request)

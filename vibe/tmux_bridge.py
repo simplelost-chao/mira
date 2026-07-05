@@ -134,6 +134,18 @@ def send_keys(target: str, keys: str) -> None:
             _run([_TMUX_BIN, "send-keys", "-t", target, "Enter"])
 
 
+def respawn_pane(target: str) -> None:
+    """无条件退出会话:杀掉 pane 里的进程(claude 忙不忙都一样),原地重生干净 shell。
+    窗口/项目保留;claude 会话记录仍可 --resume 恢复。^C 退出受 claude 状态摆布
+    (忙碌=只打断;大上下文时连"再按一次退出"都不可靠),这是保证必退的唯一路径。"""
+    if not _TARGET_RE.match(target):
+        raise RuntimeError(f"Invalid tmux target format: {target!r}")
+    proc = subprocess.run([_TMUX_BIN, "respawn-pane", "-k", "-t", target],
+                          capture_output=True, text=True, env=_TMUX_ENV)
+    if proc.returncode != 0:
+        raise RuntimeError(f"respawn-pane failed for target '{target}': {proc.stderr.strip()}")
+
+
 # ── viewer 会话:真终端直连的隔离层 ──────────────────────────────────────────
 # 每条观看 WS 连接一个独立分组会话:共享源 session 的窗口内容,但"当前窗口"指针
 # 各自独立 —— 多端同看、随意切换项目,内容归属不可能串台。

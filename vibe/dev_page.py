@@ -2541,6 +2541,7 @@ function _initMobileInput() {
   });
 
   // Special key buttons
+  var _lastCtrlC = 0;   // ⌃C 两段式退出的时间窗
   document.getElementById('mobile-keys-row').addEventListener('click', async function(e) {
     var btn = e.target.closest('.mobile-key-btn');
     if (!btn) return;
@@ -2553,9 +2554,22 @@ function _initMobileInput() {
     }
     if (seq) {
       if (keyName === 'Ctrl+C') {
-        // ⌃C = 一键退出会话(用户点名):原子对 \x03\x03 同次写入间隔≈0ms,
-        // 必中 claude ~0.6s 的"再按一次退出"窗口(两次独立请求经隧道必然错过);
-        // claude 忙碌时=打断+提示,再点一下即退
+        // ⌃C = 退出会话,两段式:
+        // 第一击发原子对 \x03\x03(空闲 claude 优雅退出;忙碌=打断);
+        // 5 秒内第二击走 respawn 强杀 —— ^C 退出受 claude 状态摆布(忙碌只打断,
+        // 大上下文时连"再按一次退出"都不可靠),强杀才保证必退,shell 原地重生
+        var now = Date.now();
+        if (now - _lastCtrlC < 5000) {
+          _lastCtrlC = 0;
+          _showToast('强制退出会话中…', 1500);
+          fetch('/api/terminals/' + encodeURIComponent(_currentTarget) + '/respawn', {
+            method: 'POST', headers: _authHeaders()
+          }).then(function(r) {
+            _showToast(r.ok ? '✓ 会话已退出' : '⚠ 强制退出失败 (' + r.status + ')', 2000);
+          }).catch(function() { _showToast('⚠ 强制退出失败(网络)', 2000); });
+          return;
+        }
+        _lastCtrlC = now;
         seq = '\x03\x03';
       }
       _sendToTerminal(seq);
@@ -3386,7 +3400,7 @@ init();
         <button class="mobile-key-btn ok-btn" onclick="_sendOk()" title="确认">OK</button>
         <button class="mobile-key-btn" onclick="_smartEnter()" title="智能回车:有幽灵建议时自动采纳并发送,否则发裸回车(选菜单)">↵</button>
         <span class="keys-sep"></span>
-        <button class="mobile-key-btn" data-key="Ctrl+C" title="退出当前会话(忙碌时=打断,再点一下退出)">⌃C</button>
+        <button class="mobile-key-btn" data-key="Ctrl+C" title="退出会话:点一下=打断/优雅退出;5秒内再点一下=强制退出(必退)">⌃C</button>
         <button class="mobile-key-btn" data-key="Ctrl+O" title="展开/收起后台代理与详细输出">⌃O</button>
         <button class="mobile-key-btn" data-key="Esc">Esc</button>
         <button class="mobile-key-btn" data-key="Tab">Tab</button>
