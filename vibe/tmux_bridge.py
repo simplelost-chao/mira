@@ -140,7 +140,10 @@ def respawn_pane(target: str) -> None:
     (忙碌=只打断;大上下文时连"再按一次退出"都不可靠),这是保证必退的唯一路径。"""
     if not _TARGET_RE.match(target):
         raise RuntimeError(f"Invalid tmux target format: {target!r}")
-    proc = subprocess.run([_TMUX_BIN, "respawn-pane", "-k", "-t", target],
+    # 必须显式指定 shell:不带命令时 respawn 会重跑 pane 的原始启动命令——
+    # 用 'claude' 直接起的 pane 会被"杀完又生一个新 claude",退了个寂寞
+    shell = os.environ.get("SHELL", "/bin/zsh")
+    proc = subprocess.run([_TMUX_BIN, "respawn-pane", "-k", "-t", target, shell],
                           capture_output=True, text=True, env=_TMUX_ENV)
     if proc.returncode != 0:
         raise RuntimeError(f"respawn-pane failed for target '{target}': {proc.stderr.strip()}")
