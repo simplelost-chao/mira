@@ -2535,6 +2535,7 @@ function _initMobileInput() {
   });
 
   // Special key buttons
+  var _lastCtrlC = 0;   // ⌃C 连按检测:claude 的"再按一次退出"窗口实测只有 ~0.5-0.7s
   document.getElementById('mobile-keys-row').addEventListener('click', async function(e) {
     var btn = e.target.closest('.mobile-key-btn');
     if (!btn) return;
@@ -2546,6 +2547,13 @@ function _initMobileInput() {
       return;
     }
     if (seq) {
+      if (keyName === 'Ctrl+C') {
+        // 连按第二次升级为原子对 \x03\x03(同一次写入,间隔≈0ms 必中窗口):
+        // 两次独立 HTTP 请求经隧道的落地间隔常超过窗口,永远退不出会话
+        var now = Date.now();
+        if (now - _lastCtrlC < 1500) seq = '\x03\x03';
+        _lastCtrlC = now;
+      }
       _sendToTerminal(seq);
     }
   });
