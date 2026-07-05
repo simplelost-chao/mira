@@ -2468,7 +2468,8 @@ function _onWsDotClick() {
 }
 
 async function _sendToTerminal(keys, promptText) {
-  if (!_currentTarget) return false;
+  // 失败必须可见:静默吞掉会让用户以为"按键坏了"(iOS 假死页/断网时按半天没反应)
+  if (!_currentTarget) { _showToast('⚠ 未连接终端,刷新页面重试', 2500); return false; }
   try {
     var _body = { keys: keys };
     if (promptText) _body.prompt = promptText;   // 子账号:供后端精确归属这条 prompt(不靠时间)
@@ -2477,8 +2478,13 @@ async function _sendToTerminal(keys, promptText) {
       headers: _authHeaders({'Content-Type': 'application/json'}),
       body: JSON.stringify(_body)
     });
+    if (!res.ok) _showToast('⚠ 按键发送失败 (' + res.status + ')', 2500);
     return res.ok;
-  } catch(e) { console.warn('send error:', e); return false; }
+  } catch(e) {
+    console.warn('send error:', e);
+    _showToast('⚠ 按键发送失败(网络),刷新页面重试', 2500);
+    return false;
+  }
 }
 
 var _mobileInputInited = false;
