@@ -247,7 +247,7 @@ def test_detail_page_has_dev_link():
     assert resp.status_code == 200
     body = resp.text
     assert '/dev' in body
-    assert 'tab-overview' in body
+    assert 'tab-summary' in body   # 概览 tab,改版后 id 从 tab-overview 改名
 
 
 def test_deployments_list_requires_admin():

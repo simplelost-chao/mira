@@ -1,8 +1,13 @@
 import pytest
 import tempfile
 import os
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
+
+# daily_stats 测试必须用动态日期:get_stats 的窗口是「今天往前 range_days 天」,
+# 硬编码日期迟早漂出窗口变成时间炸弹(2026-04-20 那批就是这么挂的)
+_TODAY = date.today().isoformat()
 
 
 @pytest.fixture(autouse=True)
@@ -86,12 +91,12 @@ def test_daily_stats_upsert_and_get(tmp_path):
     with patch('vibe.history_db.DB_PATH', db_file):
         from vibe.history_db import init_db, upsert_daily_stats, get_stats
         init_db()
-        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 10, 5000, 2000, 1.5)
+        upsert_daily_stats('sess1', 'proj1', _TODAY, 10, 5000, 2000, 1.5)
         result = get_stats(range_days=30)
         assert result['totals']['sessions'] == 1
         assert result['totals']['active_hours'] == 1.5
         assert result['totals']['input_tokens'] == 5000
-        day = next(d for d in result['days'] if d['date'] == '2026-04-20')
+        day = next(d for d in result['days'] if d['date'] == _TODAY)
         assert day['sessions'] == 1
         assert day['active_hours'] == 1.5
         assert len(result['projects']) == 1
@@ -104,9 +109,9 @@ def test_daily_stats_idempotent(tmp_path):
     with patch('vibe.history_db.DB_PATH', db_file):
         from vibe.history_db import init_db, upsert_daily_stats, get_stats
         init_db()
-        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 10, 5000, 2000, 1.5)
+        upsert_daily_stats('sess1', 'proj1', _TODAY, 10, 5000, 2000, 1.5)
         # Same session re-indexed — values should be replaced, not doubled
-        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 12, 5500, 2200, 1.6)
+        upsert_daily_stats('sess1', 'proj1', _TODAY, 12, 5500, 2200, 1.6)
         result = get_stats(range_days=30)
         assert result['totals']['sessions'] == 1
         assert result['totals']['active_hours'] == 1.6
@@ -118,10 +123,10 @@ def test_daily_stats_multiple_sessions_same_day(tmp_path):
     with patch('vibe.history_db.DB_PATH', db_file):
         from vibe.history_db import init_db, upsert_daily_stats, get_stats
         init_db()
-        upsert_daily_stats('sessA', 'proj1', '2026-04-20', 10, 5000, 2000, 1.5)
-        upsert_daily_stats('sessB', 'proj1', '2026-04-20', 8, 3000, 1000, 0.8)
+        upsert_daily_stats('sessA', 'proj1', _TODAY, 10, 5000, 2000, 1.5)
+        upsert_daily_stats('sessB', 'proj1', _TODAY, 8, 3000, 1000, 0.8)
         result = get_stats(range_days=30)
-        day = next(d for d in result['days'] if d['date'] == '2026-04-20')
+        day = next(d for d in result['days'] if d['date'] == _TODAY)
         assert day['sessions'] == 2
         assert day['active_hours'] == pytest.approx(2.3, abs=0.01)
         assert result['totals']['input_tokens'] == 8000
@@ -132,10 +137,10 @@ def test_get_stats_fills_missing_days(tmp_path):
     with patch('vibe.history_db.DB_PATH', db_file):
         from vibe.history_db import init_db, upsert_daily_stats, get_stats
         init_db()
-        upsert_daily_stats('sess1', 'proj1', '2026-04-20', 5, 1000, 400, 0.5)
+        upsert_daily_stats('sess1', 'proj1', _TODAY, 5, 1000, 400, 0.5)
         result = get_stats(range_days=7)
         assert len(result['days']) == 7
-        empty_days = [d for d in result['days'] if d['date'] != '2026-04-20']
+        empty_days = [d for d in result['days'] if d['date'] != _TODAY]
         for d in empty_days:
             assert d['sessions'] == 0
             assert d['active_hours'] == 0.0

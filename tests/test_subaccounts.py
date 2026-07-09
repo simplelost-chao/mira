@@ -183,11 +183,20 @@ def test_sub_session_name_isolation():
 
 # ── 飞书 OAuth 回调 ───────────────────────────────────────────────────────────
 
+# 多组织改造后:state 值是 (过期时间, 组织key) 元组,回调用 key 选回应用。
+# 应用列表读全局配置,测试里 patch 掉,不依赖本机真实飞书配置
+_FAKE_APP = {
+    "key": "default", "label": "测试组织", "app_id": "cli_test", "app_secret": "s",
+    "open_base_url": "https://open.feishu.cn/open-apis", "scopes": "",
+    "redirect_uri": "http://test/auth/feishu/callback",
+}
+
+
 def _state():
     import time as _t
     from vibe import main as _m
     s = "teststate"
-    _m._feishu_states[s] = _t.time() + 600
+    _m._feishu_states[s] = (_t.time() + 600, "default")
     return s
 
 
@@ -195,6 +204,7 @@ def test_feishu_callback_new_user_pending(tmp_path):
     fake, r = _yaml(tmp_path, [])
     s = _state()
     with patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.main._feishu_app_by_key", return_value=_FAKE_APP), \
          patch("vibe.feishu_oauth.exchange_code", return_value={"open_id": "ou_new", "name": "新人"}):
         resp = client.get(f"/auth/feishu/callback?code=c&state={s}", follow_redirects=False)
     assert resp.status_code in (302, 307)
@@ -209,6 +219,7 @@ def test_feishu_callback_active_user_gets_session(tmp_path):
     fake, r = _yaml(tmp_path, [{"feishu_open_id": "ou_a", "name": "A", "status": "active", "projects": ["p"]}])
     s = _state()
     with patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.main._feishu_app_by_key", return_value=_FAKE_APP), \
          patch("vibe.feishu_oauth.exchange_code", return_value={"open_id": "ou_a", "name": "A"}):
         resp = client.get(f"/auth/feishu/callback?code=c&state={s}", follow_redirects=False)
     assert resp.status_code in (302, 307)
@@ -227,12 +238,11 @@ def test_feishu_callback_bad_state_rejected(tmp_path):
     assert "sub_error=state" in resp.headers["location"]
 
 
-def test_accounts_page_renders():
-    resp = client.get("/accounts")
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-    body = resp.text
-    assert '/api/accounts' in body and 'saveGrant' in body
+def test_accounts_page_redirects_to_dev():
+    # 子账号管理已并入「设置 → 子账户」tab;旧 /accounts 链接 302 到 /dev
+    resp = client.get("/accounts", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == "/dev"
 
 
 def test_sub_path_redirects_to_dev():
@@ -293,6 +303,7 @@ def test_feishu_callback_pending_user_no_session(tmp_path):
     fake, r = _yaml(tmp_path, [{"feishu_open_id": "ou_p", "status": "pending", "projects": []}])
     s = _state()
     with patch("vibe.main._read_vibe_yaml", side_effect=r), \
+         patch("vibe.main._feishu_app_by_key", return_value=_FAKE_APP), \
          patch("vibe.feishu_oauth.exchange_code", return_value={"open_id": "ou_p", "name": "P"}):
         resp = client.get(f"/auth/feishu/callback?code=c&state={s}", follow_redirects=False)
     assert "sub_status=pending" in resp.headers["location"]
