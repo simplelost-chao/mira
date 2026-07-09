@@ -1,7 +1,12 @@
 import json
 import pytest
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
+
+# 统一动态日期(前天,UTC/本地怎么算都在 get_stats 窗口内):
+# 硬编码日期会漂出时间窗变时间炸弹(2026-04-20 那批的前科)
+_DAY = (date.today() - timedelta(days=2)).isoformat()
 
 
 def _write_jsonl(path: Path, lines: list[dict]):
@@ -19,7 +24,7 @@ def test_parse_line_user_string():
     line = json.dumps({
         "type": "user",
         "message": {"role": "user", "content": "你好"},
-        "timestamp": "2026-04-24T10:00:00.000Z"
+        "timestamp": f"{_DAY}T10:00:00.000Z"
     })
     result = _parse_line(line)
     assert result is not None
@@ -37,7 +42,7 @@ def test_parse_line_assistant_content_list():
             {"type": "text", "text": "好的，我来帮你"},
             {"type": "tool_use", "name": "Bash"}
         ]},
-        "timestamp": "2026-04-24T10:00:01.000Z"
+        "timestamp": f"{_DAY}T10:00:01.000Z"
     })
     result = _parse_line(line)
     assert result is not None
@@ -57,7 +62,7 @@ def test_parse_line_skips_empty_content():
     line = json.dumps({
         "type": "assistant",
         "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash"}]},
-        "timestamp": "2026-04-24T10:00:01.000Z"
+        "timestamp": f"{_DAY}T10:00:01.000Z"
     })
     assert _parse_line(line) is None
 
@@ -75,9 +80,9 @@ def test_index_file_incremental(tmp_path):
 
     lines = [
         {"type": "user", "message": {"role": "user", "content": "第一条消息"},
-         "timestamp": "2026-04-24T10:00:00.000Z"},
+         "timestamp": f"{_DAY}T10:00:00.000Z"},
         {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "回复一"}]},
-         "timestamp": "2026-04-24T10:00:01.000Z"},
+         "timestamp": f"{_DAY}T10:00:01.000Z"},
     ]
     _write_jsonl(jsonl, lines)
 
@@ -92,7 +97,7 @@ def test_index_file_incremental(tmp_path):
 
         # Append a new line and re-index — should only process the new line
         new_line = {"type": "user", "message": {"role": "user", "content": "第二条消息"},
-                    "timestamp": "2026-04-24T10:00:02.000Z"}
+                    "timestamp": f"{_DAY}T10:00:02.000Z"}
         with open(jsonl, 'a', encoding='utf-8') as f:
             f.write(json.dumps(new_line) + '\n')
 
@@ -150,7 +155,7 @@ def test_index_file_set_last_line_failure_is_logged(tmp_path, caplog):
     jsonl.write_text(json.dumps({
         "type": "user",
         "message": {"role": "user", "content": "测试消息"},
-        "timestamp": "2026-04-24T10:00:00.000Z"
+        "timestamp": f"{_DAY}T10:00:00.000Z"
     }) + '\n', encoding='utf-8')
 
     with patch('vibe.history_db.DB_PATH', db_file):
@@ -169,18 +174,14 @@ def test_index_file_set_last_line_failure_is_logged(tmp_path, caplog):
 def test_index_file_writes_daily_stats(tmp_path):
     """index_file should write daily_stats after indexing messages."""
     import json
-    from datetime import date, timedelta
     from unittest.mock import patch
     db_file = tmp_path / 'history.db'
     jsonl = tmp_path / 'sess_stats.jsonl'
 
-    # 动态日期:get_stats 窗口是「今天往前 range_days 天」,硬编码日期会漂出窗口。
-    # 取前天,UTC/本地时区怎么算都稳落在 30 天窗口内
-    day = (date.today() - timedelta(days=2)).isoformat()
     lines = [
         {"type": "user",
          "message": {"role": "user", "content": "帮我写代码"},
-         "timestamp": f"{day}T10:00:00.000Z"},
+         "timestamp": f"{_DAY}T10:00:00.000Z"},
         {"type": "assistant",
          "message": {
              "role": "assistant",
@@ -188,7 +189,7 @@ def test_index_file_writes_daily_stats(tmp_path):
              "usage": {"input_tokens": 100, "output_tokens": 50,
                        "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
          },
-         "timestamp": f"{day}T10:05:00.000Z"},
+         "timestamp": f"{_DAY}T10:05:00.000Z"},
     ]
     jsonl.write_text('\n'.join(json.dumps(l) for l in lines) + '\n', encoding='utf-8')
 
