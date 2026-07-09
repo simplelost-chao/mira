@@ -3438,8 +3438,6 @@ init();
         <button class="mobile-key-btn" data-key="Up">↑</button>
         <button class="mobile-key-btn" data-key="Down">↓</button>
         <span class="keys-sep"></span>
-        <button class="mobile-key-btn" onclick="openPaneHistory()" title="完整会话历史">历史</button>
-        <span class="keys-sep"></span>
         <select class="mobile-num-sel" id="mobile-num-sel" onchange="_sendNum(this)">
           <option value="">1-9</option>
           <option value="1">1</option><option value="2">2</option><option value="3">3</option>
