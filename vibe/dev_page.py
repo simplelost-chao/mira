@@ -2278,6 +2278,20 @@ function _connectPtyWs(target) {
     _ptyFit = new FitAddon.FitAddon();
     _ptyTerm.loadAddon(_ptyFit);
     window.addEventListener('resize', _ptyFitResize);
+    // A(自愈):多端共享一个 tmux 窗口(window-size=latest)时,手机切到后台期间另一
+    // 宽端可能把窗口撑宽,推来的宽帧被本端窄 xterm 折成散帧,claude 空闲又不重绘。
+    // 一回到前台就重发本端尺寸抢回 latest 并触发重绘 —— 覆盖"没手动滑一下也自己好"。
+    // 仅手机、且 PTY 活着时做。桌面不需要(它是常态的 latest)。
+    if (_isMobile) {
+      var _ptyReassert = function() {
+        if (_ptyTerm && _ptyWs && _ptyWs.readyState === WebSocket.OPEN) _ptyFitResize();
+      };
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') _ptyReassert();
+      });
+      window.addEventListener('pageshow', function(e) { if (e.persisted) _ptyReassert(); });  // iOS bfcache 恢复
+      window.addEventListener('focus', _ptyReassert);
+    }
     if (_isMobile) {
       // 手机:不用 disableStdin(它会连滚轮转义都拦掉),改用 inputmode=none 抑制软键盘;
       // 竖向滑动合成 WheelEvent 交给 xterm 按已协商的模式(鼠标上报/备用屏滚动)翻译,

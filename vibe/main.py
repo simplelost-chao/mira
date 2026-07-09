@@ -4086,7 +4086,10 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                     break
                 await ws.send_bytes(data)
 
+        viewer_tty = None   # 懒查一次并缓存:该 viewer 的 client tty(给 refresh-client 用)
+
         async def _ws_to_pty():
+            nonlocal viewer_tty
             while True:
                 m = await ws.receive()
                 if m.get("type") == "websocket.disconnect":
@@ -4110,6 +4113,12 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                                 proc.send_signal(_signal.SIGWINCH)   # 子进程无控制终端,内核不会替我们发
                             except Exception:
                                 pass
+                            # B:latest 策略下若本次尺寸没变则 claude 不重绘,本端可能残留
+                            # 另一宽端推来的折行散帧 → 强制这一 client 全量重绘,推回干净帧。
+                            if viewer_tty is None:
+                                viewer_tty = await asyncio.to_thread(_tb.client_tty, viewer)
+                            if viewer_tty:
+                                await asyncio.to_thread(_tb.refresh_client, viewer_tty)
 
         t1 = asyncio.create_task(_pty_to_ws())
         t2 = asyncio.create_task(_ws_to_pty())

@@ -208,6 +208,28 @@ def window_size(target: str) -> tuple[int, int]:
     return int(w), int(h)
 
 
+def client_tty(viewer: str) -> str | None:
+    """viewer 会话上那唯一 client 的 tty(v-* 每会话恰好一个 attach client)。
+    用于 refresh_client 精准刷这一端,不波及同看的其它端。查不到返回 None。"""
+    proc = subprocess.run(
+        [_TMUX_BIN, "list-clients", "-t", viewer, "-F", "#{client_tty}"],
+        capture_output=True, text=True, env=_TMUX_ENV)
+    if proc.returncode != 0:
+        return None
+    tty = proc.stdout.strip().splitlines()
+    return tty[0].strip() if tty and tty[0].strip() else None
+
+
+def refresh_client(tty: str) -> None:
+    """强制该 client 全量重绘(tmux 从服务端屏缓重推一帧)。幂等、失败静默。
+    用途:window-size=latest 下另一宽端撑宽窗口后,本端窄屏残留折行散帧且被绘制程序
+    (claude)空闲不重绘时,靠这一脚把干净帧推回来。"""
+    if not tty:
+        return
+    subprocess.run([_TMUX_BIN, "refresh-client", "-t", tty],
+                   capture_output=True, text=True, env=_TMUX_ENV)
+
+
 def cleanup_orphan_viewers(max_age_seconds: int = 300) -> int:
     """兜底:清掉无客户端且创建超过 max_age 的 v-* 会话。
     正常路径由 WS 关闭时显式 kill;进程崩溃/断电时关闭事件会丢,靠这里回收。"""
