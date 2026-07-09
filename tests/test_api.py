@@ -35,9 +35,15 @@ def test_get_project_not_found():
     assert resp.status_code == 404
 
 
+# 401 断言必须显式模拟「已配密码」:没配密码时 _is_admin 开放放行,
+# 不 patch 就隐式依赖本机配置(本地有密码能过,CI 干净环境返回 200)
+_FAKE_ADMIN_TOKEN = patch('vibe.main._admin_token', return_value='t' * 64)
+
+
 def test_history_search_no_auth():
     """Search endpoint returns 401 without admin token."""
-    resp = client.get('/api/history/search?q=test')
+    with _FAKE_ADMIN_TOKEN:
+        resp = client.get('/api/history/search?q=test')
     assert resp.status_code == 401
 
 
@@ -63,7 +69,8 @@ def test_history_search_empty_query():
 
 def test_history_sessions_no_auth():
     """Sessions endpoint returns 401 without admin token."""
-    resp = client.get('/api/history/sessions')
+    with _FAKE_ADMIN_TOKEN:
+        resp = client.get('/api/history/sessions')
     assert resp.status_code == 401
 
 
@@ -79,7 +86,8 @@ def test_history_sessions_admin_empty():
 # ── Terminal endpoints ────────────────────────────────────────────────────────
 
 def test_terminals_no_auth():
-    resp = client.get('/api/terminals')
+    with _FAKE_ADMIN_TOKEN:
+        resp = client.get('/api/terminals')
     assert resp.status_code == 401
 
 
@@ -178,7 +186,8 @@ def test_terminals_send_empty_keys():
 
 
 def test_stats_no_auth():
-    resp = client.get('/api/stats')
+    with _FAKE_ADMIN_TOKEN:
+        resp = client.get('/api/stats')
     assert resp.status_code == 401
 
 
@@ -251,7 +260,8 @@ def test_detail_page_has_dev_link():
 
 
 def test_deployments_list_requires_admin():
-    resp = client.get("/api/deployments")
+    with _FAKE_ADMIN_TOKEN:
+        resp = client.get("/api/deployments")
     assert resp.status_code == 401
 
 
