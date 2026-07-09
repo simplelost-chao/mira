@@ -66,6 +66,19 @@ def test_send_keys_calls_tmux():
     assert any('Enter' in c for c in calls)
 
 
+def test_send_keys_multiline_message_single_paste_one_enter():
+    # 手机输入框发多行(消息体含换行 + 尾随 \n = 提交):必须整段粘贴 + 只补一个 Enter,
+    # 否则按内部换行逐行补 Enter → 拆成多条消息(回归防护)
+    with patch('subprocess.run', return_value=_make_proc()) as mock_run:
+        from vibe.tmux_bridge import send_keys
+        send_keys('work:0.0', 'first\nsecond\n')
+    calls = [c[0][0] for c in mock_run.call_args_list]
+    # 必须是括号粘贴(-p),否则内部裸 \n 会被 claude 当提交拆多条
+    assert any('paste-buffer' in c and '-p' in c for c in calls), f'expected bracketed paste, got: {calls}'
+    enter_calls = [c for c in calls if 'send-keys' in c and 'Enter' in c]
+    assert len(enter_calls) == 1, f'expected exactly one Enter, got: {enter_calls}'
+
+
 def test_send_keys_raises_on_failure():
     with patch('subprocess.run', return_value=_make_proc(returncode=1)):
         from vibe.tmux_bridge import send_keys

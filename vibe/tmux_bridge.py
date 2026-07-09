@@ -112,20 +112,31 @@ def send_keys(target: str, keys: str) -> None:
         _run([_TMUX_BIN, "send-keys", "-t", target, "-l", keys])
         return
 
-    # Multi-line or long text — use buffer paste for reliability
-    if '\n' in keys and not keys.endswith('\n'):
-        # Text without trailing newline: use load-buffer + paste-buffer
+    # Multi-line — paste as ONE block via tmux buffer with -p(括号粘贴):
+    # 应用(claude)请求了 bracketed-paste 时,tmux 用 \e[200~…\e[201~ 包裹,内部换行
+    # 作为字面量插入、不各自触发提交;裸 shell 未请求时 -p 原样发送,不会误伤(实测 tmux 3.6a)。
+    def _paste_block(text: str) -> None:
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write(keys)
+            f.write(text)
             f.flush()
             _run([_TMUX_BIN, "load-buffer", f.name])
-            _run([_TMUX_BIN, "paste-buffer", "-t", target, "-d"])
-        import os
+            _run([_TMUX_BIN, "paste-buffer", "-p", "-t", target, "-d"])
         os.unlink(f.name)
+
+    # 粘贴多行(无尾随换行):原样插入,不提交
+    if '\n' in keys and not keys.endswith('\n'):
+        _paste_block(keys)
         return
 
-    # Split on newlines, send each part literally
+    # 输入框"发送"的多行消息体(尾随一个 \n = 提交):整段作为一条粘贴,再补 *一个* Enter
+    # 提交。否则会按内部换行逐行补 Enter,拆成多条消息(用户报的 bug)。
+    if keys.endswith('\n') and '\n' in keys[:-1]:
+        _paste_block(keys[:-1])
+        _run([_TMUX_BIN, "send-keys", "-t", target, "Enter"])
+        return
+
+    # Split on newlines, send each part literally (single-line body / bare Enter)
     parts = keys.split("\n")
     for i, part in enumerate(parts):
         if part:
