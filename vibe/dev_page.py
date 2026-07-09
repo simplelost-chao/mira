@@ -320,6 +320,13 @@ def render_dev_page() -> str:
     border-top: 1px solid var(--border);
     background: var(--panel);
   }
+  /* 仅桌面:开输入框模式(stream-mode)时底部才有快捷键栏,终端要给它让出一整行余量,否则末行贴/藏到栏下。
+     #xterm-container 是 border-box,padding 进不了 FitAddon 行数计算(实测无效),必须用 margin-bottom;
+     桌面(≈17px 行)实测 ≥12px 才够让 fit 少算一行,取 14px 并留 dpr 取整余量。
+     手机不加:小屏终端紧凑,本就不被挡,留缝反而白占高度 */
+  @media (min-width: 901px) {
+    .dev-page.stream-mode .xterm-wrap { margin-bottom: 14px; }
+  }
   .dev-page.stream-mode .mobile-keys-row {
     display: flex; gap: 6px; align-items: center;
     padding: 8px 12px;
@@ -1088,6 +1095,10 @@ var _isMobile = window.matchMedia('(max-width: 900px)').matches;
         // Keep terminal output scrolled to bottom when keyboard changes
         var output = document.getElementById('mobile-term-output');
         if (output) output.scrollTop = output.scrollHeight;
+        // iOS 软键盘只触发 visualViewport.resize,不触发 window.resize,所以 _ptyFitResize
+        // (绑在 window.resize 上)收不到键盘收起事件 → xterm 行数停在被键盘压扁时的旧值,
+        // --app-h 虽恢复了容器高度但终端不复原。这里补一次 fit,把行数重算回全高。
+        if (typeof _ptyFitResize === 'function') _ptyFitResize();
       }, 100);
     } else {
       document.documentElement.style.setProperty('--app-h', h + 'px');
@@ -2353,6 +2364,10 @@ function _connectPtyWs(target) {
       if (c.type === 'init') {
         _ptyTerm.resize(c.cols, c.rows);
         _ptyFitResize();   // 两端统一:fit 到自己屏宽并上报(窗口重排,右侧不缺)
+        // 首帧 fit 时字体度量/布局(token 栏、输入栏)可能还没稳定,行数会算多 →
+        // canvas 比容器高半行,末行溢到底部快捷键栏下被盖住。稳定后再 fit 一次校准。
+        setTimeout(_ptyFitResize, 120);
+        setTimeout(_ptyFitResize, 400);
       }
       return;
     }
