@@ -4232,9 +4232,6 @@ async def terminals_send(request: Request, target: str, body: dict):
     if principal[0] == "sub" and not _sub_target_project(principal[1]["feishu_open_id"], target):
         raise HTTPException(status_code=403, detail="无权操作该会话")
     keys = body.get("keys", "")
-    # TODO(临时诊断 2026-07-06): 排查手机 ⌃C 退不出 session,确认到达字节后删除
-    import logging as _lg
-    _lg.getLogger("uvicorn").info("send keys=%r target=%s", keys[:20], target)
     if not keys:
         raise HTTPException(status_code=400, detail="keys required")
     if len(keys) > 4096:
