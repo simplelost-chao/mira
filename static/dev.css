@@ -415,6 +415,14 @@
   @media (max-width: 900px) {
     .term-detail-header { display: none !important; }
     .dev-page.detail-open { height: calc(var(--app-h, 100dvh) - 52px); }
+    /* 手机详情态(body.detail-locked 仅此时加):topbar 要放 5 个按钮 + 项目名,390px 放不下。
+       藏冗余的 DEV 字样和分隔线(项目名已表意),收紧留白,按钮禁止被 flex 压瘪(曾被压 32→25px,
+       项目名被挤成 2 字符);挤压全部由项目名 ellipsis 吸收。 */
+    body.detail-locked .topbar { gap: 6px; padding: 0 10px; }
+    body.detail-locked .topbar .topbar-page-title,
+    body.detail-locked .topbar .topbar-sep { display: none; }
+    body.detail-locked .topbar .topbar-btn,
+    body.detail-locked .topbar .topbar-detail-btn { flex-shrink: 0; }
     .term-sidebar { width: 100%; flex: 1; border-right: none; }
     .term-sidebar-header { padding: 14px 16px 10px; font-size: 11px; letter-spacing: .5px; text-transform: none; font-weight: 700; }
     #term-pane-list { padding: 0; }

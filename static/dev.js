@@ -5,6 +5,7 @@ var _isMobile = window.matchMedia('(max-width: 900px)').matches;
 (function() {
   var _debounceTimer = null;
   var _lastH = 0;
+  var _appliedH = 0;   // 上次真正应用到 --app-h 的高度(判断键盘是弹出还是收起)
   function u() {
     var h;
     if (window.visualViewport) {
@@ -21,6 +22,8 @@ var _isMobile = window.matchMedia('(max-width: 900px)').matches;
     if (_isMobile && inDetail) {
       clearTimeout(_debounceTimer);
       _debounceTimer = setTimeout(function() {
+        var grew = h > _appliedH;
+        _appliedH = h;
         document.documentElement.style.setProperty('--app-h', h + 'px');
         window.scrollTo(0, 0);
         // Keep terminal output scrolled to bottom when keyboard changes
@@ -29,7 +32,9 @@ var _isMobile = window.matchMedia('(max-width: 900px)').matches;
         // iOS 软键盘只触发 visualViewport.resize,不触发 window.resize,所以 _ptyFitResize
         // (绑在 window.resize 上)收不到键盘收起事件 → xterm 行数停在被键盘压扁时的旧值,
         // --app-h 虽恢复了容器高度但终端不复原。这里补一次 fit,把行数重算回全高。
-        if (typeof _ptyFitResize === 'function') _ptyFitResize();
+        // 只在高度变大(键盘收起/恢复)时补:若弹出/iOS 建议栏抖动也触发,
+        // 打字期间会反复 resize+全量重绘,输入内容被重绘吞掉(用户报的 bug)。
+        if (grew && typeof _ptyFitResize === 'function') _ptyFitResize();
       }, 100);
     } else {
       document.documentElement.style.setProperty('--app-h', h + 'px');
