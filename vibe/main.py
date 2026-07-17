@@ -112,6 +112,7 @@ async def _lifespan(app: FastAPI):
     from vibe.terminal_monitor import run_monitor
     threading.Thread(target=run_monitor, daemon=True).start()
     threading.Thread(target=_monitor_base_services_loop, daemon=True, name='mira-svc-monitor').start()
+    threading.Thread(target=_cleanup_uploads_loop, daemon=True, name='mira-upload-cleanup').start()
     # 远程主机
     _init_remote_hosts()
     if _remote_hosts:
@@ -4177,6 +4178,31 @@ _UPLOAD_DIR = Path("/tmp/mira-uploads")
 _ALLOWED_UPLOAD_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp"}
 _UPLOAD_DENY_TYPES = {"application/x-executable", "application/x-msdos-program"}
 _UPLOAD_MAX = 50 * 1024 * 1024
+_UPLOAD_TTL_H = 24   # 上传文件是一次性的(塞进 prompt / 附件即用完),超龄清掉,别在 /tmp 里越堆越多
+
+
+def _cleanup_uploads(max_age_h: float = _UPLOAD_TTL_H) -> None:
+    """删除 /tmp/mira-uploads 下超龄的上传文件。世界可读的 /tmp 目录不宜长期堆留用户内容。"""
+    if not _UPLOAD_DIR.exists():
+        return
+    cutoff = time.time() - max_age_h * 3600
+    for f in _UPLOAD_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
+
+
+def _cleanup_uploads_loop() -> None:
+    """后台守护线程:每小时清一次超龄上传(启动即先清一次)。"""
+    while True:
+        try:
+            _cleanup_uploads()
+        except Exception:
+            pass
+        time.sleep(3600)
+
 
 @api.post("/api/upload/image")
 async def upload_image(request: Request, file: UploadFile = File(...), host: str = ""):
