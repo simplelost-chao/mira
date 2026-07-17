@@ -65,8 +65,12 @@ def theme_vars_css(extra_vars: str = "") -> str:
         "    --green: #16a34a; --orange: #d97706; --red: #dc2626; --yellow: #ca8a04;\n"
         "    --purple: #7c3aed; --gold: #b45309;\n"
         "    --radius: 12px; --radius-sm: 8px;\n"
-        "    --ansi-0:#383a42; --ansi-4:#4078f2; --ansi-5:#a626a4; --ansi-6:#0184bc;\n"
-        "    --ansi-7:#1a1a1a; --ansi-15:#383a42;\n"
+        "    --mono: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n"
+        "    --track-bg: rgba(0,0,0,.06);\n"
+        "    --ansi-0:#383a42; --ansi-1:#e45649; --ansi-2:#50a14f; --ansi-3:#c18401;\n"
+        "    --ansi-4:#4078f2; --ansi-5:#a626a4; --ansi-6:#0184bc; --ansi-7:#1a1a1a;\n"
+        "    --ansi-8:#a0a1a7; --ansi-9:#e45649; --ansi-10:#50a14f; --ansi-11:#c18401;\n"
+        "    --ansi-12:#4078f2; --ansi-13:#a626a4; --ansi-14:#0184bc; --ansi-15:#383a42;\n"
         "  }\n"
         "  [data-theme=\"claude-dark\"] {\n"
         "    --bg: #131313; --panel: rgba(33,33,33,.95); --border: #303030;\n"
@@ -228,7 +232,7 @@ def topbar_html(title: str = "", back_url: str = "", hide_dev: bool = False) -> 
             '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>'
             '<line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'
             '</svg></button>',
-            '  <button class="topbar-detail-btn" onclick="openPaneHistory()" title="会话历史">'
+            '  <button class="topbar-detail-btn" id="topbar-hist-btn" onclick="openPaneHistory()" title="会话历史">'
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
             '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'
             '</svg></button>',

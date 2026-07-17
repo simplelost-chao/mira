@@ -239,7 +239,11 @@
   .xterm-wrap { display: none; flex: 1; min-height: 0; position: relative; background: var(--bg); }
   .xterm-wrap.visible { display: block; }
   /* 注意:padding 计入 clientWidth,会骗过 fit 的宽度计算(_ptyFitResize 里有溢出兜底) */
-  #xterm-container { position: absolute; inset: 0; padding: 4px 0 0 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* overflow-x:hidden —— fit 多算列造成的瞬时右缘溢出会被 80ms 补正缩掉,不该露出横滚动条;
+     opacity 过渡配合 .term-switching:切换项目时先淡出,藏住 reset+多次 fit 的重绘抖动,稳定再淡入 */
+  #xterm-container { position: absolute; inset: 0; padding: 4px 0 0 6px; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    transition: opacity .18s ease; }
+  #xterm-container.term-switching { opacity: 0; }
   @media (max-width: 900px) {
     /* 手机:间距收紧到 2px,把宽度尽量留给内容 */
     #xterm-container { padding: 2px 0 0 2px; }
@@ -290,13 +294,6 @@
     border-top: 1px solid var(--border);
     background: var(--panel);
   }
-  /* 仅桌面:开输入框模式(stream-mode)时底部才有快捷键栏,终端要给它让出一整行余量,否则末行贴/藏到栏下。
-     #xterm-container 是 border-box,padding 进不了 FitAddon 行数计算(实测无效),必须用 margin-bottom;
-     桌面(≈17px 行)实测 ≥12px 才够让 fit 少算一行,取 14px 并留 dpr 取整余量。
-     手机不加:小屏终端紧凑,本就不被挡,留缝反而白占高度 */
-  @media (min-width: 901px) {
-    .dev-page.stream-mode .xterm-wrap { margin-bottom: 14px; }
-  }
   .dev-page.stream-mode .mobile-keys-row {
     display: flex; gap: 6px; align-items: center;
     padding: 8px 12px;
@@ -313,7 +310,7 @@
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
     color: var(--text); font-family: var(--mono); font-size: 16px;
     padding: 9px 12px; outline: none; resize: none; line-height: 1.45;
-    overflow-y: auto;
+    overflow-x: hidden; overflow-y: auto;
   }
   .dev-page.stream-mode .mobile-key-btn,
   .dev-page.stream-mode .mobile-num-sel,
@@ -630,7 +627,7 @@
     gap: 8px; margin-bottom: 6px; }
   .tok-dropdown-name { font-size: 11px; color: var(--text); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
-  .tok-dropdown-bar { height: 6px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; display: flex; }
+  .tok-dropdown-bar { height: 6px; background: var(--track-bg, rgba(255,255,255,.06)); border-radius: 3px; overflow: hidden; display: flex; }
   .tok-dropdown-bar > div { height: 100%; }
   .tok-dropdown-cost { font-size: 11px; color: var(--sub); text-align: right;
     font-family: var(--mono); white-space: nowrap; }
@@ -793,6 +790,33 @@
   [data-theme="claude-light"] .term-pane-kill:hover { background: rgba(220,38,38,.1); }
   [data-theme="claude-light"] .term-sidebar-header { color: var(--accent); border-bottom: 1px solid rgba(0,0,0,.08); }
   [data-theme="claude-light"] .term-group-name { color: var(--accent); }
+
+  /* claude-light: 字体已由主题级 --mono(珊瑚橙=Inter)全站统一;这里只做珊瑚橙内容区的
+     排版增强 —— 放大字号/行距、圆润按钮、亮色下的叠加补正。 */
+  /* 消息历史:助手正文平铺放大,用户消息气泡加大圆角/内边距 */
+  [data-theme="claude-light"] .hist-user {
+    font-size: 15px; line-height: 1.65;
+    border-radius: 12px; padding: 10px 14px;
+  }
+  [data-theme="claude-light"] .hist-asst {
+    font-size: 15px; line-height: 1.65; color: var(--text);
+  }
+  /* 亮色下这几处硬编码白色叠加基本不可见(777 那批补丁漏的),补深色版。
+     mobile-* 的白底由 .dev-page.stream-mode(0,3,0)设定,覆盖需带同前缀抬到 0,4,0 才压得住。 */
+  [data-theme="claude-light"] .hist-turn.hist-agent { border-left-color: rgba(0,0,0,.1); }
+  [data-theme="claude-light"] .hist-agent-tag { background: rgba(0,0,0,.05); }
+  [data-theme="claude-light"] .dev-page.stream-mode .mobile-keys-row { border-bottom-color: rgba(0,0,0,.06); }
+  /* 输入框/快捷键:更圆的角 */
+  [data-theme="claude-light"] .dev-page.stream-mode .mobile-cmd-input { border-radius: 10px; }
+  [data-theme="claude-light"] .dev-page.stream-mode .mobile-key-btn { background: rgba(0,0,0,.06); border-radius: 8px; }
+  [data-theme="claude-light"] .dev-page.stream-mode .mobile-num-sel {
+    background: rgba(0,0,0,.06); border-radius: 8px;
+  }
+  /* 亮色下这些白色叠加(hover/底槽/徽章)在米白背景上不可见,补深色版 */
+  [data-theme="claude-light"] .dev-ctx-item:hover { background: rgba(0,0,0,.05); }
+  [data-theme="claude-light"] .term-group-menu:hover { background: rgba(0,0,0,.06); }
+  [data-theme="claude-light"] .upload-confirm-path { background: rgba(0,0,0,.04); }
+  [data-theme="claude-light"] .term-host-badge.offline { background: rgba(0,0,0,.05); }
 
   /* ── neon-pixel: 霓虹发光 + CRT 扫描线 ── */
   [data-theme="neon-pixel"] .term-sidebar {

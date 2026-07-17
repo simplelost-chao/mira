@@ -432,35 +432,35 @@ function _dragLabel(key, type) {
   const g = _lastGroupPids.find(x => x.pid === key); return g ? g.name : key;
 }
 function _computeDrop(x, y) {
-  _clearDropUI();
   const items = [...document.querySelectorAll('#term-pane-list > .term-toplevel')];
-  if (!items.length) { _drag.target = null; return; }
-  let target = null;
+  if (!items.length) { _clearDropUI(); _drag.target = null; return; }
+  // 读写分离:先只读 rect 算出落点(不碰 DOM),最后统一写 UI —— 避免逐项 读→写→读 触发多次 reflow
+  let target = null, overEl = null, lineItem = null, lineBefore = false;
   for (const it of items) {
     const r = it.getBoundingClientRect();
     if (y < r.top || y > r.bottom) continue;
     const hdr = it.querySelector('[data-drop-key]');
     const hr = hdr.getBoundingClientRect();
-    const overHeader = y >= hr.top && y <= hr.bottom;
     // 合并:源是项目、悬在另一项头部中段、不是自己
-    if (overHeader && _drag.type === 'project' && hdr.dataset.dropKey !== _drag.key) {
+    if (y >= hr.top && y <= hr.bottom && _drag.type === 'project' && hdr.dataset.dropKey !== _drag.key) {
       const hrel = (y - hr.top) / hr.height;
       if (hrel > 0.28 && hrel < 0.72) {
         target = { mode: 'merge', key: hdr.dataset.dropKey, dropType: hdr.dataset.dropType };
-        hdr.classList.add('drag-over');
-        break;
+        overEl = hdr; break;
       }
     }
     // 否则:排序,插到该项前/后
     const before = (y - r.top) / r.height < 0.5;
     target = { mode: 'reorder', beforeKey: before ? it.dataset.key : _nextKey(items, it) };
-    _showDropLine(it, before);
-    break;
+    lineItem = it; lineBefore = before; break;
   }
   if (!target) {
     const last = items[items.length - 1];
-    if (y > last.getBoundingClientRect().bottom) { target = { mode: 'reorder', beforeKey: null }; _showDropLine(last, false); }
+    if (y > last.getBoundingClientRect().bottom) { target = { mode: 'reorder', beforeKey: null }; lineItem = last; lineBefore = false; }
   }
+  _clearDropUI();
+  if (overEl) overEl.classList.add('drag-over');
+  else if (lineItem) _showDropLine(lineItem, lineBefore);
   _drag.target = target;
 }
 function _nextKey(items, it) {
@@ -626,6 +626,7 @@ function toggleFocus(pid) {
 // ── Kill pane ─────────────────────────────────────────────────────────────────
 async function killPane(killEl) {
   const row = killEl.closest('.term-pane-row');
+  if (!row) return;   // 单终端项目走 _killSingle;这里对齐 _killSingle 的判空,防误绑/结构变动时 TypeError
   const target = row.dataset.target;
   if (!target) return;
   const name = row.querySelector('.term-pane-name-text')?.textContent || target;
@@ -666,11 +667,13 @@ async function selectPane(target, cmd) {
     // 详情态:额外显示「返回列表/切换终端」;统计、设置保持可见(手机上也要能进这两个功能)
     document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b) { b.style.display = 'inline-flex'; });
   }
+  // 历史入口:两端统一放 topbar 右上角(icon)。桌面只放历史(返回/切换是移动端专属,桌面列表常驻)
+  var _histBtn = document.getElementById('topbar-hist-btn');
+  if (_histBtn) _histBtn.style.display = 'inline-flex';
 
   // Update title with project name (from group header, not pane label)
   const activeRow = document.querySelector(`.term-pane-row[data-target="${CSS.escape(target)}"], .term-single[data-target="${CSS.escape(target)}"]`);
   const titleEl = document.getElementById('term-detail-title');
-  const pageTitle = document.querySelector('.topbar-page-title');
   if (activeRow) {
     var pid = activeRow.dataset.projectId || activeRow.dataset.group;   // term-single 用 data-group
     var groupEl = pid ? document.querySelector('.term-group-name[data-group="' + CSS.escape(pid) + '"]') ||
@@ -681,10 +684,11 @@ async function selectPane(target, cmd) {
     // Strip path prefix: "node/argus" → "argus"
     name = name.replace(/^.*\//, '');
     if (titleEl) titleEl.textContent = name;
-    if (pageTitle && _isMobile) pageTitle.textContent = name;
-    // 桌面:在 logo「DEV」后显示当前项目名(移动端 page-title 本身已替换为项目名,不重复)
+    // logo 后显示当前项目名,统一走 topbar-project-name(自带 max-width+ellipsis,不撑破窄 topbar)。
+    // 桌面接在「Dev」后带「· 」;移动详情态 Dev(page-title)已被 CSS 藏起省空间,故直接显示项目名、无前缀。
+    // (曾经移动端把项目名塞进 page-title,但 body.detail-locked 又把 page-title 藏了 → 移动端不显示)
     var projName = document.getElementById('topbar-project-name');
-    if (projName) projName.textContent = _isMobile ? '' : ' · ' + name;
+    if (projName) projName.textContent = _isMobile ? name : ' · ' + name;
   }
 
   showTerminal();
@@ -889,7 +893,7 @@ function _renderTokDropdown(dd, data) {
     return '<div class="tok-dropdown-row">' +
       '<div class="tok-dropdown-name" title="'+escHtml(it.name)+'">'+escHtml(it.name)+'</div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+(it.cost/maxCost*100).toFixed(1)+'%;background:var(--accent);border-radius:3px;opacity:.7"></div></div>' +
+        '<div style="height:6px;background:var(--track-bg,rgba(255,255,255,.06));border-radius:3px;overflow:hidden"><div style="height:100%;width:'+(it.cost/maxCost*100).toFixed(1)+'%;background:var(--accent);border-radius:3px;opacity:.7"></div></div>' +
         (totTok ? '<div class="tok-dropdown-bar" style="margin-top:2px" title="'+tip+'">'+segs+'</div>' : '') +
       '</div>' +
       '<div class="tok-dropdown-cost">'+fC(it.cost)+'<div style="font-size:9px;color:var(--muted)">'+fT(totTok)+'</div></div></div>';
@@ -1031,6 +1035,7 @@ function showPlaceholder() {
   try { localStorage.removeItem('mira-dev-target'); } catch(e) {}  // 主动回列表 → 清掉恢复记录
   _currentIsRemote = false;
   if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+  if (_usageRefreshTimer) { clearInterval(_usageRefreshTimer); _usageRefreshTimer = null; }
   window._topbarUsageMode = 'claude';
   var _tbu = document.getElementById('topbar-usage');
   if (_tbu) _tbu.style.display = '';
@@ -1183,24 +1188,95 @@ function _hasPaneTarget(target) {
 
 // ── xterm.js PTY 真终端(100% 复刻;快照拼接链路的替代) ─────────────────────
 var _ptyWs = null, _ptyTerm = null, _ptyFit = null, _snapTimer = null;
+var _fitCorrectTimer = null;   // _ptyFitResize 的 80ms 溢出补正 timer;连续 resize 时 clear 掉旧的
 var _ptyRetryDelay = 2000;
+var _termSwitchSeq = 0;   // 每次连接自增;淡入回调只认最新序号,防快速连切时旧回调误淡入
 
 function _xtermTheme() {
   var cs = getComputedStyle(document.body);
   function v(name, fb) { var x = cs.getPropertyValue(name).trim(); return x || fb; }
-  return { background: v('--bg', '#0d1117'), foreground: v('--text', '#e6edf3'),
-           cursor: v('--accent', '#58a6ff') };
+  var theme = { background: v('--bg', '#0d1117'), foreground: v('--text', '#e6edf3'),
+                cursor: v('--accent', '#58a6ff') };
+  // 各主题在 CSS 里定义了 --ansi-0..15,但之前从没喂给 xterm → 终端一直用 xterm 内置默认
+  // 调色板;浅色主题(珊瑚橙)上 ANSI 白(#e5e5e5)/亮白(#fff)贴着米白背景基本看不清。这里把
+  // 主题调色板接进来。坑:--ansi-N 的值可能是 var(--red) 这类嵌套引用,getPropertyValue 读
+  // 自定义属性只拿到未解析字面量,故用探针元素把 var() 落到真实 color 上再读回解析后的 rgb。
+  var keys = ['black','red','green','yellow','blue','magenta','cyan','white',
+              'brightBlack','brightRed','brightGreen','brightYellow','brightBlue','brightMagenta','brightCyan','brightWhite'];
+  var probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  for (var i = 0; i < 16; i++) {
+    if (!cs.getPropertyValue('--ansi-' + i).trim()) continue;   // 该主题没定义这一格 → 留给 xterm 默认
+    probe.style.color = 'var(--ansi-' + i + ')';
+    var rgb = getComputedStyle(probe).color;
+    if (rgb) theme[keys[i]] = rgb;
+  }
+  document.body.removeChild(probe);
+  return theme;
+}
+
+function _xtermMinContrast() {
+  // claude 等 TUI 假设深底,用写死的 truecolor/高位256 亮色前景;浅底主题(珊瑚橙)上这些字
+  // 贴着米白背景看不清,而 truecolor 绕过 ANSI 调色板改不动(改 --ansi-* 无效)。
+  // minimumContrastRatio 让 xterm 对全色域自动把"对比不足"的前景压到可读,够对比的色不动。
+  // 仅浅底开启(按 --bg 亮度判断),深底返回 1(=不干预原配色)。
+  var bg = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  var probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden';
+  probe.style.color = bg || '#000';
+  document.body.appendChild(probe);
+  var m = getComputedStyle(probe).color.match(/\d+/g);
+  document.body.removeChild(probe);
+  if (!m) return 1;
+  var lum = (0.299 * +m[0] + 0.587 * +m[1] + 0.114 * +m[2]) / 255;
+  return lum > 0.5 ? 7 : 1;
 }
 
 function _refreshXtermTheme() {
   // 换肤实时生效:xterm v5 的 options 是响应式 setter
-  if (_ptyTerm) _ptyTerm.options.theme = _xtermTheme();
+  if (_ptyTerm) {
+    _ptyTerm.options.theme = _xtermTheme();
+    _ptyTerm.options.minimumContrastRatio = _xtermMinContrast();
+    _ptyTerm.refresh(0, _ptyTerm.rows - 1);   // canvas 渲染器需手动重绘才刷新对比度缓存
+  }
 }
 
 function _connectPtyWs(target) {
   _disconnectPtyWs();
   var wrap = document.getElementById('xterm-container');
   if (!wrap) return;
+  // 切换项目/pane 时把终端淡出:随后的 reset + 多次 fit + 溢出补正会反复 resize/重绘,
+  // 全藏在 opacity:0 后,稳定(init 后)再淡入 —— 用户看不到闪烁和瞬时滚动条。
+  var switchSeq = ++_termSwitchSeq;
+  var _revealTerm = function() { if (switchSeq === _termSwitchSeq) wrap.classList.remove('term-switching'); };
+  wrap.classList.add('term-switching');
+  setTimeout(_revealTerm, 1500);   // 兜底:init 迟迟不来也别把终端卡在空白
+  // 幕后连续 fit 到尺寸收敛再淡入:切换初期容器高度还在变(token 栏/输入栏布局未稳),
+  // 固定延时 fit 若落在淡入后会造成可见的校准跳动("闪两下")。改为在 opacity:0 下用 rAF
+  // 反复 fit+溢出补正,直到 cols×rows 连续两帧不变(布局稳)才淡入 —— 布局几帧就稳,比死等快,
+  // 且淡入时尺寸已定死,之后无 fit 跳动。守卫 switchSeq:被新切换取代就停。
+  function _fitThenReveal() {
+    var prev = '', stable = 0, tries = 0;
+    (function step() {
+      if (switchSeq !== _termSwitchSeq || !_ptyFit || !_ptyTerm) return;
+      try { _ptyFit.fit(); } catch (_) {}
+      var over = wrap.scrollWidth - wrap.clientWidth;   // fit 按含 padding 的宽算,会多 1-2 列
+      if (over > 0) {
+        var drop = Math.min(4, Math.ceil(over / (wrap.scrollWidth / _ptyTerm.cols)));
+        if (_ptyTerm.cols - drop > 10) _ptyTerm.resize(_ptyTerm.cols - drop, _ptyTerm.rows);
+      }
+      var overY = wrap.scrollHeight - wrap.clientHeight;   // padding-top 同样骗高 fit,会多算行 → 末行溢出被输入栏盖
+      if (overY > 0 && _ptyTerm.rows > 4) {
+        var dropR = Math.min(3, Math.ceil(overY / (wrap.scrollHeight / _ptyTerm.rows)));
+        _ptyTerm.resize(_ptyTerm.cols, _ptyTerm.rows - dropR);
+      }
+      var dim = _ptyTerm.cols + 'x' + _ptyTerm.rows;
+      if (dim === prev) stable++; else { stable = 0; prev = dim; }
+      if (stable >= 2 || ++tries >= 15) { _ptySendSize(); _revealTerm(); return; }  // 15 帧兜底
+      requestAnimationFrame(step);
+    })();
+  }
   if (!_ptyTerm) {
     _ptyTerm = new Terminal({
       fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
@@ -1208,7 +1284,8 @@ function _connectPtyWs(target) {
       // tmux 客户端本身跑在备用屏,xterm 的 scrollback 永远积累不到内容(实测):
       // 滚动 = 滚轮/触摸事件翻译成转义序列透传给 tmux/claude,由它们原地重绘
       scrollback: 0,
-      theme: _xtermTheme()
+      theme: _xtermTheme(),
+      minimumContrastRatio: _xtermMinContrast()
     });
     _ptyTerm.open(wrap);
     // canvas 渲染器:字形直接画进单元格。iOS Safari 上 DOM 渲染器有亚像素字距缝
@@ -1225,6 +1302,25 @@ function _connectPtyWs(target) {
     _ptyFit = new FitAddon.FitAddon();
     _ptyTerm.loadAddon(_ptyFit);
     window.addEventListener('resize', _ptyFitResize);
+    // 桌面:输入框多行长高等布局变化会压矮终端容器,但只有 window.resize 会触发 fit →
+    // 画布保持旧行数,末行溢出被裁在快捷键栏上方(用户报"快捷键上面有块高度挡住内容")。
+    // 用 ResizeObserver 盯容器高度,变了就防抖补 fit。手机不挂:软键盘引发的容器抖动
+    // 会触发全量重绘吞打字内容(d05f63d 踩过),手机侧靠 visibilitychange/focus 自愈已够。
+    // 盯的是 flex 父 #xterm-wrap,不是 #xterm-container 自身:后者 overflow-x:auto,fit 每次
+    // 多算 1-2 列会瞬时溢出→横滚动条出现,又缩其 contentRect 高→再触发 fit→80ms 补正去溢出
+    // →滚动条消失→高又变→…形成 fit⇄滚动条自激振荡,底部一直闪(用户报的 bug)。父 inset:0
+    // 绝对定位的子滚动条压不到父,父高只随 flex 重排(输入框长高)变,既断环又保留本意。
+    if (!_isMobile && typeof ResizeObserver !== 'undefined') {
+      var _wrapParent = wrap.parentNode;
+      var _wrapFitTimer = 0, _wrapLastH = 0;
+      new ResizeObserver(function(entries) {
+        var h = entries[0].contentRect.height;
+        if (h === _wrapLastH) return;   // 纯宽度变化走 window.resize,不重复 fit
+        _wrapLastH = h;
+        clearTimeout(_wrapFitTimer);
+        _wrapFitTimer = setTimeout(_ptyFitResize, 100);
+      }).observe(_wrapParent);
+    }
     // A(自愈):多端共享一个 tmux 窗口(window-size=latest)时,手机切到后台期间另一
     // 宽端可能把窗口撑宽,推来的宽帧被本端窄 xterm 折成散帧,claude 空闲又不重绘。
     // 一回到前台就重发本端尺寸抢回 latest 并触发重绘 —— 覆盖"没手动滑一下也自己好"。
@@ -1299,18 +1395,15 @@ function _connectPtyWs(target) {
       try { c = JSON.parse(e.data); } catch (_) { return; }
       if (c.type === 'init') {
         _ptyTerm.resize(c.cols, c.rows);
-        _ptyFitResize();   // 两端统一:fit 到自己屏宽并上报(窗口重排,右侧不缺)
-        // 首帧 fit 时字体度量/布局(token 栏、输入栏)可能还没稳定,行数会算多 →
-        // canvas 比容器高半行,末行溢到底部快捷键栏下被盖住。稳定后再 fit 一次校准。
-        setTimeout(_ptyFitResize, 120);
-        setTimeout(_ptyFitResize, 400);
+        _fitThenReveal();   // 幕后 fit 到尺寸收敛(布局稳)再淡入:既不空等,淡入后也无 fit 跳动
       }
       return;
     }
     _ptyTerm.write(new Uint8Array(e.data));
     if (!_snapTimer) _snapTimer = setTimeout(function() {
       _snapTimer = null;
-      if (_currentTarget) _paneSnapshots[_currentTarget] = _xtermSnapshot();
+      // 校验归属:2s 内可能已切 pane(单例终端已 reset 载入新内容),只在仍是本 target 时写快照,防串台
+      if (_currentTarget === target) _paneSnapshots[target] = _xtermSnapshot();
     }, 2000);
   };
   ws.onclose = function() {
@@ -1339,17 +1432,19 @@ function _ptyFitResize() {
   if (!_ptyFit || !_ptyTerm) return;
   try { _ptyFit.fit(); } catch (_) { return; }
   _ptySendSize();
-  // fit 按 clientWidth(含 padding)算列,会多出 1-2 列 → 右缘溢出。画布尺寸要
-  // 下一帧才落地,同帧量不到 —— 延后量实际溢出像素,一次性折算该减几列。
-  setTimeout(function() {
+  // fit 按 clientWidth/Height(含 padding)算行列,会多出 1-2 列 / 半~一行 → 右缘、底部溢出。
+  // 画布尺寸下一帧才落地,同帧量不到 —— 延后量实际溢出像素,横竖各折算该减几列/行。
+  clearTimeout(_fitCorrectTimer);   // 连续 resize(拖窗/键盘抖动)时,旧补正作废,只保留最后一次
+  _fitCorrectTimer = setTimeout(function() {
     var wrap = document.getElementById('xterm-container');
     if (!wrap || !_ptyTerm) return;
-    var over = wrap.scrollWidth - wrap.clientWidth;
-    if (over <= 0) return;
-    var cw = wrap.scrollWidth / _ptyTerm.cols;   // 实测单元格宽
-    var drop = Math.min(4, Math.ceil(over / cw));
-    if (_ptyTerm.cols - drop > 10) {
-      _ptyTerm.resize(_ptyTerm.cols - drop, _ptyTerm.rows);
+    var cols = _ptyTerm.cols, rows = _ptyTerm.rows;
+    var overX = wrap.scrollWidth - wrap.clientWidth;
+    if (overX > 0) cols = Math.max(11, cols - Math.min(4, Math.ceil(overX / (wrap.scrollWidth / _ptyTerm.cols))));
+    var overY = wrap.scrollHeight - wrap.clientHeight;   // padding-top 骗高 fit → 末行溢出被输入栏盖
+    if (overY > 0) rows = Math.max(4, rows - Math.min(3, Math.ceil(overY / (wrap.scrollHeight / _ptyTerm.rows))));
+    if (cols !== _ptyTerm.cols || rows !== _ptyTerm.rows) {
+      _ptyTerm.resize(cols, rows);
       _ptySendSize();
     }
   }, 80);
@@ -1367,6 +1462,7 @@ function _xtermSnapshot() {
 }
 
 function _disconnectPtyWs() {
+  if (_snapTimer) { clearTimeout(_snapTimer); _snapTimer = null; }   // 排队的快照定时器随断连一并取消
   if (_ptyWs) {
     var w = _ptyWs; _ptyWs = null;
     try { w.onclose = null; w.close(); } catch (_) {}
@@ -1396,24 +1492,9 @@ function _sendOk() {
 // 智能 ↵:画面输入行上有幽灵建议(暗色文字)时,自动 Tab 采纳再回车发出;
 // 否则发裸回车(选菜单)。实测规则:裸回车对幽灵建议无效,必须 Tab 先采纳。
 function _smartEnter() {
-  var ghost = false;
-  try {
-    var lines = (_sbLastData || '').split('\n');
-    for (var i = lines.length - 1; i >= 0; i--) {
-      if (lines[i].indexOf('❯') === -1) continue;
-      var m = lines[i].match(/❯.*?\x1b\[2m\s*(\S[^\x1b]*)/);
-      // 排除通用占位符(Try "...")——那不是可采纳的建议,Tab 它可能误触别的功能
-      ghost = !!(m && !/^Try\b/.test(m[1]));
-      break;   // 只看最后一个 ❯ 行(= claude 的输入框)
-    }
-  } catch (e) {}
-  if (ghost) {
-    _sendToTerminal('\t');
-    setTimeout(function() { _sendToTerminal('\n'); }, 600);   // 等 claude 处理完采纳
-    _showToast('已采纳建议并发送', 1500);
-  } else {
-    _sendToTerminal('\n');
-  }
+  // 曾想检测灰色幽灵补全、有则自动 Tab 采纳再发送,但依赖的旧快照链路已退役、长期失效。
+  // 简化为普通回车 —— 要采纳 claude 的灰色建议,请按快捷键栏里的 Tab。
+  _sendToTerminal('\n');
 }
 function _clearInput() {
   _sendToTerminal('\x15');  // Ctrl+U: clear terminal input line
@@ -1674,15 +1755,17 @@ function _tabScrollRAF() {
 function _updateTabPerspective() {
   var overlay = document.getElementById('tab-switcher');
   if (!overlay) return;
-  var viewH = window.innerHeight;
-  overlay.querySelectorAll('.tab-card').forEach(function(card) {
-    var rect = card.getBoundingClientRect();
-    var center = rect.top + rect.height / 2;
-    var ratio = center / viewH;
-    var angle = 4 - ratio * 8;
-    angle = Math.max(-4, Math.min(4, angle));
-    card.style.transform = 'perspective(800px) rotateX(' + angle.toFixed(1) + 'deg)';
-  });
+  var viewH = (window.visualViewport && window.visualViewport.height) || window.innerHeight;  // 软键盘弹起时用可视视口
+  var cards = overlay.querySelectorAll('.tab-card');
+  // 读写分离:先一次性读完所有 rect,再统一写 transform,避免逐卡 读→写→读 的 layout thrashing
+  var angles = [];
+  for (var i = 0; i < cards.length; i++) {
+    var rect = cards[i].getBoundingClientRect();
+    angles[i] = Math.max(-4, Math.min(4, 4 - (rect.top + rect.height / 2) / viewH * 8));
+  }
+  for (var j = 0; j < cards.length; j++) {
+    cards[j].style.transform = 'perspective(800px) rotateX(' + angles[j].toFixed(1) + 'deg)';
+  }
 }
 
 function _closeTabSwitcher() {
@@ -2106,6 +2189,7 @@ async function initSub() {
     if (document.hidden) {
       clearInterval(_subInterval); _subInterval = null;
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+      if (_usageRefreshTimer) { clearInterval(_usageRefreshTimer); _usageRefreshTimer = null; }
       _disconnectPtyWs();
     } else {
       loadSubProjects();
@@ -2150,10 +2234,12 @@ async function selectSubProject(pid) {
     document.querySelectorAll('.topbar .topbar-btn').forEach(function(b){ b.style.display = 'none'; });
     document.querySelectorAll('.topbar .topbar-detail-btn').forEach(function(b){ b.style.display = 'inline-flex'; });
   }
+  var _histBtn = document.getElementById('topbar-hist-btn');   // 桌面 sub 项目同样在右上角显示历史 icon
+  if (_histBtn) _histBtn.style.display = 'inline-flex';
   var row = document.querySelector('.term-pane-row[data-pid="' + CSS.escape(pid) + '"]');
   var name = row ? ((row.querySelector('.term-pane-name-text') || {}).textContent || pid) : pid;
   var titleEl = document.getElementById('term-detail-title'); if (titleEl) titleEl.textContent = name;
-  var pageTitle = document.querySelector('.topbar-page-title'); if (pageTitle && _isMobile) pageTitle.textContent = name;
+  var pn = document.getElementById('topbar-project-name'); if (pn) pn.textContent = _isMobile ? name : ' · ' + name;
   document.getElementById('term-placeholder').style.display = 'none';
   var res = await fetch('/api/sub/project/' + encodeURIComponent(pid) + '/session', { method: 'POST', headers: _authHeaders() }).catch(function(){ return null; });
   if (!res || !res.ok) { _subTermError(res && res.status === 403 ? '无权访问该项目' : '会话启动失败,稍后重试'); return; }
@@ -2265,6 +2351,7 @@ async function init() {
     if (document.hidden) {
       clearInterval(_panesInterval); _panesInterval = null;
       if (_tokenRefreshTimer) { clearInterval(_tokenRefreshTimer); _tokenRefreshTimer = null; }
+      if (_usageRefreshTimer) { clearInterval(_usageRefreshTimer); _usageRefreshTimer = null; }
       // 后台主动断开终端 WS:避免 iOS 掐断时触发 onclose 的重连/回列表逻辑
       _disconnectPtyWs();
     } else {

@@ -102,8 +102,7 @@ def render_dev_page() -> str:
     </div>
     <!-- Desktop toolbar (above iframe, visible when pane selected) -->
     <div class="term-toolbar" id="term-toolbar">
-      <!-- 上传/粘贴已统一到输入框左侧(桌面开"输入框模式"即有);顶部工具栏只保留状态显示 -->
-      <button class="stats-btn" onclick="openPaneHistory()" title="完整会话历史(不受终端擦屏影响)" style="background:none;border:1px solid var(--border);color:var(--sub);border-radius:6px;padding:3px 12px;font-family:inherit;font-size:11px;cursor:pointer">历史</button>
+      <!-- 上传/粘贴已统一到输入框左侧(桌面开"输入框模式"即有);历史入口已移到 topbar 右上角 icon;工具栏只保留状态显示 -->
       <span class="toolbar-spacer"></span>
       <span class="desktop-ws-dot err" id="desktop-ws-dot" title="终端连接中"></span>
       <span class="toolbar-tokens" id="toolbar-tokens"></span>
@@ -125,7 +124,7 @@ def render_dev_page() -> str:
         </label>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn ok-btn" onclick="_sendOk()" title="确认">OK</button>
-        <button class="mobile-key-btn" onclick="_smartEnter()" title="智能回车:有幽灵建议时自动采纳并发送,否则发裸回车(选菜单)">↵</button>
+        <button class="mobile-key-btn" onclick="_smartEnter()" title="回车(确认/选菜单);采纳灰色建议请按 Tab">↵</button>
         <span class="keys-sep"></span>
         <button class="mobile-key-btn" data-key="Ctrl+C" title="退出会话:点一下=打断/优雅退出;5秒内再点一下=强制退出(必退)">⌃C</button>
         <button class="mobile-key-btn" data-key="Ctrl+O" title="展开/收起后台代理与详细输出">⌃O</button>
