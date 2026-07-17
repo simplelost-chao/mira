@@ -90,7 +90,8 @@
 - WS token 走 query string,会进 cloudflared/反代日志(admin token = 永久密码哈希)。根治需改一次性 ticket,动静较大。
 - `save_project_config` 的 raw_yaml 无 schema 校验(admin-only,写恶意 restart_cmd 后触发重启=RCE,属已鉴权后提权)。
 - `_run_shell` 黑名单可绕过(admin-only 聊天工具,别当安全边界)。
-- `/tmp/mira-uploads` 世界可读、分享 token 无过期。
+- `/tmp/mira-uploads`:已加后台定期清理(每小时清超 24h 的文件,`_cleanup_uploads_loop`),缓解了"只增不清"堆留;但**目录/文件仍是默认权限(世界可读)**,若要更严需在写入时 chmod 0600/目录 0700。
+- 分享 token 无过期(链接外泄则持续可读)。
 
 ---
 
