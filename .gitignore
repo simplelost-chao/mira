@@ -8,7 +8,7 @@ dist/
 vibe.yaml
 .DS_Store
 
-docs/
+docs/superpowers/
 .gstack/
 .playwright-mcp/
 *.png

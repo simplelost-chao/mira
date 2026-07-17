@@ -8,7 +8,7 @@ A self-hosted project management dashboard that aggregates git status, running s
 
 - **Project overview** — git branch, recent commits, open issues, service health; cards sorted by most recent Claude session activity
 - **System architecture** — LLM-generated architecture diagrams and module maps
-- **Interactive terminal** — full PTY terminal via ttyd + tmux; panes grouped by project, kill-pane button, new-terminal dialog with project picker
+- **Interactive terminal** — full PTY terminal via xterm.js + a Python PTY over WebSocket, backed by tmux; panes grouped by project, kill-pane button, new-terminal dialog with project picker
 - **Claude / Codex detection** — auto-identifies Claude Code and OpenAI Codex terminals via tmux title icons and terminal output inspection; sidebar shows tool badge (purple **C** / green **X**)
 - **Per-session token tracking** — toolbar displays current session's input/output/cache tokens and estimated cost, refreshed in place without flicker; adapts fields for Claude (cache_read) vs Codex (cached_input)
 - **Sub-account audit** — stats tab with per-account sub-tabs: cost/token/message totals, per-project breakdown, and a paginated prompts list (sessions attributed by time inference)
@@ -32,24 +32,22 @@ A self-hosted project management dashboard that aggregates git status, running s
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- [tmux](https://github.com/tmux/tmux) — required for the dev terminal feature
-- [ttyd](https://github.com/tsl0922/ttyd) — required for the interactive PTY terminal
+- [tmux](https://github.com/tmux/tmux) — required for the dev terminal feature (the terminal is served directly via xterm.js + a Python PTY over WebSocket; ttyd is no longer used)
 
 Install dependencies:
 
 ```bash
 # macOS
-brew install tmux ttyd
+brew install tmux
 
 # Ubuntu / Debian
 sudo apt install tmux
-snap install ttyd --classic   # or build from source: github.com/tsl0922/ttyd
 
 # Arch
-sudo pacman -S tmux ttyd
+sudo pacman -S tmux
 ```
 
-Mira will start without tmux/ttyd, but the terminal tab will be non-functional.
+Mira will start without tmux, but the terminal tab will be non-functional.
 
 ---
 
@@ -257,7 +255,7 @@ vibe summarize                    # Generate AI summaries for all discovered pro
 
 - **Backend:** Python / FastAPI / uvicorn
 - **Frontend:** Vanilla JS + CSS (no build step)
-- **Terminal:** ttyd (PTY) + tmux + WebSocket streaming
+- **Terminal:** xterm.js + Python PTY + tmux + WebSocket streaming
 - **Data:** YAML config + SQLite cache
 - **AI summaries:** OpenRouter / DeepSeek / Kimi (all optional)
 
