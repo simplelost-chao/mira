@@ -936,18 +936,18 @@ def share_design_doc(request: Request, project_id: str, filename: str):
         raise HTTPException(status_code=404, detail="Project not found")
     if not any(d.get("filename") == filename for d in proj.get("design_docs", [])):
         raise HTTPException(status_code=404, detail="Design doc not found")
-    cfg_path, data = _read_vibe_yaml()
-    shares = data.get("doc_shares", [])
-    existing = next((s for s in shares
-                     if s.get("project") == project_id and s.get("filename") == filename), None)
-    if existing:
-        return {"token": existing["token"]}
     token = secrets.token_urlsafe(16)
-    shares.append({"token": token, "project": project_id,
-                   "filename": filename, "created_at": int(time.time())})
-    data["doc_shares"] = shares
-    _write_vibe_yaml(cfg_path, data)
-    return {"token": token}
+    def _do(data):
+        shares = data.get("doc_shares", [])
+        existing = next((s for s in shares
+                         if s.get("project") == project_id and s.get("filename") == filename), None)
+        if existing:
+            return existing["token"]
+        shares.append({"token": token, "project": project_id,
+                       "filename": filename, "created_at": int(time.time())})
+        data["doc_shares"] = shares
+        return token
+    return {"token": _mutate_vibe_yaml(_do)}
 
 
 @api.delete("/api/projects/{project_id}/design-docs/{filename}/share")
@@ -955,14 +955,14 @@ def unshare_design_doc(request: Request, project_id: str, filename: str):
     """撤销某个设计文档的分享;公开链接立即失效。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    cfg_path, data = _read_vibe_yaml()
-    shares = data.get("doc_shares", [])
-    new_list = [s for s in shares
-                if not (s.get("project") == project_id and s.get("filename") == filename)]
-    if len(new_list) == len(shares):
-        raise HTTPException(status_code=404, detail="该文档未分享")
-    data["doc_shares"] = new_list
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        shares = data.get("doc_shares", [])
+        new_list = [s for s in shares
+                    if not (s.get("project") == project_id and s.get("filename") == filename)]
+        if len(new_list) == len(shares):
+            raise HTTPException(status_code=404, detail="该文档未分享")
+        data["doc_shares"] = new_list
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -1089,12 +1089,12 @@ def github_trending(period: str = "weekly"):
 
 def _remove_deployment_entry(project: str) -> None:
     """从 vibe.yaml 删掉指定项目(按 project 名/folder 名)的部署条目;没有则无操作。"""
-    cfg_path, data = _read_vibe_yaml()
-    deployments = data.get("deployments", [])
-    new_list = [d for d in deployments if d.get("project") != project]
-    if len(new_list) != len(deployments):
-        data["deployments"] = new_list
-        _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        deployments = data.get("deployments", [])
+        new_list = [d for d in deployments if d.get("project") != project]
+        if len(new_list) != len(deployments):
+            data["deployments"] = new_list
+    _mutate_vibe_yaml(_do)
 
 
 def _remove_project_from_cache(path: str) -> None:
@@ -2134,12 +2134,12 @@ def add_key(request: Request, body: dict):
     category = (body.get("category") or "other").strip()
     note = (body.get("note") or "").strip()
     key_id = uuid.uuid4().hex[:8]
-    cfg_path, data = _read_vibe_yaml()
-    keys = data.get("keys", [])
     env_name = (body.get("env_name") or "").strip()
-    keys.append({"id": key_id, "name": name, "category": category, "key": key_val, "note": note, "env_name": env_name})
-    data["keys"] = keys
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        keys = data.get("keys", [])
+        keys.append({"id": key_id, "name": name, "category": category, "key": key_val, "note": note, "env_name": env_name})
+        data["keys"] = keys
+    _mutate_vibe_yaml(_do)
     return {"ok": True, "id": key_id}
 
 
@@ -2148,29 +2148,29 @@ def update_key(request: Request, key_id: str, body: dict):
     """更新密钥。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    cfg_path, data = _read_vibe_yaml()
-    keys = data.get("keys", [])
-    target = None
-    for k in keys:
-        if k.get("id") == key_id:
-            target = k
-            break
-    if not target:
-        raise HTTPException(status_code=404, detail="未找到该密钥")
-    if "name" in body:
-        target["name"] = (body["name"] or "").strip()
-    if "category" in body:
-        target["category"] = (body["category"] or "other").strip()
-    if "key" in body:
-        v = (body["key"] or "").strip()
-        if v and not v.endswith("****"):
-            target["key"] = v
-    if "note" in body:
-        target["note"] = (body["note"] or "").strip()
-    if "env_name" in body:
-        target["env_name"] = (body["env_name"] or "").strip()
-    data["keys"] = keys
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        keys = data.get("keys", [])
+        target = None
+        for k in keys:
+            if k.get("id") == key_id:
+                target = k
+                break
+        if not target:
+            raise HTTPException(status_code=404, detail="未找到该密钥")
+        if "name" in body:
+            target["name"] = (body["name"] or "").strip()
+        if "category" in body:
+            target["category"] = (body["category"] or "other").strip()
+        if "key" in body:
+            v = (body["key"] or "").strip()
+            if v and not v.endswith("****"):
+                target["key"] = v
+        if "note" in body:
+            target["note"] = (body["note"] or "").strip()
+        if "env_name" in body:
+            target["env_name"] = (body["env_name"] or "").strip()
+        data["keys"] = keys
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -2179,13 +2179,13 @@ def delete_key(request: Request, key_id: str):
     """删除密钥。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    cfg_path, data = _read_vibe_yaml()
-    keys = data.get("keys", [])
-    new_keys = [k for k in keys if k.get("id") != key_id]
-    if len(new_keys) == len(keys):
-        raise HTTPException(status_code=404, detail="未找到该密钥")
-    data["keys"] = new_keys
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        keys = data.get("keys", [])
+        new_keys = [k for k in keys if k.get("id") != key_id]
+        if len(new_keys) == len(keys):
+            raise HTTPException(status_code=404, detail="未找到该密钥")
+        data["keys"] = new_keys
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -2218,27 +2218,27 @@ def add_deployment(request: Request, body: dict):
     project = (body.get("project") or "").strip()
     if not project:
         raise HTTPException(status_code=400, detail="project 为必填项")
-    cfg_path, data = _read_vibe_yaml()
-    deployments = data.get("deployments", [])
-    if any(d.get("project") == project for d in deployments):
-        raise HTTPException(status_code=400, detail="该项目已存在部署条目")
-    from .models import Deployment
-    from pydantic import ValidationError
-    try:
-        model = Deployment(
-            project=project,
-            ports=body.get("ports") or [],
-            depends_on=body.get("depends_on") or [],
-            domain=(body.get("domain") or "").strip() or None,
-            deploy=body.get("deploy") or None,
-            notes=body.get("notes") or "",
-        )
-    except ValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    entry = model.model_dump()
-    deployments.append(entry)
-    data["deployments"] = deployments
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        deployments = data.get("deployments", [])
+        if any(d.get("project") == project for d in deployments):
+            raise HTTPException(status_code=400, detail="该项目已存在部署条目")
+        from .models import Deployment
+        from pydantic import ValidationError
+        try:
+            model = Deployment(
+                project=project,
+                ports=body.get("ports") or [],
+                depends_on=body.get("depends_on") or [],
+                domain=(body.get("domain") or "").strip() or None,
+                deploy=body.get("deploy") or None,
+                notes=body.get("notes") or "",
+            )
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        entry = model.model_dump()
+        deployments.append(entry)
+        data["deployments"] = deployments
+    _mutate_vibe_yaml(_do)
     return {"ok": True, "project": project}
 
 
@@ -2247,26 +2247,26 @@ def update_deployment(request: Request, project: str, body: dict):
     """更新指定项目的部署条目。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    cfg_path, data = _read_vibe_yaml()
-    deployments = data.get("deployments", [])
-    target = next((d for d in deployments if d.get("project") == project), None)
-    if not target:
-        raise HTTPException(status_code=404, detail="未找到该部署条目")
-    if "ports" in body:
-        try:
-            target["ports"] = [int(p) for p in (body["ports"] or [])]
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="ports 必须是整数列表")
-    if "depends_on" in body:
-        target["depends_on"] = body["depends_on"]
-    if "deploy" in body:
-        target["deploy"] = body["deploy"]
-    if "domain" in body:
-        target["domain"] = (body["domain"] or "").strip() or None
-    if "notes" in body:
-        target["notes"] = body["notes"] or ""
-    data["deployments"] = deployments
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        deployments = data.get("deployments", [])
+        target = next((d for d in deployments if d.get("project") == project), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="未找到该部署条目")
+        if "ports" in body:
+            try:
+                target["ports"] = [int(p) for p in (body["ports"] or [])]
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="ports 必须是整数列表")
+        if "depends_on" in body:
+            target["depends_on"] = body["depends_on"]
+        if "deploy" in body:
+            target["deploy"] = body["deploy"]
+        if "domain" in body:
+            target["domain"] = (body["domain"] or "").strip() or None
+        if "notes" in body:
+            target["notes"] = body["notes"] or ""
+        data["deployments"] = deployments
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -2275,13 +2275,13 @@ def delete_deployment(request: Request, project: str):
     """删除指定项目的部署条目。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    cfg_path, data = _read_vibe_yaml()
-    deployments = data.get("deployments", [])
-    new_list = [d for d in deployments if d.get("project") != project]
-    if len(new_list) == len(deployments):
-        raise HTTPException(status_code=404, detail="未找到该部署条目")
-    data["deployments"] = new_list
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        deployments = data.get("deployments", [])
+        new_list = [d for d in deployments if d.get("project") != project]
+        if len(new_list) == len(deployments):
+            raise HTTPException(status_code=404, detail="未找到该部署条目")
+        data["deployments"] = new_list
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -2562,12 +2562,12 @@ def save_system_lists(request: Request, body: dict):
     """保存扫描目录和排除列表到 vibe.yaml。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    cfg_path, data = _read_vibe_yaml()
-    if "scan_dirs" in body:
-        data["scan_dirs"] = body["scan_dirs"]
-    if "exclude" in body:
-        data["exclude"] = body["exclude"]
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        if "scan_dirs" in body:
+            data["scan_dirs"] = body["scan_dirs"]
+        if "exclude" in body:
+            data["exclude"] = body["exclude"]
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -2591,30 +2591,25 @@ def get_settings(request: Request):
 def save_settings(request: Request, body: dict):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    import yaml
-    from pathlib import Path
-    cfg_path = Path(__file__).parent.parent / "vibe.yaml"
-    data = {}
-    if cfg_path.exists():
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    for k in _SETTINGS_KEYS:
-        if k in body:
-            v = (body[k] or "").strip()
-            if v and not v.endswith("****"):   # real value → save
-                data[k] = v
-            elif v == "":   # empty → delete key
-                data.pop(k, None)
-    # admin_password: save if provided and not placeholder
-    if "admin_password" in body:
-        v = (body["admin_password"] or "").strip()
-        if v and v != "****":
-            data["admin_password"] = v
-    # notification_sound
-    if "notification_sound" in body:
-        v = (body["notification_sound"] or "").strip()
-        if v:
-            data["notification_sound"] = v
-    _write_vibe_yaml(cfg_path, data)   # 统一写:刷新缓存 + 持写锁 + invalidate_config_cache
+    def _do(data):
+        for k in _SETTINGS_KEYS:
+            if k in body:
+                v = (body[k] or "").strip()
+                if v and not v.endswith("****"):   # real value → save
+                    data[k] = v
+                elif v == "":   # empty → delete key
+                    data.pop(k, None)
+        # admin_password: save if provided and not placeholder
+        if "admin_password" in body:
+            v = (body["admin_password"] or "").strip()
+            if v and v != "****":
+                data["admin_password"] = v
+        # notification_sound
+        if "notification_sound" in body:
+            v = (body["notification_sound"] or "").strip()
+            if v:
+                data["notification_sound"] = v
+    _mutate_vibe_yaml(_do)   # 统一写:刷新缓存 + 持写锁 + invalidate_config_cache
     # invalidate balance cache with fresh config
     from .balance import fetch_all_balances
     from .config import load_global_config
@@ -2681,23 +2676,19 @@ def add_remote_host_endpoint(request: Request, body: dict):
         raise HTTPException(status_code=400, detail="URL 必须指向私有网络或 Tailscale 地址")
     # 密码只存哈希，不存明文
     token_hash = hashlib.sha256(password.encode()).hexdigest() if password else ""
-    # 写入 vibe.yaml
-    import yaml
-    cfg_path = Path(__file__).parent.parent / "vibe.yaml"
-    data = {}
-    if cfg_path.exists():
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    remote_hosts = data.get("remote_hosts", [])
-    # 去重：同 alias 则覆盖
-    remote_hosts = [h for h in remote_hosts if h.get("alias") != alias]
     entry = {"alias": alias, "url": url}
     if token_hash:
         entry["admin_password_hash"] = token_hash
     # 清理旧的明文密码字段（如果存在）
     entry.pop("admin_password", None)
-    remote_hosts.append(entry)
-    data["remote_hosts"] = remote_hosts
-    _write_vibe_yaml(cfg_path, data)
+    # 写入 vibe.yaml
+    def _do(data):
+        remote_hosts = data.get("remote_hosts", [])
+        # 去重：同 alias 则覆盖
+        remote_hosts = [h for h in remote_hosts if h.get("alias") != alias]
+        remote_hosts.append(entry)
+        data["remote_hosts"] = remote_hosts
+    _mutate_vibe_yaml(_do)
     # 热加载到运行时
     existing = _get_remote_host(alias)
     if existing:
@@ -2715,17 +2706,13 @@ def remove_remote_host_endpoint(request: Request, alias: str):
     """删除远程主机��置。"""
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
-    import yaml
-    cfg_path = Path(__file__).parent.parent / "vibe.yaml"
-    data = {}
-    if cfg_path.exists():
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    remote_hosts = data.get("remote_hosts", [])
-    new_hosts = [h for h in remote_hosts if h.get("alias") != alias]
-    if len(new_hosts) == len(remote_hosts):
-        raise HTTPException(status_code=404, detail="未找到该主机")
-    data["remote_hosts"] = new_hosts
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        remote_hosts = data.get("remote_hosts", [])
+        new_hosts = [h for h in remote_hosts if h.get("alias") != alias]
+        if len(new_hosts) == len(remote_hosts):
+            raise HTTPException(status_code=404, detail="未找到该主机")
+        data["remote_hosts"] = new_hosts
+    _mutate_vibe_yaml(_do)
     # 从���行时移��
     for i, h in enumerate(_remote_hosts):
         if h.alias == alias:
@@ -3027,9 +3014,9 @@ def set_dev_order(request: Request, body: dict):
     order = body.get("order")
     if not isinstance(order, list):
         raise HTTPException(status_code=400, detail="order 必须是列表")
-    cfg_path, data = _read_vibe_yaml()
-    data["dev_order"] = [str(x) for x in order]
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        data["dev_order"] = [str(x) for x in order]
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -3042,24 +3029,25 @@ def merge_dev_groups(request: Request, body: dict):
     target = (body.get("target") or "").strip()
     if not source or not target or source == target:
         raise HTTPException(status_code=400, detail="source/target 无效")
-    cfg_path, data = _read_vibe_yaml()
-    groups = data.get("dev_groups", [])
-    # 先把 source 从它当前所在文件夹移除(支持跨文件夹拖拽)
-    for g in groups:
-        if source in g.get("projects", []):
-            g["projects"].remove(source)
-    tgt = next((g for g in groups if target in g.get("projects", [])), None)
-    if tgt:
-        if source not in tgt["projects"]:
-            tgt["projects"].append(source)
-    else:
-        groups.append({"id": secrets.token_urlsafe(8),
-                       "name": (body.get("name") or "新分组").strip(),
-                       "projects": [target, source]})
-    # 解散只剩 ≤1 个项目的空壳文件夹
-    groups = [g for g in groups if len(g.get("projects", [])) >= 2]
-    data["dev_groups"] = groups
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        groups = data.get("dev_groups", [])
+        # 先把 source 从它当前所在文件夹移除(支持跨文件夹拖拽)
+        for g in groups:
+            if source in g.get("projects", []):
+                g["projects"].remove(source)
+        tgt = next((g for g in groups if target in g.get("projects", [])), None)
+        if tgt:
+            if source not in tgt["projects"]:
+                tgt["projects"].append(source)
+        else:
+            groups.append({"id": secrets.token_urlsafe(8),
+                           "name": (body.get("name") or "新分组").strip(),
+                           "projects": [target, source]})
+        # 解散只剩 ≤1 个项目的空壳文件夹
+        groups = [g for g in groups if len(g.get("projects", [])) >= 2]
+        data["dev_groups"] = groups
+        return groups
+    groups = _mutate_vibe_yaml(_do)
     return {"ok": True, "groups": groups}
 
 
@@ -3069,14 +3057,15 @@ def unmerge_dev_group(request: Request, body: dict):
     if not _is_admin(request):
         raise HTTPException(status_code=401, detail="需要管理员权限")
     project = (body.get("project") or "").strip()
-    cfg_path, data = _read_vibe_yaml()
-    groups = data.get("dev_groups", [])
-    for g in groups:
-        if project in g.get("projects", []):
-            g["projects"].remove(project)
-    groups = [g for g in groups if len(g.get("projects", [])) >= 2]
-    data["dev_groups"] = groups
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        groups = data.get("dev_groups", [])
+        for g in groups:
+            if project in g.get("projects", []):
+                g["projects"].remove(project)
+        groups = [g for g in groups if len(g.get("projects", [])) >= 2]
+        data["dev_groups"] = groups
+        return groups
+    groups = _mutate_vibe_yaml(_do)
     return {"ok": True, "groups": groups}
 
 
@@ -3089,14 +3078,14 @@ def rename_dev_group(request: Request, body: dict):
     name = (body.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name 必填")
-    cfg_path, data = _read_vibe_yaml()
-    groups = data.get("dev_groups", [])
-    g = next((g for g in groups if g.get("id") == gid), None)
-    if not g:
-        raise HTTPException(status_code=404, detail="分组不存在")
-    g["name"] = name
-    data["dev_groups"] = groups
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        groups = data.get("dev_groups", [])
+        g = next((g for g in groups if g.get("id") == gid), None)
+        if not g:
+            raise HTTPException(status_code=404, detail="分组不存在")
+        g["name"] = name
+        data["dev_groups"] = groups
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -3109,14 +3098,14 @@ def set_dev_project_name(request: Request, body: dict):
     name = (body.get("name") or "").strip()
     if not pid:
         raise HTTPException(status_code=400, detail="project_id 必填")
-    cfg_path, data = _read_vibe_yaml()
-    names = data.get("dev_project_names", {})
-    if name:
-        names[pid] = name
-    else:
-        names.pop(pid, None)
-    data["dev_project_names"] = names
-    _write_vibe_yaml(cfg_path, data)
+    def _do(data):
+        names = data.get("dev_project_names", {})
+        if name:
+            names[pid] = name
+        else:
+            names.pop(pid, None)
+        data["dev_project_names"] = names
+    _mutate_vibe_yaml(_do)
     return {"ok": True}
 
 
@@ -3716,7 +3705,10 @@ def feishu_login(org: str = ""):
         return HTMLResponse(_feishu_org_picker_html(apps), headers=_NC)
     app = _feishu_app_by_key(org) if org else apps[0]
     state = secrets.token_urlsafe(16)
-    _feishu_states[state] = (time.time() + 600, app["key"])
+    _now = time.time()
+    for _s in [k for k, v in _feishu_states.items() if v[0] < _now]:   # 顺手清过期 state,防未完成登录的条目累积
+        _feishu_states.pop(_s, None)
+    _feishu_states[state] = (_now + 600, app["key"])
     return RedirectResponse(build_authorize_url(app, state))
 
 
@@ -3738,26 +3730,28 @@ def feishu_callback(code: str = "", state: str = ""):
     open_id = user.get("open_id")
     if not open_id:
         return RedirectResponse("/dev?sub_error=nouser")
-    cfg_path, data = _read_vibe_yaml()
-    accounts_list = data.get("accounts", [])
-    acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
-    if acc is None:
-        # 陌生人:建为 pending、零权限,等 owner 后台批准
-        accounts_list.append({
-            "feishu_open_id": open_id, "name": user.get("name", ""),
-            "avatar": user.get("avatar_url", ""), "status": "pending",
-            "projects": [], "created_at": int(time.time()),
-        })
+    def _do(data):
+        accounts_list = data.get("accounts", [])
+        acc = next((a for a in accounts_list if a.get("feishu_open_id") == open_id), None)
+        if acc is None:
+            # 陌生人:建为 pending、零权限,等 owner 后台批准
+            accounts_list.append({
+                "feishu_open_id": open_id, "name": user.get("name", ""),
+                "avatar": user.get("avatar_url", ""), "status": "pending",
+                "projects": [], "created_at": int(time.time()),
+            })
+            data["accounts"] = accounts_list
+            return None
+        # 已有账号:刷新姓名/头像
+        acc["name"] = user.get("name", acc.get("name", ""))
+        acc["avatar"] = user.get("avatar_url", acc.get("avatar", ""))
         data["accounts"] = accounts_list
-        _write_vibe_yaml(cfg_path, data)
+        return acc.get("status")
+    status = _mutate_vibe_yaml(_do)
+    if status is None:
         return RedirectResponse("/dev?sub_status=pending")
-    # 已有账号:刷新姓名/头像
-    acc["name"] = user.get("name", acc.get("name", ""))
-    acc["avatar"] = user.get("avatar_url", acc.get("avatar", ""))
-    data["accounts"] = accounts_list
-    _write_vibe_yaml(cfg_path, data)
-    if acc.get("status") != "active":
-        return RedirectResponse("/dev?sub_status=" + (acc.get("status") or "pending"))
+    if status != "active":
+        return RedirectResponse("/dev?sub_status=" + (status or "pending"))
     token = new_session(open_id)
     return RedirectResponse(f"/dev?sub_token={token}")
 
@@ -4000,6 +3994,12 @@ def _spawn_pty_attach(viewer: str, cols: int, rows: int):
     return master, proc
 
 
+# 本地 PTY 并发连接护栏:挡住重连风暴无界建 tmux 会话+子进程(耗尽默认线程池)。
+# 远程代理连接不占本地资源,不计入。上限宽松(正常几个),仅为防失控。
+_PTY_MAX_CONN = 24
+_pty_active_conns = 0
+
+
 @api.websocket("/ws/terminal/{target:path}/pty")
 async def terminal_pty_ws(ws: WebSocket, target: str):
     """真终端直连:每条连接一个独立 viewer 分组会话 + PTY attach,字节原样转发。
@@ -4011,9 +4011,12 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
     expected = _admin_token()
     authed = (expected is None) or (bool(ws_token) and hmac.compare_digest(ws_token, expected))
     if not authed:
-        from vibe.accounts import session_open_id
+        from vibe.accounts import session_open_id, find_account, account_can_access_project
         oid = session_open_id(ws_token)
-        if not (oid and _sub_target_project(oid, target)):
+        _pid = _sub_target_project(oid, target) if oid else None
+        _, _vy = _read_vibe_yaml()
+        _acc = find_account(_vy.get("accounts", []), oid) if oid else None
+        if not (_pid and account_can_access_project(_acc, _pid)):   # 授权撤销后旧 pane 的可写终端也拦掉
             await ws.close(code=1008, reason="Unauthorized")
             return
     await ws.accept()
@@ -4058,6 +4061,10 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                 pass
         return
 
+    global _pty_active_conns
+    if _pty_active_conns >= _PTY_MAX_CONN:
+        await ws.close(code=1013, reason="Too many terminal connections")
+        return
     import vibe.tmux_bridge as _tb
     try:
         viewer = await asyncio.to_thread(_tb.create_viewer_session, target)
@@ -4066,6 +4073,7 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
         return
     master = proc = None
     try:
+        _pty_active_conns += 1   # 计数在 try 内,与下方 finally 的 -1 严格配对
         cols, rows = await asyncio.to_thread(_tb.window_size, target)
         await ws.send_text(_json.dumps({"type": "init", "cols": cols, "rows": rows}))
         master, proc = _spawn_pty_attach(viewer, cols, rows)
@@ -4095,7 +4103,10 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                 if m.get("type") == "websocket.disconnect":
                     break
                 if m.get("bytes"):
-                    os.write(master, m["bytes"])
+                    try:
+                        os.write(master, m["bytes"])
+                    except OSError:
+                        break   # PTY 已挂:与读侧 _read_master 对称,退出让 finally 收口
                 elif m.get("text"):
                     try:
                         c = _json.loads(m["text"])
@@ -4107,8 +4118,12 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
                         except (ValueError, TypeError):
                             continue
                         if 10 <= rc <= 500 and 4 <= rr <= 200:
-                            fcntl.ioctl(master, termios.TIOCSWINSZ,
-                                        struct.pack("HHHH", rr, rc, 0, 0))
+                            try:
+                                fcntl.ioctl(master, termios.TIOCSWINSZ,
+                                            struct.pack("HHHH", rr, rc, 0, 0))
+                            except OSError:
+                                continue   # resize 失败(PTY 挂)先忽略,数据通道的 os.write 负责 break
+
                             try:
                                 proc.send_signal(_signal.SIGWINCH)   # 子进程无控制终端,内核不会替我们发
                             except Exception:
@@ -4130,6 +4145,7 @@ async def terminal_pty_ws(ws: WebSocket, target: str):
     except Exception:
         pass
     finally:
+        _pty_active_conns -= 1
         # 顺序要紧:先杀 attach 进程让阻塞中的 os.read 拿到 EOF,再关 fd、销毁会话
         def _reap_proc():
             try:
@@ -4208,8 +4224,11 @@ async def terminals_respawn(request: Request, target: str):
     principal = _get_principal(request)
     if not principal:
         raise HTTPException(status_code=401, detail="需要登录")
-    if principal[0] == "sub" and not _sub_target_project(principal[1]["feishu_open_id"], target):
-        raise HTTPException(status_code=403, detail="无权操作该会话")
+    if principal[0] == "sub":
+        from vibe.accounts import account_can_access_project
+        _pid = _sub_target_project(principal[1]["feishu_open_id"], target)
+        if not _pid or not account_can_access_project(principal[1], _pid):
+            raise HTTPException(status_code=403, detail="无权操作该会话")   # 授权撤销后旧 pane 也拦掉,与只读端点一致
     remote_host, real_target = _parse_target(target)
     if remote_host is not None:
         raise HTTPException(status_code=400, detail="远程会话暂不支持强制退出")
@@ -4229,8 +4248,11 @@ async def terminals_send(request: Request, target: str, body: dict):
     if not principal:
         raise HTTPException(status_code=401, detail="需要登录")
     # 子账号只能往自己 session 的 pane 发键(写键不净化:终端本就可写,会话已 shell-proof)
-    if principal[0] == "sub" and not _sub_target_project(principal[1]["feishu_open_id"], target):
-        raise HTTPException(status_code=403, detail="无权操作该会话")
+    if principal[0] == "sub":
+        from vibe.accounts import account_can_access_project
+        _pid = _sub_target_project(principal[1]["feishu_open_id"], target)
+        if not _pid or not account_can_access_project(principal[1], _pid):
+            raise HTTPException(status_code=403, detail="无权操作该会话")   # 授权撤销后旧 pane 也拦掉,与只读端点一致
     keys = body.get("keys", "")
     if not keys:
         raise HTTPException(status_code=400, detail="keys required")
@@ -4310,7 +4332,7 @@ async def chat_endpoint(request: Request, body: dict):
                     method="POST",
                 )
                 result = await _asyncio.to_thread(
-                    lambda: _json.loads(_ureq.urlopen(req, timeout=120).read())
+                    lambda: _json.loads(_ureq.urlopen(req, timeout=30).read())   # 本地模型;降 timeout 减少线程池占用
                 )
             except Exception as e:
                 yield f"data: {_json.dumps({'type': 'error', 'content': f'无法连接到本地模型：{e}'})}\n\n"

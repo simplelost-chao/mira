@@ -21,6 +21,7 @@ def _conn() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")   # 并发写等锁最多 5s,而非立即 database is locked
         _local.conn = conn
     return conn
 
@@ -135,6 +136,9 @@ def init_db() -> None:
                 "DELETE FROM messages WHERE id NOT IN "
                 "(SELECT MIN(id) FROM messages GROUP BY session_id, ts, role, content)"
             )
+            # messages_fts 是手动同步的普通 FTS5 表:去重删了 messages 行,对应 fts 行要一并删,
+            # 否则 search 命中已不存在消息的孤儿 fts 记录(幽灵搜索结果)。
+            conn.execute("DELETE FROM messages_fts WHERE message_id NOT IN (SELECT id FROM messages)")
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup "
                 "ON messages(session_id, ts, role, content)"
@@ -353,7 +357,8 @@ def get_project_activity(
                 return {}
 
             # Aggregate
-            count_7d = count_30d = 0
+            sids_7d: set = set()
+            sids_30d: set = set()
             inp = out = cc = cr = 0
             active_hours = 0.0
             last_ts = None
@@ -362,9 +367,9 @@ def get_project_activity(
             for r in rows:
                 d = r['date']
                 if d >= d_7d:
-                    count_7d += 1
+                    sids_7d.add(r['session_id'])
                 if d >= d_30d:
-                    count_30d += 1
+                    sids_30d.add(r['session_id'])
                 inp += r['input_tokens'] or 0
                 out += r['output_tokens'] or 0
                 cc  += r['cache_creation_tokens'] or 0
@@ -376,6 +381,8 @@ def get_project_activity(
                 if d >= d_15d:
                     day_hours[d] = day_hours.get(d, 0.0) + (r['active_hours'] or 0.0)
 
+            count_7d = len(sids_7d)      # distinct 会话数,不是 session-day(跨天会话原来被重复计,数字偏高)
+            count_30d = len(sids_30d)
             cost = (inp * _PRICE_INPUT + out * _PRICE_OUTPUT
                     + cc * _PRICE_CACHE_WRITE + cr * _PRICE_CACHE_READ)
 

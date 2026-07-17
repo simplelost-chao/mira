@@ -10,7 +10,7 @@ DB_PATH = Path.home() / ".vibe-manager" / "cache.db"
 
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=5) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS projects (
                 id      TEXT PRIMARY KEY,
@@ -22,7 +22,7 @@ def init_db() -> None:
 
 def save_projects(projects: list[dict]) -> None:
     now = time.time()
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=5) as conn:
         # Remove stale entries not in current set
         current_ids = [p["id"] for p in projects]
         if current_ids:
@@ -38,7 +38,7 @@ def save_projects(projects: list[dict]) -> None:
 def load_projects() -> tuple[list[dict], float]:
     """Returns (projects, cache_timestamp). Empty list if DB has no data."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=5) as conn:
             rows = conn.execute("SELECT data, updated_at FROM projects").fetchall()
         if not rows:
             return [], 0.0
